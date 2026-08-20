@@ -1,7 +1,8 @@
 const STORAGE_KEY = 'tide.v1';
-const VERSION = '4.0.0';
+const VERSION = '5.0.0';
+const SCHEMA_VERSION = 5;
 
-const COLORS = { sand:'#F5E9D6', sky:'#2BA3D9', deep:'#00316F', tan:'#C7A983' };
+const COLORS = { cream:'#FFF6E6', blue:'#174A8B', sky:'#2BA3D9', coral:'#FF7A59', green:'#22C55E', ink:'#1F2937' };
 const iso = d => {
   const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), day=String(d.getDate()).padStart(2,'0');
   return `${y}-${m}-${day}`;
@@ -19,7 +20,8 @@ const fmtDate = (s, lang='zh') => {
 const escapeHtml = s => String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 const defaults = {
-  version:2,
+  schemaVersion:SCHEMA_VERSION,
+  version:SCHEMA_VERSION,
   language:'zh',
   goal:{name:'Back to 50',start:today(),end:addDays(today(),31),startWeight:52.7,target:50,status:'active'},
   days:{},
@@ -37,30 +39,30 @@ let flash = '';
 function fresh(){ return JSON.parse(JSON.stringify(defaults)); }
 function mergeDay(x={}){
   return {
-    date:x.date||today(),
-    weight:x.weight??null,
-    sleep:x.sleep??null,
+    date:x.date||today(), weight:x.weight??null, sleep:x.sleep??null,
     events:Array.isArray(x.events)?x.events.filter(e=>!String(e).toLowerCase().includes('period')).map(e=>({'Dinner out':'dinner','Travel':'travel','Party':'party','Long flight':'flight','Vacation':'vacation','Poor sleep':'poor_sleep','Sick':'sick'}[e]||e)):[],
-    planMode:x.planMode||'default',
-    plannedSleep:x.plannedSleep??null,
+    planMode:x.planMode||'default', plannedSleep:x.plannedSleep??null,
+    customPlan:{
+      veg:x.customPlan?.veg??null, fruit:x.customPlan?.fruit??null, noSnack:x.customPlan?.noSnack??null,
+      stop:x.customPlan?.stop??null, satiety:x.customPlan?.satiety??null, water:x.customPlan?.water??null,
+      steps:x.customPlan?.steps??null, stretch:x.customPlan?.stretch??null, cardio:x.customPlan?.cardio??null, strength:x.customPlan?.strength??null
+    },
     plannedMove:{steps:x.plannedMove?.steps??null,stretch:x.plannedMove?.stretch??null,cardio:x.plannedMove?.cardio??null,strength:x.plannedMove?.strength??null},
     food:{veg:x.food?.veg??null,fruit:x.food?.fruit??null,noSnack:x.food?.noSnack??null,stop6:x.food?.stop6??null,water:x.food?.water??null,satiety:x.food?.satiety??null},
     move:{steps:x.move?.steps??null,stretch:x.move?.stretch??null,cardio:x.move?.cardio??null,strength:x.move?.strength??null},
-    close:x.close??null,
-    note:x.note??''
+    close:x.close??null,note:x.note??''
   };
 }
 function migrate(raw){
   const out=fresh();
   if(!raw || typeof raw!=='object') return out;
-  out.language=raw.language||'zh';
+  out.language='zh';
   out.goal={...out.goal,...(raw.goal||{})};
-  out.plan={...out.plan,...(raw.plan||{})};
-  if(raw.plan?.stepsDays!=null && raw.plan?.stepsTarget==null) out.plan.stepsTarget=10000;
-  out.goals=Array.isArray(raw.goals)?raw.goals:[];
+  out.plan={...out.plan,...(raw.plan||{}),stepsTarget:10000};
+  out.goals=Array.isArray(raw.goals)?raw.goals.map(g=>({...g,snapshot:true})):[];
   out.days={};
   Object.entries(raw.days||{}).forEach(([k,v])=>out.days[k]=mergeDay({...v,date:k}));
-  out.version=2;
+  out.schemaVersion=SCHEMA_VERSION; out.version=SCHEMA_VERSION;
   return out;
 }
 function loadDB(){
@@ -72,23 +74,30 @@ function save(message=''){ persist(); if(message) flash=message; render(); }
 function day(s){ if(!db.days[s]) db.days[s]=mergeDay({date:s}); else db.days[s]=mergeDay(db.days[s]); return db.days[s]; }
 
 const T = {
-  zh:{today:'今天',calendar:'日历',change:'变化',goals:'目标',settings:'设置',save:'保存',saved:'已保存',currentGoal:'当前目标',day:'第',days:'天',currentWeight:'当前体重',goal:'目标',morning:'早晨记录',fastingWeight:'起床空腹体重',sleep:'昨晚睡眠',hours:'小时',todayPlan:'今日计划',fromGoal:'来自当前目标的默认计划',todayActual:'今日实际',editable:'随时可以回来修改',veg:'蔬菜',fruit:'水果',noSnack:'不吃零食',after6:'6点后不吃',satiety:'分饱',water:'水',movement:'运动',steps:'步数',stretch:'Stretch',cardio:'有氧',strength:'力量训练',minutes:'分钟',todayNote:'今日提示',thisWeek:'本周运动',openDay:'查看 / 编辑这一天',food:'饮食',special:'特殊安排',noRecord:'没有记录',futurePlan:'未来计划',pastEdit:'补录 / 修改',defaultPlan:'默认计划',flexible:'灵活日',custom:'自定义',lifeEvents:'特殊安排',actualRecord:'实际记录',notes:'备注',done:'完成',weightChange:'体重变化',actualWeight:'空腹体重',sevenAvg:'7日平均',goalLine:'目标',recentDays:'最近几天',goalJourney:'当前目标',pastGoals:'过去的目标',reached:'达成',close:'接近目标',ended:'已结束',active:'进行中',newGoal:'新目标',archive:'结束并归档',start:'开始',target:'目标',language:'语言 / Language',export:'导出备份',import:'导入备份',about:'关于 Tide',version:'版本',defaultFood:'默认饮食规则',weeklyMove:'每周运动目标',localFirst:'数据保存在当前设备浏览器，并可导出 JSON 备份。',month:['一月','二月','三月','四月','五月','六月','七月','八月','九月','十月','十一月','十二月']},
+  zh:{today:'今天',calendar:'日历',change:'变化',goals:'目标',settings:'设置',save:'保存',saved:'已保存',currentGoal:'当前目标',day:'第',days:'天',currentWeight:'当前体重',goal:'目标',morning:'早晨记录',fastingWeight:'起床空腹体重',sleep:'昨晚睡眠',hours:'小时',todayPlan:'今日计划',fromGoal:'来自当前目标的默认计划',todayActual:'今日实际',editable:'随时可以回来修改',veg:'蔬菜',fruit:'水果',noSnack:'不吃零食',after6:'6点后不吃',satiety:'分饱',water:'水',movement:'运动',steps:'步数',stretch:'Stretch',cardio:'Cardio',strength:'Strength',minutes:'分钟',todayNote:'今日提示',thisWeek:'本周运动',openDay:'查看 / 编辑这一天',food:'饮食',special:'特殊安排',noRecord:'没有记录',futurePlan:'未来计划',pastEdit:'补录 / 修改',defaultPlan:'默认计划',flexible:'灵活日',custom:'自定义',lifeEvents:'特殊安排',actualRecord:'实际记录',notes:'备注',done:'完成',weightChange:'体重变化',actualWeight:'空腹体重',sevenAvg:'7日平均',goalLine:'目标',recentDays:'最近几天',goalJourney:'当前目标',pastGoals:'过去的目标',reached:'达成',close:'接近目标',ended:'已结束',active:'进行中',newGoal:'新目标',archive:'结束并归档',start:'开始',target:'目标',language:'语言 / Language',export:'导出备份',import:'导入备份',about:'关于 Tide',version:'版本',defaultFood:'默认饮食规则',weeklyMove:'每周运动目标',localFirst:'数据保存在当前设备浏览器，并可导出 JSON 备份。',month:['一月','二月','三月','四月','五月','六月','七月','八月','九月','十月','十一月','十二月']},
   en:{today:'Today',calendar:'Calendar',change:'Change',goals:'Goals',settings:'Settings',save:'Save',saved:'Saved',currentGoal:'Current goal',day:'Day',days:'days',currentWeight:'Current weight',goal:'Goal',morning:'Morning log',fastingWeight:'Morning fasting weight',sleep:'Last night sleep',hours:'hours',todayPlan:"Today's plan",fromGoal:'From your current goal',todayActual:"Today's actual",editable:'Come back and edit anytime',veg:'Vegetables',fruit:'Fruit',noSnack:'No snacks',after6:'No food after 6 PM',satiety:'full',water:'Water',movement:'Movement',steps:'Steps',stretch:'Stretch',cardio:'Cardio',strength:'Strength',minutes:'min',todayNote:"Today's note",thisWeek:'This week',openDay:'View / edit this day',food:'Food',special:'Special',noRecord:'No record',futurePlan:'Future plan',pastEdit:'Edit past day',defaultPlan:'Default',flexible:'Flexible',custom:'Custom',lifeEvents:'Life events',actualRecord:'Actual record',notes:'Notes',done:'Done',weightChange:'Weight change',actualWeight:'Fasting weight',sevenAvg:'7-day avg',goalLine:'Goal',recentDays:'Recent days',goalJourney:'Current goal',pastGoals:'Past goals',reached:'Reached',close:'Close',ended:'Ended',active:'Active',newGoal:'New goal',archive:'End & archive',start:'Start',target:'Target',language:'Language / 语言',export:'Export backup',import:'Import backup',about:'About Tide',version:'Version',defaultFood:'Default food rules',weeklyMove:'Weekly movement goals',localFirst:'Data stays in this browser and can be exported as a JSON backup.',month:['January','February','March','April','May','June','July','August','September','October','November','December']}
 };
-const tr = k => (T[db.language]||T.zh)[k] ?? k;
+const tr = k => T.zh[k] ?? k;
 
 function latestWeights(until=today()){
   return Object.values(db.days).filter(x=>x.weight!=null && x.date<=until).sort((a,b)=>a.date.localeCompare(b.date));
 }
 function latestWeight(until=today()){ const a=latestWeights(until); return a.length?a[a.length-1]:null; }
 function movingAverage(date, window=7){ const a=latestWeights(date).slice(-window).map(x=>+x.weight); return avg(a); }
+function activeGoalStartWeight(){ const rec=db.days[db.goal.start]; return rec?.weight!=null ? +rec.weight : +db.goal.startWeight; }
+function dayPlan(d){
+  const base={veg:db.plan.veg,fruit:db.plan.fruit,noSnack:db.plan.noSnack,stop:db.plan.stop,satiety:db.plan.satiety,water:db.plan.water,steps:10000,stretch:null,cardio:null,strength:null};
+  if(d.planMode==='flexible') return {...base,stop:null};
+  if(d.planMode==='custom') return {...base,...Object.fromEntries(Object.entries(d.customPlan||{}).filter(([,v])=>v!==null&&v!==''))};
+  return base;
+}
 function dayIndexInGoal(s){ return Math.max(1,Math.floor((parseDate(s)-parseDate(db.goal.start))/86400000)+1); }
 function goalDuration(){ return Math.max(1,Math.floor((parseDate(db.goal.end)-parseDate(db.goal.start))/86400000)+1); }
 function goalProgress(weight){
   if(weight==null) return 0;
-  const total=db.goal.startWeight-db.goal.target;
+  const start=activeGoalStartWeight(); const total=start-db.goal.target;
   if(total<=0) return 0;
-  return clamp((db.goal.startWeight-weight)/total*100,0,100);
+  return clamp((start-weight)/total*100,0,100);
 }
 function weightChange(s){
   const w=day(s).weight; if(w==null)return null;
@@ -96,30 +105,31 @@ function weightChange(s){
   return +w - +prev[prev.length-1].weight;
 }
 function foodStatus(d){
-  const f=d.food; const values=[f.veg,f.fruit,f.noSnack,f.stop6,f.water,f.satiety];
-  const recorded=values.filter(v=>v!==null&&v!=='').length;
-  if(!recorded) return {recorded:0,score:null,label:tr('noRecord')};
+  const f=d.food, p=dayPlan(d);
+  const core=[f.veg,f.fruit,f.noSnack,f.stop6,f.satiety];
+  const recorded=core.filter(v=>v!==null&&v!=='').length;
+  if(!recorded) return {recorded:0,score:null,enough:false,calendarPass:false,label:'没有记录'};
   let pass=0, denom=0;
-  if(f.veg!=null){denom++; if(+f.veg>=db.plan.veg)pass++;}
-  if(f.fruit!=null){denom++; if(+f.fruit<=db.plan.fruit)pass++;}
-  if(f.noSnack!=null){denom++; if(f.noSnack===true)pass++;}
-  // A planned flexible day suspends the 6 PM rule rather than marking the day as failed.
-  if(d.planMode!=='flexible' && f.stop6!=null){denom++; if(f.stop6===true)pass++;}
-  if(f.water!=null){denom++; if(+f.water>=db.plan.water)pass++;}
-  if(f.satiety!=null){denom++; if(+f.satiety<=db.plan.satiety)pass++;}
+  if(f.veg!=null){denom++; if(+f.veg>=+p.veg)pass++;}
+  if(f.fruit!=null){denom++; if(+f.fruit<=+p.fruit)pass++;}
+  if(f.noSnack!=null){denom++; if(p.noSnack===false || f.noSnack===true)pass++;}
+  if(p.stop==null){ /* planned exception */ } else if(f.stop6!=null){denom++; if(f.stop6===true)pass++;}
+  if(f.satiety!=null){denom++; if(+f.satiety<=+p.satiety)pass++;}
   const score=denom?pass/denom:null;
-  const enough=recorded>=3;
-  return {recorded,score,enough,label:!enough?(db.language==='zh'?'已记录部分':'Partially logged'):(score>=.8?(db.language==='zh'?'整体不错':'Mostly on plan'):(score>=.55?(db.language==='zh'?'部分完成':'Partly on plan'):(db.language==='zh'?'偏离计划':'Off plan')))};
+  const enough=denom>=4;
+  const calendarPass=enough && pass>=4 && score>=.8;
+  return {recorded,score,enough,calendarPass,label:calendarPass?'饮食达标':enough?(score>=.6?'基本达标':'偏离计划'):'记录不完整'};
 }
 function moveStatus(d){
-  const m=d.move; const any=(+m.steps||0)>0 || m.stretch===true || (+m.cardio||0)>0 || (+m.strength||0)>0;
-  if(!any) return {done:false,label:tr('noRecord')};
+  const m=d.move; const meaningful=(+m.steps||0)>=10000 || (+m.cardio||0)>0 || (+m.strength||0)>0;
+  const any=(+m.steps||0)>0 || m.stretch===true || (+m.cardio||0)>0 || (+m.strength||0)>0;
+  if(!any) return {done:false,calendarPass:false,label:'没有记录'};
   const pieces=[];
-  if(+m.steps>=db.plan.stepsTarget) pieces.push(db.language==='zh'?'10k步':'10k steps');
-  if(m.stretch) pieces.push('Stretch');
-  if(+m.cardio>0) pieces.push(`${m.cardio}${db.language==='zh'?'分有氧':'m cardio'}`);
-  if(+m.strength>0) pieces.push(`${m.strength}${db.language==='zh'?'分力量':'m strength'}`);
-  return {done:true,label:pieces.slice(0,2).join(' · ') || (db.language==='zh'?'已记录':'Logged')};
+  if(+m.steps>=10000) pieces.push('10k步');
+  if(+m.cardio>0) pieces.push(`Cardio ${m.cardio}分`);
+  if(+m.strength>0) pieces.push(`Strength ${m.strength}分`);
+  if(!pieces.length&&m.stretch) pieces.push('Stretch');
+  return {done:any,calendarPass:meaningful,label:pieces.slice(0,2).join(' · ')};
 }
 function plannedMoveStatus(d){
   const m=d.plannedMove||{}; const any=(+m.steps||0)>0 || m.stretch===true || (+m.cardio||0)>0 || (+m.strength||0)>0;
@@ -129,7 +139,7 @@ function plannedMoveStatus(d){
   if(m.stretch) pieces.push('Stretch');
   if(+m.cardio>0) pieces.push(`${m.cardio}${db.language==='zh'?'分有氧':'m cardio'}`);
   if(+m.strength>0) pieces.push(`${m.strength}${db.language==='zh'?'分力量':'m strength'}`);
-  return {planned:true,label:pieces.slice(0,2).join(' · ')};
+  return {planned:true,calendarPass:(+m.steps||0)>=10000 || (+m.cardio||0)>0 || (+m.strength||0)>0,label:pieces.slice(0,2).join(' · ')};
 }
 function plannedMoveControls(d){
   const m=d.plannedMove||{};
@@ -171,59 +181,32 @@ function topbar(title, kicker='', actions=''){
 function flashHtml(){ if(!flash)return ''; const s=flash; flash=''; return `<div class="insight" style="margin-bottom:10px">${escapeHtml(s)}</div>`; }
 
 function todayPage(){
-  const d=day(today()); const lw=latestWeight(today()); const ma=movingAverage(today());
-  const progress=goalProgress(lw?.weight??db.goal.startWeight);
-  const dayNum=dayIndexInGoal(today()), total=goalDuration();
+  const d=day(today()), lw=latestWeight(today()), ma=movingAverage(today());
+  const startW=activeGoalStartWeight(), progress=goalProgress(lw?.weight??startW), dayNum=dayIndexInGoal(today()), total=goalDuration();
   const week=weekStats();
-  const food=foodStatus(d), move=moveStatus(d);
-  return `${topbar(`${tr('today')} · ${fmtDate(today())}`,'Tide',`<button class="btn sky save-top" data-action="saveToday">${tr('save')}</button>`)}
+  return `${topbar(`今天 · ${fmtDate(today())}`,'Tide')}
   ${flashHtml()}
-  <section class="card soft">
-    <div class="row between"><div><div class="small">${tr('currentGoal')} · ${escapeHtml(db.goal.name)}</div><div class="small" style="margin-top:4px">${tr('day')} ${dayNum} / ${total} ${db.language==='zh'?'天':''}</div></div><span class="status active">${tr('active')}</span></div>
-    <div class="metric-row" style="margin-top:12px">
-      <div class="metric"><div class="label">${tr('currentWeight')}</div><div class="value">${fmt(lw?.weight)} <span class="small">kg</span></div></div>
-      <div class="metric" style="text-align:right"><div class="label">${tr('goal')} · ${fmtDate(db.goal.end)}</div><div class="value">${fmt(db.goal.target)} <span class="small">kg</span></div></div>
-    </div>
-    <div class="progress"><i style="width:${progress}%"></i></div>
+  <section class="goal-compact">
+    <div class="row between"><div><b>${escapeHtml(db.goal.name)}</b><span class="small"> · ${dayNum}/${total}天</span></div><span class="status active">进行中</span></div>
+    <div class="goal-numbers"><span><b>${fmt(lw?.weight??startW)}</b> kg</span><span class="goal-arrow">→</span><span><b>${fmt(db.goal.target)}</b> kg · ${fmtDate(db.goal.end)}</span></div>
+    <div class="progress compact"><i style="width:${progress}%"></i></div>
+    <div class="morning-inline"><span>今早 <b>${fmt(d.weight)}</b> kg</span><span>睡眠 <b>${fmt(d.sleep)}</b> h</span><button class="text-btn" data-action="editToday">编辑</button></div>
   </section>
+  <div class="insight priority"><b>🌊 今日提醒</b><br>${dynamicInsight()}</div>
 
-  <section class="card blue-soft">
-    <div class="row between"><div><b>${tr('morning')}</b><div class="small">${db.language==='zh'?'起床 → 如厕 → 未进食饮水':'Wake → bathroom → before food/drink'}</div></div><button class="btn secondary" data-action="editToday">${db.language==='zh'?'编辑':'Edit'}</button></div>
-    <div class="metric-row" style="margin-top:8px"><div class="metric"><div class="label">${tr('fastingWeight')}</div><div class="value">${fmt(d.weight)} <span class="small">kg</span></div></div><div class="metric"><div class="label">${tr('sleep')}</div><div class="value">${fmt(d.sleep)} <span class="small">${tr('hours')}</span></div></div></div>
-  </section>
+  <div class="section-title compact-title">今日计划 <button class="text-btn" data-action="editToday">调整今天</button></div>
+  <section class="plan-strip">${todayPlanChips(d)}</section>
 
-  <div class="section-title">${tr('todayPlan')}</div>
-  <section class="card">
-    <div class="row between" style="margin-bottom:10px"><span class="small">${tr('fromGoal')}</span><span class="status ${d.planMode==='flexible'?'close':'active'}">${d.planMode==='flexible'?tr('flexible'):d.planMode==='custom'?tr('custom'):tr('defaultPlan')}</span></div>
-    <div class="rule-grid">
-      <div class="rule">🥬 ${tr('veg')} ≥ ${db.plan.veg}${db.language==='zh'?'份':''}</div>
-      <div class="rule">🍎 ${tr('fruit')} ≤ ${db.plan.fruit}${db.language==='zh'?'份':''}</div>
-      <div class="rule">○ ${tr('noSnack')}</div>
-      <div class="rule ${d.planMode==='flexible'?'rule-exception':''}">◷ ${d.planMode==='flexible'?(db.language==='zh'?'6点规则 · 今日例外':'6 PM rule · planned exception'):tr('after6')}</div>
-      <div class="rule">◌ ${db.plan.satiety}${tr('satiety')}</div>
-      <div class="rule">◍ ${tr('water')} ≥ ${db.plan.water} L</div>
-    </div>
-    ${d.events.length?`<div style="margin-top:12px" class="life-events">${d.events.map(e=>`<span class="event-chip on">${escapeHtml(eventLabel(e))}</span>`).join('')}</div>`:''}
-  </section>
+  <div class="section-title compact-title">今日记录</div>
+  <section class="card compact-card">${actualFoodControls(d)}<hr class="sep"><div class="actual-label">运动</div>${movementControls(d)}</section>
 
-  <div class="section-title">${tr('todayActual')}</div>
-  <section class="card">
-    <div class="small" style="margin-bottom:4px">${tr('editable')}</div>
-    ${actualFoodControls(d)}
-    <hr class="sep">
-    <div class="actual-label">${tr('movement')}</div>
-    ${movementControls(d)}
-  </section>
-
-  <div class="section-title">${tr('todayNote')}</div>
-  <div class="insight"><b>${db.language==='zh'?'🌊 今天只做一件事：':'🌊 One thing today:'}</b><br>${dynamicInsight()}</div>
-
-  <div class="section-title">${tr('thisWeek')}</div>
-  <section class="card"><div class="week-bars">${weekBars(week)}</div></section>
-
-  <button class="btn sky full" data-action="saveTodayBottom">${tr('save')} ${tr('today')}</button>`;
+  <div class="section-title compact-title">本周</div>
+  <section class="card compact-card"><div class="week-bars">${weekBars(week)}</div></section>`;
 }
-
+function todayPlanChips(d){
+  const p=dayPlan(d); const chips=[`🥬 蔬菜 ≥ ${p.veg}`,`🍎 水果 ≤ ${p.fruit}`,p.noSnack===false?'零食可安排':'不吃零食',p.stop==null?'6点规则暂停':'6点后不吃',`${p.satiety}分饱`,`水 ≥ ${p.water}L`];
+  return `<div class="rule-grid compact-rules">${chips.map(x=>`<div class="rule">${x}</div>`).join('')}</div>${d.events.length?`<div class="life-events compact-events">${d.events.map(e=>`<span class="event-chip on">${escapeHtml(eventLabel(e))}</span>`).join('')}</div>`:''}`;
+}
 function actualFoodControls(d){
   const veg=[0,1,2,3,4], fruit=[0,1,2,3], sat=[5,6,7,8,9,10];
   return `
@@ -247,8 +230,8 @@ function calendarPage(){
   for(let i=0;i<42;i++){
     const dt=new Date(start); dt.setDate(start.getDate()+i); const s=iso(dt), d=day(s), food=foodStatus(d), mv=moveStatus(d), pm=plannedMoveStatus(d);
     const current=dt.getMonth()===m; const dots=[];
-    if(food.recorded) dots.push(`<i class="dot food ${(!food.enough||food.score<.8)?'outline':''}"></i>`);
-    if(mv.done) dots.push('<i class="dot move"></i>'); else if(s>today()&&pm.planned) dots.push('<i class="dot move-outline"></i>');
+    if(food.calendarPass) dots.push('<i class="dot food"></i>');
+    if(mv.calendarPass) dots.push('<i class="dot move"></i>'); else if(s>today()&&pm.calendarPass) dots.push('<i class="dot move-outline"></i>');
     if(d.events.length) dots.push('<i class="dot event"></i>');
     cells.push(`<button class="day-cell ${!current?'out':''} ${s===selected?'selected':''} ${s===today()?'today':''}" data-date="${s}"><span class="day-number">${dt.getDate()}</span><span class="dots">${dots.join('')}</span></button>`);
   }
@@ -261,7 +244,7 @@ function calendarPage(){
     <section class="card soft day-summary">
       <div class="row between"><div><b>${fmtDate(selected)}${selected===today()?(db.language==='zh'?' · 今天':' · Today'):''}</b><div class="small" style="margin-top:3px">${selected>today()?tr('futurePlan'):selected<today()?tr('pastEdit'):tr('today')}</div></div><button class="btn secondary" data-action="openSelected">${tr('openDay')}</button></div>
       <div class="summary-grid" style="margin-top:12px">
-        <div class="mini-state"><i class="dot food ${food.recorded&&(!food.enough||food.score<.8)?'outline':''}"></i><b>${tr('food')}</b><span>${food.label}</span></div>
+        <div class="mini-state"><i class="dot food ${food.calendarPass?'':'outline'}"></i><b>${tr('food')}</b><span>${food.label}</span></div>
         <div class="mini-state"><i class="dot ${selected>today()&&pm.planned?'move-outline':'move'}"></i><b>${tr('movement')}</b><span>${selected>today()&&pm.planned?pm.label:mv.label}</span></div>
         <div class="mini-state"><i class="dot event"></i><b>${tr('special')}</b><span>${d.events.length?escapeHtml(eventLabel(d.events[0])):tr('noRecord')}</span></div>
       </div>
@@ -270,9 +253,9 @@ function calendarPage(){
 }
 
 const EVENTS=[
-  {id:'dinner',zh:'外出晚餐',en:'Dinner out'},
-  {id:'travel',zh:'旅行',en:'Travel'},
-  {id:'party',zh:'聚会',en:'Party'},
+  {id:'dinner',zh:'Dinner out',en:'Dinner out'},
+  {id:'travel',zh:'Travel',en:'Travel'},
+  {id:'party',zh:'Party',en:'Party'},
   {id:'flight',zh:'长途飞行',en:'Long flight'},
   {id:'vacation',zh:'度假',en:'Vacation'},
   {id:'poor_sleep',zh:'睡眠不足',en:'Poor sleep'},
@@ -285,25 +268,27 @@ function eventId(v){return LEGACY_EVENT_TO_ID[v]||v;}
 function eventLabel(v){const id=eventId(v);const e=EVENTS.find(x=>x.id===id);return e?(db.language==='zh'?e.zh:e.en):v;}
 function dayPage(){
   const d=day(selected), future=selected>today();
-  const title=fmtDate(selected); const sub=future?tr('futurePlan'):selected===today()?tr('today'):tr('pastEdit');
-  return `${topbar(title,sub,`<button class="btn sky save-top" data-action="saveDay">${tr('save')}</button>`)}
-    <section class="card soft">
-      <div class="actual-label">${db.language==='zh'?'当天计划类型':'Plan type'}</div>
-      <div class="plan-mode">${[['default',tr('defaultPlan')],['flexible',tr('flexible')],['custom',tr('custom')]].map(([k,l])=>`<button class="${d.planMode===k?'on':''}" data-plan-mode="${k}">${l}</button>`).join('')}</div>
-    </section>
-    <section class="card">
-      <div class="actual-label">${tr('lifeEvents')}</div>
-      <div class="life-events">${EVENTS.map(e=>`<button class="event-chip ${d.events.includes(e.id)?'on':''}" data-event="${e.id}">${db.language==='zh'?e.zh:e.en}</button>`).join('')}</div>
-      <label>${db.language==='zh'?'自定义安排':'Custom event'}</label><div class="row"><input id="customEvent" placeholder="${db.language==='zh'?'例如：朋友晚餐':'e.g. Friend dinner'}"><button class="btn secondary" data-action="addEvent">${db.language==='zh'?'添加':'Add'}</button></div>
-    </section>
-    ${!future?`<section class="card blue-soft"><div class="actual-label">${tr('morning')}</div><div class="two"><label>${tr('fastingWeight')} · kg<input data-day-field="weight" type="number" step="0.1" inputmode="decimal" value="${d.weight??''}"></label><label>${tr('sleep')} · ${tr('hours')}<input data-day-field="sleep" type="number" step="0.1" inputmode="decimal" value="${d.sleep??''}"></label></div></section>`:''}
-    <section class="card"><div class="actual-label">${future?tr('todayPlan'):tr('actualRecord')}</div>${future?futurePlanSummary(d):actualFoodControls(d)}${future?`<hr class="sep"><div class="actual-label">${db.language==='zh'?'睡眠目标（可选）':'Sleep target (optional)'}</div><label>${tr('hours')}<input data-day-field="plannedSleep" type="number" step="0.5" inputmode="decimal" value="${d.plannedSleep??''}" placeholder="7.5"></label><hr class="sep"><div class="actual-label">${db.language==='zh'?'运动计划（可选）':'Movement plan (optional)'}</div>${plannedMoveControls(d)}`:`${plannedMoveStatus(d).planned?`<div class="planned-reference"><span>${db.language==='zh'?'原计划':'Planned'}：</span>${escapeHtml(plannedMoveStatus(d).label)}</div>`:''}<hr class="sep"><div class="actual-label">${tr('movement')}</div>${movementControls(d)}`}</section>
-    <section class="card"><label>${tr('notes')}</label><textarea data-day-field="note" rows="3" placeholder="${db.language==='zh'?'可选':'Optional'}">${escapeHtml(d.note)}</textarea></section>
-    <button class="btn sky full" data-action="saveDayBottom">${tr('done')}</button>`;
+  const title=fmtDate(selected), sub=future?'未来计划':selected===today()?'今天':'补录 / 修改';
+  let main='';
+  if(future){
+    main=`<section class="card"><div class="actual-label">当天计划</div>${futurePlanSummary(d)}${d.planMode==='custom'?'':`<hr class="sep"><div class="actual-label">运动计划（可选）</div>${plannedMoveControls(d)}`}</section>`;
+  }else{
+    main=`<section class="card blue-soft"><div class="actual-label">早晨记录</div><div class="two"><label>起床空腹体重 · kg<input data-day-field="weight" type="number" step="0.1" inputmode="decimal" value="${d.weight??''}"></label><label>昨晚睡眠 · 小时<input data-day-field="sleep" type="number" step="0.1" inputmode="decimal" value="${d.sleep??''}"></label></div></section><section class="card"><div class="actual-label">实际记录</div>${actualFoodControls(d)}${plannedMoveStatus(d).planned?`<div class="planned-reference">原计划：${escapeHtml(plannedMoveStatus(d).label)}</div>`:''}<hr class="sep"><div class="actual-label">运动</div>${movementControls(d)}</section>`;
+  }
+  return `${topbar(title,sub,`<button class="btn sky save-top" data-action="saveDay">保存</button>`)}
+    <section class="card soft"><div class="actual-label">当天计划类型</div><div class="plan-mode">${[['default','默认'],['flexible','Flexible'],['custom','自定义']].map(([k,l])=>`<button class="${d.planMode===k?'on':''}" data-plan-mode="${k}">${l}</button>`).join('')}</div></section>
+    <section class="card"><div class="actual-label">特殊安排</div><div class="life-events">${EVENTS.map(e=>`<button class="event-chip ${d.events.includes(e.id)?'on':''}" data-event="${e.id}">${e.zh}</button>`).join('')}</div><label>自定义安排</label><div class="row"><input id="customEvent" placeholder="例如：朋友晚餐"><button class="btn secondary" data-action="addEvent">添加</button></div></section>
+    ${d.planMode==='custom'&&!future?`<section class="card"><div class="actual-label">当天自定义目标</div>${customPlanControls(d)}</section>`:''}
+    ${main}
+    <section class="card"><label>备注</label><textarea data-day-field="note" rows="3" placeholder="可选">${escapeHtml(d.note)}</textarea></section>
+    <button class="btn sky full" data-action="saveDayBottom">完成</button>`;
 }
 function futurePlanSummary(d){
-  return `<div class="rule-grid"><div class="rule">🥬 ${tr('veg')} ≥ ${db.plan.veg}</div><div class="rule">🍎 ${tr('fruit')} ≤ ${db.plan.fruit}</div><div class="rule">○ ${tr('noSnack')}</div><div class="rule ${d.planMode==='flexible'?'rule-exception':''}">◷ ${d.planMode==='flexible'?(db.language==='zh'?'6点规则 · 今日例外':'6 PM rule · planned exception'):tr('after6')}</div><div class="rule">◌ ${db.plan.satiety}${tr('satiety')}</div><div class="rule">◍ ${tr('water')} ≥ ${db.plan.water}L</div></div>${d.planMode==='flexible'?`<div class="insight" style="margin-top:12px">${db.language==='zh'?'Flexible day：特殊安排不算“失败”。当天仍保留你想保留的规则即可。':'Flexible day: planned exceptions do not count as failure.'}</div>`:''}`;
+  if(d.planMode==='custom') return customPlanControls(d);
+  const p=dayPlan(d);
+  return `<div class="rule-grid"><div class="rule">🥬 蔬菜 ≥ ${p.veg}</div><div class="rule">🍎 水果 ≤ ${p.fruit}</div><div class="rule">${p.noSnack===false?'零食可安排':'不吃零食'}</div><div class="rule ${p.stop==null?'rule-exception':''}">${p.stop==null?'6点规则 · 今日例外':'6点后不吃'}</div><div class="rule">${p.satiety}分饱</div><div class="rule">水 ≥ ${p.water}L</div></div>${d.planMode==='flexible'?`<div class="insight" style="margin-top:12px">Flexible day：特殊安排已经算进计划，不把这一天当成“破功”。</div>`:''}`;
 }
+function customPlanControls(d){const p=d.customPlan||{};return `<div class="custom-plan"><div class="actual-label">自定义饮食</div><div class="two"><label>蔬菜 ≥<input data-day-field="customPlan.veg" type="number" value="${p.veg??db.plan.veg}"></label><label>水果 ≤<input data-day-field="customPlan.fruit" type="number" value="${p.fruit??db.plan.fruit}"></label><label>饱腹度 ≤<input data-day-field="customPlan.satiety" type="number" value="${p.satiety??db.plan.satiety}"></label><label>水 ≥ L<input data-day-field="customPlan.water" type="number" step="0.1" value="${p.water??db.plan.water}"></label></div><div class="switch-row actual-row"><span>允许零食</span><button class="toggle ${p.noSnack===false?'on':''}" data-toggle-custom="allowSnack"></button></div><label>停止进食时间（留空=不限制）<input data-day-field="customPlan.stop" type="time" value="${p.stop??db.plan.stop}"></label><hr class="sep"><div class="actual-label">自定义运动</div><div class="two"><label>步数<input data-day-field="customPlan.steps" type="number" value="${p.steps??''}" placeholder="10000"></label><label>Cardio · 分钟<input data-day-field="customPlan.cardio" type="number" value="${p.cardio??''}"></label><label>Strength · 分钟<input data-day-field="customPlan.strength" type="number" value="${p.strength??''}"></label><div style="padding-top:26px"><div class="switch-row"><span>Stretch</span><button class="toggle ${p.stretch===true?'on':''}" data-toggle-custom="stretch"></button></div></div></div></div>`; }
 
 function changePage(){
   const series=chartData();
@@ -335,17 +320,17 @@ function chartData(){
 }
 function renderChart(data){
   if(data.length<2) return `<div class="empty">${db.language==='zh'?'至少记录两次起床空腹体重后，这里会出现图表。':'Add at least two morning weights to see the chart.'}</div>`;
-  const W=340,H=230,L=44,R=12,Tp=16,B=36;
+  const W=340,H=230,L=62,R=12,Tp=28,B=36;
   const vals=data.flatMap(d=>[d.weight,d.avg]).filter(v=>v!=null); vals.push(+db.goal.target);
   let min=Math.floor((Math.min(...vals)-.35)*2)/2, max=Math.ceil((Math.max(...vals)+.35)*2)/2; if(max-min<2){max=min+2;}
   const x=i=>L+(i/(data.length-1))*(W-L-R); const y=v=>Tp+(max-v)/(max-min)*(H-Tp-B);
-  const yTicks=5; let grid=''; for(let i=0;i<yTicks;i++){const v=max-i*(max-min)/(yTicks-1), yy=y(v);grid+=`<line class="grid" x1="${L}" y1="${yy}" x2="${W-R}" y2="${yy}"/><text x="2" y="${yy+3}">${v.toFixed(1)}</text>`;}
+  const yTicks=5; let grid=''; for(let i=0;i<yTicks;i++){const v=max-i*(max-min)/(yTicks-1), yy=y(v);grid+=`<line class="grid" x1="${L}" y1="${yy}" x2="${W-R}" y2="${yy}"/><text x="18" y="${yy+3}">${v.toFixed(1)}</text>`;}
   const labelCount=Math.min(4,data.length); let xLabels=''; for(let i=0;i<labelCount;i++){const idx=Math.round(i*(data.length-1)/(labelCount-1||1));xLabels+=`<text x="${x(idx)-10}" y="${H-9}">${fmtDate(data[idx].date,db.language).replace('月','/').replace('日','')}</text>`;}
   const path=k=>data.map((d,i)=>`${i?'L':'M'} ${x(i).toFixed(1)} ${y(d[k]).toFixed(1)}`).join(' ');
   const goalY=y(db.goal.target);
   const points=data.map((d,i)=>`<circle class="point" data-chart-index="${i}" cx="${x(i)}" cy="${y(d.weight)}" r="4.8"></circle>`).join('');
   const last=data[data.length-1];
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Weight chart"><text x="2" y="11">kg</text>${grid}<line class="axis" x1="${L}" y1="${Tp}" x2="${L}" y2="${H-B}"/><line class="axis" x1="${L}" y1="${H-B}" x2="${W-R}" y2="${H-B}"/><line class="goal" x1="${L}" y1="${goalY}" x2="${W-R}" y2="${goalY}"/><rect x="${W-79}" y="${goalY-17}" width="68" height="15" rx="7" fill="var(--paper)" opacity=".94"></rect><text x="${W-74}" y="${goalY-6}" style="fill:${COLORS.tan}">${tr('goalLine')} ${fmt(db.goal.target)}</text><path class="actual" d="${path('weight')}"/><path class="smooth" d="${path('avg')}"/>${points}${xLabels}</svg><div id="chartTip" class="tooltip">${chartTipHtml(last)}</div>`;
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Weight chart"><text x="4" y="13" class="axis-unit">kg</text>${grid}<line class="axis" x1="${L}" y1="${Tp}" x2="${L}" y2="${H-B}"/><line class="axis" x1="${L}" y1="${H-B}" x2="${W-R}" y2="${H-B}"/><line class="goal" x1="${L}" y1="${goalY}" x2="${W-R}" y2="${goalY}"/><rect x="${W-79}" y="${goalY-17}" width="68" height="15" rx="7" fill="var(--paper)" opacity=".94"></rect><text x="${W-74}" y="${goalY-6}" style="fill:${COLORS.coral}">${tr('goalLine')} ${fmt(db.goal.target)}</text><path class="actual" d="${path('weight')}"/><path class="smooth" d="${path('avg')}"/>${points}${xLabels}</svg><div id="chartTip" class="tooltip">${chartTipHtml(last)}</div>`;
 }
 function chartTipHtml(d){
   if(!d) return '';
@@ -379,7 +364,7 @@ function goalsPage(){
     <div class="section-title" style="margin-top:2px">${tr('goalJourney')}</div>
     <section class="card soft">
       <div class="row between"><div><div class="brand" style="font-size:18px;letter-spacing:0">${escapeHtml(db.goal.name)}</div><div class="small">${db.goal.start} → ${db.goal.end}</div></div><span class="status active">${tr('active')}</span></div>
-      <div class="metric-row" style="margin-top:10px"><div class="metric"><div class="label">${tr('start')}</div><div class="value">${fmt(db.goal.startWeight)} <span class="small">kg</span></div></div><div class="metric" style="text-align:right"><div class="label">${tr('target')}</div><div class="value">${fmt(db.goal.target)} <span class="small">kg</span></div></div></div>
+      <div class="metric-row" style="margin-top:10px"><div class="metric"><div class="label">${tr('start')}</div><div class="value">${fmt(activeGoalStartWeight())} <span class="small">kg</span></div></div><div class="metric" style="text-align:right"><div class="label">${tr('target')}</div><div class="value">${fmt(db.goal.target)} <span class="small">kg</span></div></div></div>
       <div class="progress"><i style="width:${goalProgress(lw?.weight??db.goal.startWeight)}%"></i></div>
       <button class="btn secondary full" data-action="editGoal">${db.language==='zh'?'编辑当前目标':'Edit current goal'}</button>
     </section>
@@ -401,29 +386,30 @@ function goalStatus(g,end){
   if(g.resultStatus) return g.resultStatus;
   if(end==null) return 'ended';
   if(end<=g.target+.1) return 'reached';
-  const total=g.startWeight-g.target, progress=total>0?(g.startWeight-end)/total:0;
+  const start=(g===db.goal||!g.snapshot)?activeGoalStartWeight():+g.startWeight;
+  const total=start-g.target, progress=total>0?(start-end)/total:0;
   return progress>=.75?'close':'ended';
 }
 
 function goalEditPage(){
   const g=db.goal;
   return `${topbar(db.language==='zh'?'编辑目标':'Edit goal','',`<button class="btn sky save-top" data-action="saveGoal">${tr('save')}</button>`)}
-    <section class="card"><label>${db.language==='zh'?'目标名字':'Goal name'}</label><input id="goalName" value="${escapeHtml(g.name)}"><div class="two"><label>${tr('start')} kg<input id="goalStartWeight" type="number" step="0.1" value="${g.startWeight}"></label><label>${tr('target')} kg<input id="goalTarget" type="number" step="0.1" value="${g.target}"></label></div><div class="two"><label>${tr('start')}<input id="goalStart" type="date" value="${g.start}"></label><label>${db.language==='zh'?'截止日期':'End date'}<input id="goalEnd" type="date" value="${g.end}"></label></div></section>
-    <section class="card"><div class="actual-label">${tr('defaultFood')}</div>${planInputsFood()}</section>
-    <section class="card"><div class="actual-label">${tr('weeklyMove')}</div>${planInputsMove()}</section>
+    <section class="card"><label>${db.language==='zh'?'目标名字':'Goal name'}</label><input id="goalName" value="${escapeHtml(g.name)}"><div class="two"><label>${tr('start')} kg<input id="goalStartWeight" type="number" step="0.1" value="${activeGoalStartWeight()}"></label><label>${tr('target')} kg<input id="goalTarget" type="number" step="0.1" value="${g.target}"></label></div><div class="two"><label>${tr('start')}<input id="goalStart" type="date" value="${g.start}"></label><label>${db.language==='zh'?'截止日期':'End date'}<input id="goalEnd" type="date" value="${g.end}"></label></div></section>
+    <section class="card"><div class="actual-label">饮食目标</div>${planInputsFood()}</section>
+    <section class="card"><div class="actual-label">每周运动目标</div>${planInputsMove()}</section>
     <button class="btn ghost danger full" data-action="archiveGoal">${tr('archive')}</button>`;
 }
 function planInputsFood(){return `<div class="two"><label>${tr('veg')} ≥<input data-plan="veg" type="number" value="${db.plan.veg}"></label><label>${tr('fruit')} ≤<input data-plan="fruit" type="number" value="${db.plan.fruit}"></label><label>${tr('water')} ≥ L<input data-plan="water" type="number" step="0.1" value="${db.plan.water}"></label><label>${db.language==='zh'?'目标饱腹度':'Satiety target'}<input data-plan="satiety" type="number" value="${db.plan.satiety}"></label></div><label>${db.language==='zh'?'停止进食时间':'Stop eating time'}<input data-plan="stop" type="time" value="${db.plan.stop}"></label>`;}
-function planInputsMove(){return `<div class="two"><label>${db.language==='zh'?'步数目标':'Step target'}<input data-plan="stepsTarget" type="number" value="${db.plan.stepsTarget}"></label><label>${db.language==='zh'?'每周1万步天数':'10k days/week'}<input data-plan="stepsDays" type="number" value="${db.plan.stepsDays}"></label><label>${db.language==='zh'?'Stretch 天数':'Stretch days'}<input data-plan="stretchDays" type="number" value="${db.plan.stretchDays}"></label><label>${tr('cardio')} · ${tr('minutes')}<input data-plan="cardio" type="number" value="${db.plan.cardio}"></label><label>${tr('strength')} · ${tr('minutes')}<input data-plan="strength" type="number" value="${db.plan.strength}"></label></div>`;}
+function planInputsMove(){return `<div class="two"><label>每周1万步达标天数<input data-plan="stepsDays" type="number" value="${db.plan.stepsDays}"></label><label>Stretch 天数<input data-plan="stretchDays" type="number" value="${db.plan.stretchDays}"></label><label>Cardio · 分钟/周<input data-plan="cardio" type="number" value="${db.plan.cardio}"></label><label>Strength · 分钟/周<input data-plan="strength" type="number" value="${db.plan.strength}"></label></div>`;}
 
 function settingsPage(){
-  return `${topbar(tr('settings'))}
-    <section class="settings-list"><div class="setting-row"><span>${tr('language')}</span><div class="lang"><button data-lang="zh" class="${db.language==='zh'?'on':''}">中文</button><button data-lang="en" class="${db.language==='en'?'on':''}">English</button></div></div><button class="setting-row" data-action="editPlan" style="width:100%;border:0;background:#fff;text-align:left"><span>${tr('defaultFood')}</span><span class="right">›</span></button><button class="setting-row" data-action="editPlan" style="width:100%;border:0;background:#fff;text-align:left"><span>${tr('weeklyMove')}</span><span class="right">›</span></button><button class="setting-row" data-action="export"><span>${tr('export')}</span><span class="right">JSON ›</span></button><label class="setting-row" style="margin:0"><span>${tr('import')}</span><span class="right">JSON ›</span><input id="importFile" type="file" accept="application/json" style="display:none"></label><div class="setting-row"><span>${tr('about')}</span><span class="right">${tr('version')} ${VERSION}</span></div></section>
-    <div class="insight" style="margin-top:16px">${tr('localFirst')}</div>`;
+  return `${topbar('设置')}
+    <section class="settings-list"><button class="setting-row" data-action="editPlan" style="width:100%;border:0;background:#fff;text-align:left"><span>默认目标</span><span class="right">›</span></button><button class="setting-row" data-action="export"><span>导出数据</span><span class="right">JSON ›</span></button><label class="setting-row" style="margin:0"><span>导入数据</span><span class="right">JSON ›</span><input id="importFile" type="file" accept="application/json" style="display:none"></label><div class="setting-row"><span>关于 Tide</span><span class="right">版本 ${VERSION}</span></div></section>
+    <div class="insight" style="margin-top:16px">数据保存在这台设备的浏览器中。以后 Tide 升级会自动迁移旧数据；你也可以随时导出 JSON 作为额外备份。</div>`;
 }
 
 function planEditPage(){
-  return `${topbar(db.language==='zh'?'默认计划':'Default plan','',`<button class="btn sky save-top" data-action="savePlan">${tr('save')}</button>`)}<section class="card"><div class="actual-label">${tr('defaultFood')}</div>${planInputsFood()}</section><section class="card"><div class="actual-label">${tr('weeklyMove')}</div>${planInputsMove()}</section><button class="btn sky full" data-action="savePlanBottom">${tr('done')}</button>`;
+  return `${topbar('默认目标','',`<button class="btn sky save-top" data-action="savePlan">${tr('save')}</button>`)}<section class="card"><div class="actual-label">饮食目标</div>${planInputsFood()}</section><section class="card"><div class="actual-label">每周运动目标</div>${planInputsMove()}</section><button class="btn sky full" data-action="savePlanBottom">${tr('done')}</button>`;
 }
 
 function weekStats(){
@@ -435,7 +421,7 @@ function weekStats(){
   return {steps:days.filter(d=>+d.move.steps>=db.plan.stepsTarget).length,stretch:days.filter(d=>d.move.stretch===true).length,cardio:days.reduce((sum,d)=>sum+(+d.move.cardio||0),0),strength:days.reduce((sum,d)=>sum+(+d.move.strength||0),0)};
 }
 function weekBars(w){
-  const rows=[[db.language==='zh'?'≥10k 步':'10k steps',w.steps,db.plan.stepsDays],[tr('stretch'),w.stretch,db.plan.stretchDays],[tr('cardio'),w.cardio,db.plan.cardio],[tr('strength'),w.strength,db.plan.strength]];
+  const rows=[['1万步达标天数',w.steps,db.plan.stepsDays],[tr('stretch'),w.stretch,db.plan.stretchDays],[tr('cardio'),w.cardio,db.plan.cardio],[tr('strength'),w.strength,db.plan.strength]];
   return rows.map(([l,a,b])=>`<div class="week-row"><div class="label-line"><span>${l}</span><b>${a}/${b}</b></div><div class="bar"><i style="width:${clamp((a/(b||1))*100,0,100)}%"></i></div></div>`).join('');
 }
 
@@ -455,27 +441,30 @@ function saveInputsFromDOM(){
 function setFood(key,val){ day(view==='day'?selected:today()).food[key]=val; save(); }
 function toggleFood(key){ const d=day(view==='day'?selected:today()); d.food[key]=d.food[key]===true?false:true; save(); }
 function toggleMove(key){ const d=day(view==='day'?selected:today()); d.move[key]=d.move[key]===true?false:true; save(); }
+function toggleCustom(key){ const d=day(selected); if(key==='allowSnack') d.customPlan.noSnack=d.customPlan.noSnack===false?true:false; else d.customPlan[key]=d.customPlan[key]===true?false:true; save(); }
 function togglePlannedMove(key){ const d=day(selected); d.plannedMove[key]=d.plannedMove[key]===true?false:true; save(); }
 function toggleEvent(e){ const d=day(selected); d.events=d.events.includes(e)?d.events.filter(x=>x!==e):[...d.events,e]; save(); }
 function shiftMonth(n){ const d=parseDate(calendarMonth); d.setMonth(d.getMonth()+n); calendarMonth=iso(new Date(d.getFullYear(),d.getMonth(),1,12)); selected=calendarMonth; render(); }
 function saveGoalForm(){
+  const oldStart=db.goal.start;
+  const newStart=document.getElementById('goalStart')?.value||db.goal.start;
   db.goal.name=document.getElementById('goalName')?.value.trim()||db.goal.name;
-  db.goal.startWeight=+(document.getElementById('goalStartWeight')?.value||db.goal.startWeight);
   db.goal.target=+(document.getElementById('goalTarget')?.value||db.goal.target);
-  db.goal.start=document.getElementById('goalStart')?.value||db.goal.start;
-  db.goal.end=document.getElementById('goalEnd')?.value||db.goal.end;
+  db.goal.start=newStart; db.goal.end=document.getElementById('goalEnd')?.value||db.goal.end;
+  const entered=document.getElementById('goalStartWeight')?.value;
+  if(entered!==undefined&&entered!=='') { db.goal.startWeight=+entered; day(newStart).weight=+entered; }
   saveInputsFromDOM();
 }
 function archiveGoal(){
   saveGoalForm();
-  const end=latestWeight(today())?.weight??null; const status=goalStatus(db.goal,end);
+  const end=latestWeight(today())?.weight??null; const startSnapshot=activeGoalStartWeight(); const status=goalStatus({...db.goal,startWeight:startSnapshot,snapshot:true},end);
   let planDays=0, strengthMinutes=0, cardioMinutes=0, eventCount=0;
   for(let s=db.goal.start;s<=today()&&s<=db.goal.end;s=addDays(s,1)){
     const rec=day(s), fs=foodStatus(rec);
     if(fs.enough&&fs.score>=.8) planDays++;
     strengthMinutes+=(+rec.move.strength||0); cardioMinutes+=(+rec.move.cardio||0); eventCount+=rec.events.length;
   }
-  db.goals.push({...db.goal,ended:today(),endWeight:end,resultStatus:status,planDays,strengthMinutes,cardioMinutes,eventCount});
+  const snapshot={...db.goal,startWeight:startSnapshot,ended:today(),endWeight:end,resultStatus:status,planDays,strengthMinutes,cardioMinutes,eventCount,snapshot:true,schemaVersion:SCHEMA_VERSION}; db.goals.push(snapshot);
   db.goal={name:db.language==='zh'?'新目标':'New goal',start:today(),end:addDays(today(),30),startWeight:end??db.goal.target,target:Math.max(35,(end??db.goal.target)-2),status:'active'};
   view='goals'; save(db.language==='zh'?'当前目标已归档。':'Goal archived.');
 }
@@ -505,13 +494,13 @@ function bind(){
   document.querySelectorAll('[data-set-food]').forEach(b=>b.addEventListener('click',()=>setFood(b.dataset.setFood,+b.dataset.value)));
   document.querySelectorAll('[data-toggle-food]').forEach(b=>b.addEventListener('click',()=>toggleFood(b.dataset.toggleFood)));
   document.querySelectorAll('[data-toggle-move]').forEach(b=>b.addEventListener('click',()=>toggleMove(b.dataset.toggleMove)));
+  document.querySelectorAll('[data-toggle-custom]').forEach(b=>b.addEventListener('click',()=>toggleCustom(b.dataset.toggleCustom)));
   document.querySelectorAll('[data-toggle-planned-move]').forEach(b=>b.addEventListener('click',()=>togglePlannedMove(b.dataset.togglePlannedMove)));
   document.querySelectorAll('[data-date]').forEach(b=>b.addEventListener('click',()=>{selected=b.dataset.date;render();}));
   document.querySelectorAll('[data-month]').forEach(b=>b.addEventListener('click',()=>shiftMonth(+b.dataset.month)));
   document.querySelectorAll('[data-event]').forEach(b=>b.addEventListener('click',()=>toggleEvent(b.dataset.event)));
   document.querySelectorAll('[data-plan-mode]').forEach(b=>b.addEventListener('click',()=>{day(selected).planMode=b.dataset.planMode;save();}));
   document.querySelectorAll('[data-range]').forEach(b=>b.addEventListener('click',()=>{range=b.dataset.range;render();}));
-  document.querySelectorAll('[data-lang]').forEach(b=>b.addEventListener('click',()=>{db.language=b.dataset.lang;save();}));
   document.querySelectorAll('[data-day-field]').forEach(el=>el.addEventListener('change',()=>{saveInputsFromDOM();persist();}));
   document.querySelectorAll('[data-plan]').forEach(el=>el.addEventListener('change',()=>{saveInputsFromDOM();persist();}));
   const f=document.getElementById('importFile'); if(f) f.addEventListener('change',()=>importData(f.files[0]));

@@ -70,3 +70,55 @@ hr.sep{border:0;border-top:1px solid #EDF0F1;margin:17px 0}
 @media(min-width:700px){body{background:#EAE3D8}.shell{box-shadow:0 0 42px rgba(0,49,111,.12)}}
 
 .progress.compact{height:5px;margin:8px 0 5px}.tooltip .tip-context{flex-basis:100%;color:var(--muted);padding-top:2px}.goal-item .progress{max-width:100%}.chart .point{cursor:pointer}.chart .point:hover{stroke:var(--deep);stroke-width:2.4}
+
+/* Tide V5 — cream + jewel blue + coral + green */
+:root{
+  --sand:#FFF6E6;
+  --sky:#2BA3D9;
+  --deep:#174A8B;
+  --paper:#FFFDF8;
+  --ink:#1F2937;
+  --muted:#788493;
+  --line:#E9E0D2;
+  --soft:#EAF5FB;
+  --tan:#FF7A59;
+  --success:#22A95A;
+  --warning:#F59E0B;
+  --danger:#C85C64;
+  --coral:#FF7A59;
+  --green:#22A95A;
+}
+html,body{background:#F8EAD0}
+.shell{background:linear-gradient(180deg,#FFFDF8 0%,#FFF9EE 100%);padding-left:14px;padding-right:14px}
+.topbar{margin-bottom:11px}.page-title{color:var(--deep);font-size:22px}.kicker{color:#9C7C61}
+.card{border-color:rgba(23,74,139,.09);box-shadow:0 5px 18px rgba(52,64,84,.035)}
+.card.soft{background:linear-gradient(145deg,#FFF2D9,#FFFFFF)}
+.card.blue-soft{background:linear-gradient(145deg,#EDF8FC,#FFFFFF)}
+.btn{background:var(--deep)}.btn.sky{background:var(--deep)}.btn.secondary{background:#EDF5FA;color:var(--deep)}
+.progress i,.bar i{background:linear-gradient(90deg,var(--deep),var(--sky))}
+.status.active{background:#EAF3FB;color:var(--deep)}.status.done{background:#E8F7ED;color:#147A3A}.status.close{background:#FFF0E8;color:#C65D39}
+.pill.on{background:var(--deep);border-color:var(--deep)}
+.toggle.on{background:var(--green)}
+.insight{background:linear-gradient(135deg,#FFF0D8 0%,#EAF7FC 100%);border:1px solid rgba(255,122,89,.13)}
+.insight.priority{border-left:4px solid var(--coral);padding:11px 12px;margin:8px 0 12px}
+.rule-exception,.event-chip.on{background:#FFF0E8;border-color:rgba(255,122,89,.35);color:#9C4A31}
+.event-chip{background:#FFF6E9;border-color:#F3DCC7;color:#805F47}
+.dot.food{background:var(--deep)}.dot.move{background:var(--green)}.dot.move-outline{border-color:var(--green)}.dot.event{background:var(--coral)}
+.legend{gap:15px}
+.day-cell.selected{background:rgba(43,163,217,.10)}
+.chart .actual{stroke:var(--sky)}.chart .smooth{stroke:var(--deep)}.chart .goal{stroke:var(--coral)}.chart .point{fill:var(--sky)}
+.chart .axis-unit{font-weight:700;fill:var(--deep)}
+.range-tabs button.on{background:var(--deep)}
+.nav{background:rgba(255,253,248,.95);border-top-color:rgba(23,74,139,.10)}.nav button.active{color:var(--deep)}
+
+.goal-compact{background:linear-gradient(135deg,#FFF1D8,#F8FBFD);border:1px solid rgba(23,74,139,.10);border-radius:17px;padding:12px 13px;margin-bottom:9px}
+.goal-numbers{display:flex;align-items:baseline;gap:8px;margin-top:8px;font-size:13px;color:var(--muted)}.goal-numbers b{font-size:22px;color:var(--deep)}.goal-arrow{color:var(--coral);font-weight:800}
+.morning-inline{display:grid;grid-template-columns:1fr 1fr auto;align-items:center;gap:8px;border-top:1px solid rgba(23,74,139,.08);padding-top:8px;margin-top:7px;font-size:12px;color:var(--muted)}.morning-inline b{color:var(--ink)}
+.text-btn{border:0;background:transparent;color:var(--deep);font-size:12px;font-weight:700;padding:4px 2px}
+.compact-title{margin:15px 2px 7px;display:flex;justify-content:space-between;align-items:center}
+.plan-strip{margin:0}.compact-rules{gap:6px}.compact-rules .rule{padding:8px 9px;border-radius:10px;font-size:12px;background:#FFFDF9}.compact-events{margin-top:7px}
+.compact-card{padding:10px 13px;margin:7px 0}.compact-card .actual-row{padding:9px 0}.compact-card .actual-label{font-size:13px;margin-bottom:7px}.compact-card hr.sep{margin:12px 0}
+.compact-card .pill{min-height:34px;padding:5px 10px;font-size:12px}
+.week-bars{gap:9px}.week-row .label-line{margin-bottom:4px}.bar{height:6px}
+.custom-plan{background:#FFFDF9;border-radius:12px}
+@media(max-width:370px){.goal-numbers b{font-size:20px}.rule-grid{gap:5px}.rule{font-size:11.5px;padding:8px}.pill{padding:6px 9px}.shell{padding-left:11px;padding-right:11px}}
