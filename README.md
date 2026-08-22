@@ -1,16 +1,13 @@
-# Tide PWA V6
+# Tide PWA V7
 
-V6 focuses on the active goal and keeps V5 data compatible.
+V7 keeps the same `tide.v1` local-storage key and migrates prior Tide data to schema version 7.
 
-## V6 changes
-- New balanced Morandi sage + dusty-rose visual system, no decorative patterns.
-- Rotating daily reminders with a sharper tone.
-- Change page is locked to the active Goal start/end dates.
-- Forecasts projected weight on the Goal end date and estimated target date.
-- Weight chart Y-axis uses integer tick marks; actual values remain decimal in tooltips.
-- Forecast line added alongside actual weight, 7-day average, and target.
-- Data key remains `tide.v1`; schema migration upgrades V5 records to V6 without clearing local data.
-- JSON export/import remains available as a manual backup.
+Highlights:
+- Today redesigned as a visual dashboard: food / movement / life summaries plus goal completion ring.
+- 75% muted sage + 25% dusty rose palette; no decorative wave or food emoji imagery.
+- Goal-centric change chart with integer y-axis ticks.
+- Nonlinear forecast follows the recent goal trend with gradual damping rather than a straight extrapolation.
+- Forecast shows projected goal-date weight and estimated target date.
+- Existing Calendar, active-goal dynamics, archived-goal snapshots, JSON export/import, and migration behavior are preserved.
 
-## Publishing
-Upload all 8 files in this folder to the root of the existing GitHub Pages repository and overwrite the old files.
+All 8 files remain flat for GitHub web upload.

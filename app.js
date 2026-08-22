@@ -1,6 +1,6 @@
 const STORAGE_KEY = 'tide.v1';
-const VERSION = '6.0.0';
-const SCHEMA_VERSION = 6;
+const VERSION = '7.0.0';
+const SCHEMA_VERSION = 7;
 
 const COLORS = { sage:'#879B8B', sageDeep:'#4F6F5F', pink:'#B87986', pinkSoft:'#DAB3BA', blue:'#7F96A8', ink:'#2E3532' };
 const iso = d => {
@@ -192,30 +192,35 @@ function topbar(title, kicker='', actions=''){
 function flashHtml(){ if(!flash)return ''; const s=flash; flash=''; return `<div class="insight" style="margin-bottom:10px">${escapeHtml(s)}</div>`; }
 
 function todayPage(){
-  const d=day(today()), lw=latestWeight(today()), ma=movingAverage(today());
-  const startW=activeGoalStartWeight(), progress=goalProgress(lw?.weight??startW), dayNum=dayIndexInGoal(today()), total=goalDuration();
-  const week=weekStats();
-  return `${topbar(`今天 · ${fmtDate(today())}`,'Tide')}
+  const d=day(today()), lw=latestWeight(today());
+  const startW=activeGoalStartWeight(), current=lw?.weight??startW, progress=goalProgress(current), dayNum=dayIndexInGoal(today()), total=goalDuration();
+  const food=foodStatus(d), move=moveStatus(d), events=d.events.length;
+  const remaining=Math.max(0,(+current)-(+db.goal.target));
+  const daysLeft=Math.max(0,Math.ceil((parseDate(db.goal.end)-parseDate(today()))/86400000));
+  const foodDone=food.calendarPass, moveDone=move.calendarPass;
+  const lifeDone=events>0;
+  return `${topbar(`今天 · ${fmtDate(today())}`)}
   ${flashHtml()}
-  <section class="goal-compact">
-    <div class="row between"><div><b>${escapeHtml(db.goal.name)}</b><span class="small"> · ${dayNum}/${total}天</span></div><span class="status active">进行中</span></div>
-    <div class="goal-numbers"><span><b>${fmt(lw?.weight??startW)}</b> kg</span><span class="goal-arrow">→</span><span><b>${fmt(db.goal.target)}</b> kg · ${fmtDate(db.goal.end)}</span></div>
-    <div class="progress compact"><i style="width:${progress}%"></i></div>
-    <div class="morning-inline"><span>今早 <b>${fmt(d.weight)}</b> kg</span><span>睡眠 <b>${fmt(d.sleep)}</b> h</span><button class="text-btn" data-action="editToday">编辑</button></div>
+  <section class="today-goal-card">
+    <div class="row between"><div><div class="eyebrow">当前目标</div><div class="today-goal-name">${escapeHtml(db.goal.name)}</div></div><span class="status active">进行中</span></div>
+    <div class="today-goal-line"><i style="width:${progress}%"></i></div>
+    <div class="today-goal-metrics"><div><span>当前体重</span><b>${fmt(current)}</b><em>kg</em></div><div><span>目标体重</span><b>${fmt(db.goal.target)}</b><em>kg</em></div><div><span>目标日期</span><b class="date-value">${fmtDate(db.goal.end)}</b></div></div>
   </section>
-  <div class="insight priority"><b>🌊 今日提醒</b><br>${dynamicInsight()}</div>
-
-  <div class="section-title compact-title">今日计划 <button class="text-btn" data-action="editToday">调整今天</button></div>
-  <section class="plan-strip">${todayPlanChips(d)}</section>
-
-  <div class="section-title compact-title">今日记录</div>
-  <section class="card compact-card">${actualFoodControls(d)}<hr class="sep"><div class="actual-label">运动</div>${movementControls(d)}</section>
-
-  <div class="section-title compact-title">本周</div>
-  <section class="card compact-card"><div class="week-bars">${weekBars(week)}</div></section>`;
+  <section class="today-reminder"><div class="reminder-label">今日提醒</div><div class="reminder-copy">${dynamicInsight()}</div></section>
+  <section class="today-summary-grid">
+    <button class="summary-tile green" data-action="editToday"><div class="summary-label">饮食</div><div class="summary-value">${foodDone?'已达标':food.recorded?'进行中':'待记录'}</div><span class="summary-dot ${foodDone?'done':''}"></span></button>
+    <button class="summary-tile pink" data-action="editToday"><div class="summary-label">运动</div><div class="summary-value">${moveDone?'已达标':move.done?'已记录':'待记录'}</div><span class="summary-dot ${moveDone?'done':''}"></span></button>
+    <button class="summary-tile green-soft" data-action="editToday"><div class="summary-label">生活</div><div class="summary-value">${events?`${events} 个安排`:'无特殊安排'}</div><span class="summary-dot ${lifeDone?'done':''}"></span></button>
+  </section>
+  <section class="today-progress-card">
+    <div class="progress-stat"><div class="big-stat">${(startW-current)>=0?'-':''}${Math.abs(startW-current).toFixed(1)}</div><div class="stat-caption">kg 已减重</div></div>
+    <div class="goal-ring" style="--p:${progress}"><div><b>${Math.round(progress)}%</b><span>已完成</span></div></div>
+    <div class="progress-stat right"><div class="big-stat">${daysLeft}</div><div class="stat-caption">天剩余</div><div class="tiny-remaining">还差 ${remaining.toFixed(1)} kg</div></div>
+  </section>
+  <button class="today-edit-button" data-action="editToday">查看 / 编辑今日记录</button>`;
 }
 function todayPlanChips(d){
-  const p=dayPlan(d); const chips=[`🥬 蔬菜 ≥ ${p.veg}`,`🍎 水果 ≤ ${p.fruit}`,p.noSnack===false?'零食可安排':'不吃零食',p.stop==null?'6点规则暂停':'6点后不吃',`${p.satiety}分饱`,`水 ≥ ${p.water}L`];
+  const p=dayPlan(d); const chips=[`蔬菜 ≥ ${p.veg}`,`水果 ≤ ${p.fruit}`,p.noSnack===false?'零食可安排':'不吃零食',p.stop==null?'6点规则暂停':'6点后不吃',`${p.satiety}分饱`,`水 ≥ ${p.water}L`];
   return `<div class="rule-grid compact-rules">${chips.map(x=>`<div class="rule">${x}</div>`).join('')}</div>${d.events.length?`<div class="life-events compact-events">${d.events.map(e=>`<span class="event-chip on">${escapeHtml(eventLabel(e))}</span>`).join('')}</div>`:''}`;
 }
 function actualFoodControls(d){
@@ -297,32 +302,36 @@ function dayPage(){
 function futurePlanSummary(d){
   if(d.planMode==='custom') return customPlanControls(d);
   const p=dayPlan(d);
-  return `<div class="rule-grid"><div class="rule">🥬 蔬菜 ≥ ${p.veg}</div><div class="rule">🍎 水果 ≤ ${p.fruit}</div><div class="rule">${p.noSnack===false?'零食可安排':'不吃零食'}</div><div class="rule ${p.stop==null?'rule-exception':''}">${p.stop==null?'6点规则 · 今日例外':'6点后不吃'}</div><div class="rule">${p.satiety}分饱</div><div class="rule">水 ≥ ${p.water}L</div></div>${d.planMode==='flexible'?`<div class="insight" style="margin-top:12px">Flexible day：特殊安排已经算进计划，不把这一天当成“破功”。</div>`:''}`;
+  return `<div class="rule-grid"><div class="rule">蔬菜 ≥ ${p.veg}</div><div class="rule">水果 ≤ ${p.fruit}</div><div class="rule">${p.noSnack===false?'零食可安排':'不吃零食'}</div><div class="rule ${p.stop==null?'rule-exception':''}">${p.stop==null?'6点规则 · 今日例外':'6点后不吃'}</div><div class="rule">${p.satiety}分饱</div><div class="rule">水 ≥ ${p.water}L</div></div>${d.planMode==='flexible'?`<div class="insight" style="margin-top:12px">Flexible day：特殊安排已经算进计划，不把这一天当成“破功”。</div>`:''}`;
 }
 function customPlanControls(d){const p=d.customPlan||{};return `<div class="custom-plan"><div class="actual-label">自定义饮食</div><div class="two"><label>蔬菜 ≥<input data-day-field="customPlan.veg" type="number" value="${p.veg??db.plan.veg}"></label><label>水果 ≤<input data-day-field="customPlan.fruit" type="number" value="${p.fruit??db.plan.fruit}"></label><label>饱腹度 ≤<input data-day-field="customPlan.satiety" type="number" value="${p.satiety??db.plan.satiety}"></label><label>水 ≥ L<input data-day-field="customPlan.water" type="number" step="0.1" value="${p.water??db.plan.water}"></label></div><div class="switch-row actual-row"><span>允许零食</span><button class="toggle ${p.noSnack===false?'on':''}" data-toggle-custom="allowSnack"></button></div><label>停止进食时间（留空=不限制）<input data-day-field="customPlan.stop" type="time" value="${p.stop??db.plan.stop}"></label><hr class="sep"><div class="actual-label">自定义运动</div><div class="two"><label>步数<input data-day-field="customPlan.steps" type="number" value="${p.steps??''}" placeholder="10000"></label><label>Cardio · 分钟<input data-day-field="customPlan.cardio" type="number" value="${p.cardio??''}"></label><label>Strength · 分钟<input data-day-field="customPlan.strength" type="number" value="${p.strength??''}"></label><div style="padding-top:26px"><div class="switch-row"><span>Stretch</span><button class="toggle ${p.stretch===true?'on':''}" data-toggle-custom="stretch"></button></div></div></div></div>`; }
 
 function goalForecast(){
   const records=latestWeights(db.goal.end).filter(x=>x.date>=db.goal.start && x.date<=today());
-  if(records.length<3) return {ready:false,reason:'至少记录 3 次体重后才开始预测。'};
-  const usable=records.slice(-14).map(r=>({date:r.date,value:goalMovingAverage(r.date)??+r.weight}));
+  if(records.length<4) return {ready:false,reason:'至少记录 4 次体重后才开始预测。'};
+  const usable=records.slice(-18).map(r=>({date:r.date,value:goalMovingAverage(r.date)??+r.weight}));
   const x0=parseDate(usable[0].date); const xs=usable.map(r=>(parseDate(r.date)-x0)/86400000); const ys=usable.map(r=>+r.value);
-  const mx=avg(xs), my=avg(ys); const denom=xs.reduce((a,x)=>a+(x-mx)**2,0);
+  const mx=avg(xs), my=avg(ys), denom=xs.reduce((a,x)=>a+(x-mx)**2,0);
   if(!denom) return {ready:false,reason:'数据跨度还不够，继续记录几天。'};
   let slope=xs.reduce((a,x,i)=>a+(x-mx)*(ys[i]-my),0)/denom;
-  // Prevent one noisy week from creating absurd forecasts while preserving the measured direction.
-  slope=clamp(slope,-0.20,0.12);
+  slope=clamp(slope,-0.18,0.10);
   const last=usable[usable.length-1]; const current=+last.value;
   const daysToEnd=Math.max(0,Math.round((parseDate(db.goal.end)-parseDate(last.date))/86400000));
-  const projectedEnd=current+slope*daysToEnd;
+  // Damped trend: follow the current direction but gradually flatten, which is more realistic than a straight-line extrapolation.
+  const damping=0.035;
+  const projectedDelta = Math.abs(damping)<1e-6 ? slope*daysToEnd : slope*(1-Math.exp(-damping*daysToEnd))/damping;
+  const projectedEnd=current+projectedDelta;
+  const forecastValue=(days)=>current + slope*(1-Math.exp(-damping*Math.max(0,days)))/damping;
   let targetDate=null, deltaDays=null;
-  if(slope<-.005 && current>+db.goal.target){
-    const daysNeeded=Math.ceil((+db.goal.target-current)/slope);
-    if(daysNeeded<=365){
-      targetDate=addDays(last.date,Math.max(0,daysNeeded));
-      deltaDays=Math.round((parseDate(targetDate)-parseDate(db.goal.end))/86400000);
+  if(current<=+db.goal.target){
+    targetDate=last.date;
+  } else if(slope<-.005){
+    for(let d=1;d<=365;d++){
+      if(forecastValue(d)<=+db.goal.target){ targetDate=addDays(last.date,d); break; }
     }
-  } else if(current<=+db.goal.target){ targetDate=last.date; deltaDays=Math.round((parseDate(last.date)-parseDate(db.goal.end))/86400000); }
-  return {ready:true,slope,current,lastDate:last.date,projectedEnd,targetDate,deltaDays};
+  }
+  if(targetDate) deltaDays=Math.round((parseDate(targetDate)-parseDate(db.goal.end))/86400000);
+  return {ready:true,slope,current,lastDate:last.date,projectedEnd,targetDate,deltaDays,damping,forecastValue};
 }
 function forecastMessage(f){
   if(!f.ready) return f.reason;
@@ -379,7 +388,19 @@ function renderChart(data,forecast){
   const goalY=y(+db.goal.target);
   const points=data.map((d,i)=>`<circle class="point" data-chart-index="${i}" cx="${xDate(d.date)}" cy="${y(d.weight)}" r="4.8"></circle>`).join('');
   let forecastPath='';
-  if(forecast?.ready && lastDate<db.goal.end){const anchor=goalMovingAverage(lastDate)??data[data.length-1].weight;forecastPath=`<path class="forecast" d="M ${xDate(lastDate)} ${y(anchor)} L ${xDate(db.goal.end)} ${y(forecast.projectedEnd)}"/>`;}
+  if(forecast?.ready && lastDate<db.goal.end){
+    const anchor=goalMovingAverage(lastDate)??data[data.length-1].weight;
+    const horizon=Math.max(1,Math.round((parseDate(db.goal.end)-parseDate(lastDate))/86400000));
+    const samples=[];
+    for(let i=0;i<=Math.min(18,horizon);i++){
+      const dayOffset=Math.round(horizon*i/Math.min(18,horizon));
+      const date=addDays(lastDate,dayOffset);
+      const value=i===0?anchor:forecast.forecastValue(dayOffset);
+      samples.push([xDate(date),y(value)]);
+    }
+    const dPath=samples.map((pt,i)=>`${i?'L':'M'} ${pt[0].toFixed(1)} ${pt[1].toFixed(1)}`).join(' ');
+    forecastPath=`<path class="forecast" d="${dPath}"/>`;
+  }
   const last=data[data.length-1];
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="当前目标体重变化图"><text x="4" y="13" class="axis-unit">kg</text>${grid}<line class="axis" x1="${L}" y1="${Tp}" x2="${L}" y2="${H-B}"/><line class="axis" x1="${L}" y1="${H-B}" x2="${W-R}" y2="${H-B}"/><line class="goal" x1="${L}" y1="${goalY}" x2="${W-R}" y2="${goalY}"/><path class="actual" d="${path('weight')}"/><path class="smooth" d="${path('avg')}"/>${forecastPath}${points}${xLabels}</svg><div id="chartTip" class="tooltip">${chartTipHtml(last)}</div>`;
 }
