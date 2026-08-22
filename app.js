@@ -1,8 +1,8 @@
 const STORAGE_KEY = 'tide.v1';
-const VERSION = '5.0.0';
-const SCHEMA_VERSION = 5;
+const VERSION = '6.0.0';
+const SCHEMA_VERSION = 6;
 
-const COLORS = { cream:'#FFF6E6', blue:'#174A8B', sky:'#2BA3D9', coral:'#FF7A59', green:'#22C55E', ink:'#1F2937' };
+const COLORS = { sage:'#879B8B', sageDeep:'#4F6F5F', pink:'#B87986', pinkSoft:'#DAB3BA', blue:'#7F96A8', ink:'#2E3532' };
 const iso = d => {
   const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), day=String(d.getDate()).padStart(2,'0');
   return `${y}-${m}-${day}`;
@@ -84,6 +84,7 @@ function latestWeights(until=today()){
 }
 function latestWeight(until=today()){ const a=latestWeights(until); return a.length?a[a.length-1]:null; }
 function movingAverage(date, window=7){ const a=latestWeights(date).slice(-window).map(x=>+x.weight); return avg(a); }
+function goalMovingAverage(date, window=7){ const a=latestWeights(date).filter(x=>x.date>=db.goal.start).slice(-window).map(x=>+x.weight); return avg(a); }
 function activeGoalStartWeight(){ const rec=db.days[db.goal.start]; return rec?.weight!=null ? +rec.weight : +db.goal.startWeight; }
 function dayPlan(d){
   const base={veg:db.plan.veg,fruit:db.plan.fruit,noSnack:db.plan.noSnack,stop:db.plan.stop,satiety:db.plan.satiety,water:db.plan.water,steps:10000,stretch:null,cardio:null,strength:null};
@@ -151,14 +152,24 @@ function dynamicInsight(){
   const a=movingAverage(today()), ay=movingAverage(addDays(today(),-1));
   const f=foodStatus(day(today()));
   const events=day(today()).events.length;
-  const options=[];
-  if(tw!=null && prev!=null && tw-prev>=.5 && a!=null && ay!=null && a<=ay+.15) options.push(db.language==='zh'?'今天数字跳了一点，但7日平均体重几乎没变。先照原计划吃，不需要补偿。':'Today jumped a little, but the 7-day average barely moved. Keep the plan; no compensation needed.');
-  if(a!=null && ay!=null && a<ay-.05) options.push(db.language==='zh'?'7日平均体重继续往下。现在最有价值的不是再减更多，而是把今天照常做好。':'Your 7-day average is still moving down. The best move is simply to repeat the plan today.');
-  if(events) options.push(db.language==='zh'?'今天有特殊安排。它已经是计划的一部分，不需要把这一天当成“破功”。':'You have a special plan today. It is part of the plan, not a broken day.');
-  if(f.score!=null && f.score>=.8) options.push(db.language==='zh'?'今天执行得很稳。保持这种普通、可重复的一天，比“完美一天”更重要。':'Today is steady and repeatable. That matters more than a perfect day.');
-  if(!options.length) options.push(db.language==='zh'?'今天只看执行，不追着秤改计划。把这一天做好就够了。':'Focus on execution, not reacting to the scale. One solid day is enough.');
-  const idx=(new Date().getDate()+latestWeights().length)%options.length;
-  return options[idx];
+  const pool=[];
+  if(tw && prev && (+tw.weight-+prev.weight)>=.5 && a!=null && ay!=null && a<=ay+.15){
+    pool.push('别一涨就崩。先把今天管住，明天的秤再说。','体重会演戏，计划别跟着演。今天照做。');
+  }
+  if(a!=null && ay!=null && a<ay-.05){
+    pool.push('正在往下，就别奖励自己吃回来。','7日平均在往下。少给自己找借口，继续。');
+  }
+  if(events){
+    pool.push('有饭局可以，别顺便把整天都放弃。','生活照过，借口少一点。特殊安排不是放飞日。');
+  }
+  if(f.score!=null && f.score>=.8){
+    pool.push('今天做得不错。别因为表现好就给自己加餐。','保持住。真正会瘦的人，靠的是这种普通的一天。');
+  }
+  if(!pool.length){
+    pool.push('再拖下去，只会越来越难。今天先别放过自己。','你不是不会瘦，你只是又想放过自己。','今天放纵，明天还是你自己后悔。','少给自己找借口，秤不会陪你演内心戏。','年龄会往上走，减脂难度不会自己往下。今天别拖。');
+  }
+  const options=pool.flat();
+  return options[(new Date().getDate()+latestWeights().length)%options.length];
 }
 
 function icons(name){
@@ -290,47 +301,87 @@ function futurePlanSummary(d){
 }
 function customPlanControls(d){const p=d.customPlan||{};return `<div class="custom-plan"><div class="actual-label">自定义饮食</div><div class="two"><label>蔬菜 ≥<input data-day-field="customPlan.veg" type="number" value="${p.veg??db.plan.veg}"></label><label>水果 ≤<input data-day-field="customPlan.fruit" type="number" value="${p.fruit??db.plan.fruit}"></label><label>饱腹度 ≤<input data-day-field="customPlan.satiety" type="number" value="${p.satiety??db.plan.satiety}"></label><label>水 ≥ L<input data-day-field="customPlan.water" type="number" step="0.1" value="${p.water??db.plan.water}"></label></div><div class="switch-row actual-row"><span>允许零食</span><button class="toggle ${p.noSnack===false?'on':''}" data-toggle-custom="allowSnack"></button></div><label>停止进食时间（留空=不限制）<input data-day-field="customPlan.stop" type="time" value="${p.stop??db.plan.stop}"></label><hr class="sep"><div class="actual-label">自定义运动</div><div class="two"><label>步数<input data-day-field="customPlan.steps" type="number" value="${p.steps??''}" placeholder="10000"></label><label>Cardio · 分钟<input data-day-field="customPlan.cardio" type="number" value="${p.cardio??''}"></label><label>Strength · 分钟<input data-day-field="customPlan.strength" type="number" value="${p.strength??''}"></label><div style="padding-top:26px"><div class="switch-row"><span>Stretch</span><button class="toggle ${p.stretch===true?'on':''}" data-toggle-custom="stretch"></button></div></div></div></div>`; }
 
+function goalForecast(){
+  const records=latestWeights(db.goal.end).filter(x=>x.date>=db.goal.start && x.date<=today());
+  if(records.length<3) return {ready:false,reason:'至少记录 3 次体重后才开始预测。'};
+  const usable=records.slice(-14).map(r=>({date:r.date,value:goalMovingAverage(r.date)??+r.weight}));
+  const x0=parseDate(usable[0].date); const xs=usable.map(r=>(parseDate(r.date)-x0)/86400000); const ys=usable.map(r=>+r.value);
+  const mx=avg(xs), my=avg(ys); const denom=xs.reduce((a,x)=>a+(x-mx)**2,0);
+  if(!denom) return {ready:false,reason:'数据跨度还不够，继续记录几天。'};
+  let slope=xs.reduce((a,x,i)=>a+(x-mx)*(ys[i]-my),0)/denom;
+  // Prevent one noisy week from creating absurd forecasts while preserving the measured direction.
+  slope=clamp(slope,-0.20,0.12);
+  const last=usable[usable.length-1]; const current=+last.value;
+  const daysToEnd=Math.max(0,Math.round((parseDate(db.goal.end)-parseDate(last.date))/86400000));
+  const projectedEnd=current+slope*daysToEnd;
+  let targetDate=null, deltaDays=null;
+  if(slope<-.005 && current>+db.goal.target){
+    const daysNeeded=Math.ceil((+db.goal.target-current)/slope);
+    if(daysNeeded<=365){
+      targetDate=addDays(last.date,Math.max(0,daysNeeded));
+      deltaDays=Math.round((parseDate(targetDate)-parseDate(db.goal.end))/86400000);
+    }
+  } else if(current<=+db.goal.target){ targetDate=last.date; deltaDays=Math.round((parseDate(last.date)-parseDate(db.goal.end))/86400000); }
+  return {ready:true,slope,current,lastDate:last.date,projectedEnd,targetDate,deltaDays};
+}
+function forecastMessage(f){
+  if(!f.ready) return f.reason;
+  if(f.targetDate){
+    if(f.deltaDays<=-1) return `照现在的速度，预计 ${fmtDate(f.targetDate)} 达标，可能提前 ${Math.abs(f.deltaDays)} 天。`;
+    if(f.deltaDays>=1) return `照现在的速度，预计 ${fmtDate(f.targetDate)} 达标，可能晚 ${f.deltaDays} 天。`;
+    return '照现在的速度，预计可以按时达标。';
+  }
+  if(f.slope>=-.005) return '最近下降速度还不足以估出达标日期。先继续记录，不急着改计划。';
+  return '继续记录几天后，达标日期会更稳定。';
+}
 function changePage(){
   const series=chartData();
-  const ma=movingAverage(today()); const lw=latestWeight(today());
+  const ma=movingAverage(today()); const lw=latestWeight(today()); const f=goalForecast();
   const desc=lw?`${tr('actualWeight')} ${fmt(lw.weight)} kg · ${tr('sevenAvg')} ${fmt(ma)} kg`:tr('noRecord');
   const w=weekStats();
   return `${topbar(tr('weightChange'))}
-    <section class="card">
-      <div class="row between"><div><div class="small">${desc}</div></div><div class="small">${tr('goalLine')} ${fmt(db.goal.target)} kg</div></div>
-      <div class="legend" style="justify-content:flex-start;margin-top:14px"><span><span style="display:inline-block;width:18px;border-top:2px solid var(--sky);vertical-align:middle;margin-right:6px"></span>${tr('actualWeight')}</span><span><span style="display:inline-block;width:18px;border-top:2px dashed var(--deep);vertical-align:middle;margin-right:6px"></span>${tr('sevenAvg')}</span><span><span style="display:inline-block;width:18px;border-top:1px dashed var(--tan);vertical-align:middle;margin-right:6px"></span>${tr('goalLine')}</span></div>
-      <div class="chart-wrap">${renderChart(series)}</div>
-      <div class="range-tabs">${[['7','7天'],['30','30天'],['90','90天'],['goal',db.language==='zh'?'当前目标':'Goal']].map(([k,l])=>`<button class="${range===k?'on':''}" data-range="${k}">${l}</button>`).join('')}</div>
+    <section class="card change-goal-card">
+      <div class="row between"><div><b>${escapeHtml(db.goal.name)}</b><div class="small">${fmtDate(db.goal.start)} → ${fmtDate(db.goal.end)}</div></div><div class="small">${tr('goalLine')} ${fmt(db.goal.target)} kg</div></div>
+      <div class="small" style="margin-top:8px">${desc}</div>
+      <div class="legend" style="justify-content:flex-start;margin-top:13px"><span><span class="legend-line actual-line"></span>${tr('actualWeight')}</span><span><span class="legend-line average-line"></span>${tr('sevenAvg')}</span><span><span class="legend-line goal-line"></span>${tr('goalLine')}</span><span><span class="legend-line forecast-line"></span>预测</span></div>
+      <div class="chart-wrap">${renderChart(series,f)}</div>
     </section>
+    <section class="forecast-grid">
+      <div class="forecast-card pink"><div class="small">按当前速度 · ${fmtDate(db.goal.end)}</div><div class="forecast-value">${f.ready?fmt(f.projectedEnd):'—'} <span>kg</span></div></div>
+      <div class="forecast-card green"><div class="small">预计达标</div><div class="forecast-text">${f.ready&&f.targetDate?fmtDate(f.targetDate):'继续观察'}</div></div>
+    </section>
+    <div class="insight forecast-insight">${forecastMessage(f)}</div>
     <div class="section-title">${tr('todayNote')}</div>
     <div class="insight">${dynamicInsight()}</div>
-    <div class="section-title">${db.language==='zh'?'最近变化':'Recent change'}</div>
-    <section class="card">${changeSummary()}</section>
     <div class="section-title">${db.language==='zh'?'本周回顾':'Weekly review'}</div>
-    <section class="card">
-      <div class="week-bars">${weekBars(w)}</div>
-      <hr class="sep">
-      <div class="small" style="line-height:1.55">${weeklyReviewText()}</div>
-    </section>`;
+    <section class="card"><div class="week-bars">${weekBars(w)}</div><hr class="sep"><div class="small" style="line-height:1.55">${weeklyReviewText()}</div></section>`;
 }
 function chartData(){
-  let a=latestWeights();
-  if(range==='7') a=a.slice(-7); else if(range==='30') a=a.slice(-30); else if(range==='90') a=a.slice(-90); else if(range==='goal') a=a.filter(x=>x.date>=db.goal.start && x.date<=db.goal.end);
-  return a.map(x=>({date:x.date,weight:+x.weight,avg:movingAverage(x.date)}));
+  // Change is a goal-centric view: existing data begins at goal start and the chart always ends at goal end.
+  return latestWeights(db.goal.end).filter(x=>x.date>=db.goal.start && x.date<=today()).map(x=>({date:x.date,weight:+x.weight,avg:goalMovingAverage(x.date)}));
 }
-function renderChart(data){
-  if(data.length<2) return `<div class="empty">${db.language==='zh'?'至少记录两次起床空腹体重后，这里会出现图表。':'Add at least two morning weights to see the chart.'}</div>`;
-  const W=340,H=230,L=62,R=12,Tp=28,B=36;
+function renderChart(data,forecast){
+  if(data.length<2) return `<div class="empty">至少记录两次起床空腹体重后，这里会出现图表。</div>`;
+  const W=340,H=238,L=48,R=12,Tp=25,B=37;
+  const lastDate=data[data.length-1].date;
   const vals=data.flatMap(d=>[d.weight,d.avg]).filter(v=>v!=null); vals.push(+db.goal.target);
-  let min=Math.floor((Math.min(...vals)-.35)*2)/2, max=Math.ceil((Math.max(...vals)+.35)*2)/2; if(max-min<2){max=min+2;}
-  const x=i=>L+(i/(data.length-1))*(W-L-R); const y=v=>Tp+(max-v)/(max-min)*(H-Tp-B);
-  const yTicks=5; let grid=''; for(let i=0;i<yTicks;i++){const v=max-i*(max-min)/(yTicks-1), yy=y(v);grid+=`<line class="grid" x1="${L}" y1="${yy}" x2="${W-R}" y2="${yy}"/><text x="18" y="${yy+3}">${v.toFixed(1)}</text>`;}
-  const labelCount=Math.min(4,data.length); let xLabels=''; for(let i=0;i<labelCount;i++){const idx=Math.round(i*(data.length-1)/(labelCount-1||1));xLabels+=`<text x="${x(idx)-10}" y="${H-9}">${fmtDate(data[idx].date,db.language).replace('月','/').replace('日','')}</text>`;}
-  const path=k=>data.map((d,i)=>`${i?'L':'M'} ${x(i).toFixed(1)} ${y(d[k]).toFixed(1)}`).join(' ');
-  const goalY=y(db.goal.target);
-  const points=data.map((d,i)=>`<circle class="point" data-chart-index="${i}" cx="${x(i)}" cy="${y(d.weight)}" r="4.8"></circle>`).join('');
+  if(forecast?.ready) vals.push(forecast.projectedEnd);
+  let min=Math.floor(Math.min(...vals)-.35), max=Math.ceil(Math.max(...vals)+.35); if(max-min<3){min-=1;max+=1;}
+  const span=max-min; const tickStep=span<=6?1:2;
+  const startD=parseDate(db.goal.start), endD=parseDate(db.goal.end); const totalDays=Math.max(1,(endD-startD)/86400000);
+  const xDate=date=>L+clamp((parseDate(date)-startD)/86400000/totalDays,0,1)*(W-L-R);
+  const y=v=>Tp+(max-v)/(max-min)*(H-Tp-B);
+  let grid='';
+  for(let v=Math.ceil(min/tickStep)*tickStep;v<=max+.001;v+=tickStep){const yy=y(v);grid+=`<line class="grid" x1="${L}" y1="${yy}" x2="${W-R}" y2="${yy}"/><line class="tick" x1="${L-4}" y1="${yy}" x2="${L}" y2="${yy}"/><text class="y-label" x="${L-9}" y="${yy+3}" text-anchor="end">${v}</text>`;}
+  const xDates=[db.goal.start, addDays(db.goal.start,Math.round(totalDays/2)), db.goal.end];
+  const xLabels=xDates.map(s=>`<text x="${xDate(s)}" y="${H-9}" text-anchor="middle">${fmtDate(s).replace('月','/').replace('日','')}</text>`).join('');
+  const path=k=>data.map((d,i)=>`${i?'L':'M'} ${xDate(d.date).toFixed(1)} ${y(d[k]).toFixed(1)}`).join(' ');
+  const goalY=y(+db.goal.target);
+  const points=data.map((d,i)=>`<circle class="point" data-chart-index="${i}" cx="${xDate(d.date)}" cy="${y(d.weight)}" r="4.8"></circle>`).join('');
+  let forecastPath='';
+  if(forecast?.ready && lastDate<db.goal.end){const anchor=goalMovingAverage(lastDate)??data[data.length-1].weight;forecastPath=`<path class="forecast" d="M ${xDate(lastDate)} ${y(anchor)} L ${xDate(db.goal.end)} ${y(forecast.projectedEnd)}"/>`;}
   const last=data[data.length-1];
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Weight chart"><text x="4" y="13" class="axis-unit">kg</text>${grid}<line class="axis" x1="${L}" y1="${Tp}" x2="${L}" y2="${H-B}"/><line class="axis" x1="${L}" y1="${H-B}" x2="${W-R}" y2="${H-B}"/><line class="goal" x1="${L}" y1="${goalY}" x2="${W-R}" y2="${goalY}"/><rect x="${W-79}" y="${goalY-17}" width="68" height="15" rx="7" fill="var(--paper)" opacity=".94"></rect><text x="${W-74}" y="${goalY-6}" style="fill:${COLORS.coral}">${tr('goalLine')} ${fmt(db.goal.target)}</text><path class="actual" d="${path('weight')}"/><path class="smooth" d="${path('avg')}"/>${points}${xLabels}</svg><div id="chartTip" class="tooltip">${chartTipHtml(last)}</div>`;
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="当前目标体重变化图"><text x="4" y="13" class="axis-unit">kg</text>${grid}<line class="axis" x1="${L}" y1="${Tp}" x2="${L}" y2="${H-B}"/><line class="axis" x1="${L}" y1="${H-B}" x2="${W-R}" y2="${H-B}"/><line class="goal" x1="${L}" y1="${goalY}" x2="${W-R}" y2="${goalY}"/><path class="actual" d="${path('weight')}"/><path class="smooth" d="${path('avg')}"/>${forecastPath}${points}${xLabels}</svg><div id="chartTip" class="tooltip">${chartTipHtml(last)}</div>`;
 }
 function chartTipHtml(d){
   if(!d) return '';
@@ -338,7 +389,7 @@ function chartTipHtml(d){
   if(rec.events.length) parts.push(rec.events.map(eventLabel).join(' · '));
   if(+rec.move.strength>0) parts.push(`${tr('strength')} ${rec.move.strength}${tr('minutes')}`);
   if(+rec.move.cardio>0) parts.push(`${tr('cardio')} ${rec.move.cardio}${tr('minutes')}`);
-  if(+rec.move.steps>=db.plan.stepsTarget) parts.push(`${db.plan.stepsTarget.toLocaleString()} ${db.language==='zh'?'步':'steps'}`);
+  if(+rec.move.steps>=db.plan.stepsTarget) parts.push(`${db.plan.stepsTarget.toLocaleString()} 步`);
   return `<b>${fmtDate(d.date)}</b><span>${fmt(d.weight)} kg</span><span>${tr('sevenAvg')} ${fmt(d.avg)} kg</span>${parts.length?`<span class="tip-context">${escapeHtml(parts.join(' · '))}</span>`:''}`;
 }
 function weeklyReviewText(){
@@ -404,12 +455,12 @@ function planInputsMove(){return `<div class="two"><label>每周1万步达标天
 
 function settingsPage(){
   return `${topbar('设置')}
-    <section class="settings-list"><button class="setting-row" data-action="editPlan" style="width:100%;border:0;background:#fff;text-align:left"><span>默认目标</span><span class="right">›</span></button><button class="setting-row" data-action="export"><span>导出数据</span><span class="right">JSON ›</span></button><label class="setting-row" style="margin:0"><span>导入数据</span><span class="right">JSON ›</span><input id="importFile" type="file" accept="application/json" style="display:none"></label><div class="setting-row"><span>关于 Tide</span><span class="right">版本 ${VERSION}</span></div></section>
+    <section class="settings-list"><button class="setting-row" data-action="editPlan" style="width:100%;border:0;background:#fff;text-align:left"><span>默认计划</span><span class="right">›</span></button><button class="setting-row" data-action="export"><span>导出数据</span><span class="right">JSON ›</span></button><label class="setting-row" style="margin:0"><span>导入数据</span><span class="right">JSON ›</span><input id="importFile" type="file" accept="application/json" style="display:none"></label><div class="setting-row"><span>关于 Tide</span><span class="right">版本 ${VERSION}</span></div></section>
     <div class="insight" style="margin-top:16px">数据保存在这台设备的浏览器中。以后 Tide 升级会自动迁移旧数据；你也可以随时导出 JSON 作为额外备份。</div>`;
 }
 
 function planEditPage(){
-  return `${topbar('默认目标','',`<button class="btn sky save-top" data-action="savePlan">${tr('save')}</button>`)}<section class="card"><div class="actual-label">饮食目标</div>${planInputsFood()}</section><section class="card"><div class="actual-label">每周运动目标</div>${planInputsMove()}</section><button class="btn sky full" data-action="savePlanBottom">${tr('done')}</button>`;
+  return `${topbar('默认计划','',`<button class="btn sky save-top" data-action="savePlan">${tr('save')}</button>`)}<section class="card"><div class="actual-label">饮食目标</div>${planInputsFood()}</section><section class="card"><div class="actual-label">每周运动目标</div>${planInputsMove()}</section><button class="btn sky full" data-action="savePlanBottom">${tr('done')}</button>`;
 }
 
 function weekStats(){
