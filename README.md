@@ -1,13 +1,11 @@
-# Tide PWA V7
+# Tide PWA v7.1
 
-V7 keeps the same `tide.v1` local-storage key and migrates prior Tide data to schema version 7.
+Visual refinement release.
 
-Highlights:
-- Today redesigned as a visual dashboard: food / movement / life summaries plus goal completion ring.
-- 75% muted sage + 25% dusty rose palette; no decorative wave or food emoji imagery.
-- Goal-centric change chart with integer y-axis ticks.
-- Nonlinear forecast follows the recent goal trend with gradual damping rather than a straight extrapolation.
-- Forecast shows projected goal-date weight and estimated target date.
-- Existing Calendar, active-goal dynamics, archived-goal snapshots, JSON export/import, and migration behavior are preserved.
+- Green page canvas with warm cream cards and restrained dusty-pink accents
+- One-tap morning weight entry directly from Today
+- New minimal Tide app icon
+- Existing Goal, Calendar, forecast, backup and migration logic preserved
+- Uses the same `tide.v1` localStorage key; this release does not reset user data
 
-All 8 files remain flat for GitHub web upload.
+Deploy by uploading all 8 files to the same GitHub Pages repository root.

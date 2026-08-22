@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'tide.v1';
-const VERSION = '7.0.0';
+const VERSION = '7.1.0';
 const SCHEMA_VERSION = 7;
 
 const COLORS = { sage:'#879B8B', sageDeep:'#4F6F5F', pink:'#B87986', pinkSoft:'#DAB3BA', blue:'#7F96A8', ink:'#2E3532' };
@@ -35,6 +35,7 @@ let selected = today();
 let calendarMonth = today().slice(0,7) + '-01';
 let range = '30';
 let flash = '';
+let quickWeightOpen = false;
 
 function fresh(){ return JSON.parse(JSON.stringify(defaults)); }
 function mergeDay(x={}){
@@ -206,6 +207,10 @@ function todayPage(){
     <div class="today-goal-line"><i style="width:${progress}%"></i></div>
     <div class="today-goal-metrics"><div><span>当前体重</span><b>${fmt(current)}</b><em>kg</em></div><div><span>目标体重</span><b>${fmt(db.goal.target)}</b><em>kg</em></div><div><span>目标日期</span><b class="date-value">${fmtDate(db.goal.end)}</b></div></div>
   </section>
+  <button class="quick-weight-card ${d.weight==null?'empty-weight':''}" data-action="quickWeight">
+    <div><div class="quick-weight-label">今早体重</div><div class="quick-weight-value">${d.weight==null?'记录今早体重':`${fmt(d.weight)} <span>kg</span>`}</div></div>
+    <div class="quick-weight-action">${d.weight==null?'现在记录':'修改'} ›</div>
+  </button>
   <section class="today-reminder"><div class="reminder-label">今日提醒</div><div class="reminder-copy">${dynamicInsight()}</div></section>
   <section class="today-summary-grid">
     <button class="summary-tile green" data-action="editToday"><div class="summary-label">饮食</div><div class="summary-value">${foodDone?'已达标':food.recorded?'进行中':'待记录'}</div><span class="summary-dot ${foodDone?'done':''}"></span></button>
@@ -547,12 +552,30 @@ function importData(file){
   if(!file)return; const r=new FileReader(); r.onload=()=>{try{db=migrate(JSON.parse(r.result)); persist(); view='today'; flash=db.language==='zh'?'备份已恢复。':'Backup restored.'; render();}catch{alert(db.language==='zh'?'这个备份无法读取。':'This backup could not be read.')}}; r.readAsText(file);
 }
 
+
+function quickWeightModal(){
+  if(!quickWeightOpen) return '';
+  const d=day(today());
+  return `<div class="modal-backdrop" data-action="closeQuickWeight">
+    <div class="weight-modal" role="dialog" aria-modal="true" aria-label="记录今早体重">
+      <div class="weight-modal-handle"></div>
+      <div class="weight-modal-title">记录今早体重</div>
+      <div class="weight-modal-sub">起床空腹体重</div>
+      <div class="weight-input-wrap"><input id="quickWeightInput" type="number" inputmode="decimal" step="0.1" min="30" max="150" value="${d.weight??''}" placeholder="52.7"><span>kg</span></div>
+      <button class="weight-save" data-action="saveQuickWeight">保存</button>
+      <button class="weight-cancel" data-action="closeQuickWeight">取消</button>
+    </div>
+  </div>`;
+}
 function bind(){
   document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>{view=b.dataset.view; render();}));
   document.querySelectorAll('[data-action]').forEach(b=>b.addEventListener('click',()=>{
     const a=b.dataset.action;
     if(a==='saveToday'||a==='saveTodayBottom'){saveInputsFromDOM();save(tr('saved'));}
     if(a==='editToday'){selected=today();view='day';render();}
+    if(a==='quickWeight'){quickWeightOpen=true;render();setTimeout(()=>document.getElementById('quickWeightInput')?.focus(),30);}
+    if(a==='closeQuickWeight'){quickWeightOpen=false;render();}
+    if(a==='saveQuickWeight'){const el=document.getElementById('quickWeightInput');const v=el?.value===''?null:+el.value;if(v!=null&&Number.isFinite(v)){day(today()).weight=v;persist();quickWeightOpen=false;flash='今早体重已保存。';render();}}
     if(a==='openSelected'){view='day';render();}
     if(a==='saveDay'||a==='saveDayBottom'){saveInputsFromDOM();view='calendar';save(tr('saved'));}
     if(a==='addEvent'){const el=document.getElementById('customEvent');const v=el?.value.trim();if(v){day(selected).events.push(v);save();}}
@@ -592,8 +615,10 @@ function render(){
   else if(view==='goalEdit')content=goalEditPage();
   else if(view==='settings')content=settingsPage();
   else if(view==='planEdit')content=planEditPage();
-  document.getElementById('app').innerHTML=`<main class="shell">${content}${['today','calendar','change','goals','settings'].includes(view)?nav():''}</main>`;
+  document.getElementById('app').innerHTML=`<main class="shell">${content}${['today','calendar','change','goals','settings'].includes(view)?nav():''}</main>${quickWeightModal()}`;
   bind();
+  document.querySelector('.weight-modal')?.addEventListener('click',e=>e.stopPropagation());
+  const q=document.getElementById('quickWeightInput'); if(q) q.addEventListener('keydown',e=>{if(e.key==='Enter')document.querySelector('[data-action=\"saveQuickWeight\"]')?.click();});
 }
 
 document.addEventListener('gesturestart',e=>e.preventDefault());

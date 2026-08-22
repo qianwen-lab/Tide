@@ -253,3 +253,58 @@ input:focus,select:focus,textarea:focus{border-color:rgba(168,106,115,.55);box-s
 
 @media(max-width:370px){.today-progress-card{grid-template-columns:1fr 86px 1fr}.goal-ring{width:76px;height:76px}.today-summary-grid{gap:6px}.summary-tile{padding:10px;min-height:76px}.today-goal-metrics b{font-size:17px}}
 @media(min-width:700px){body{background:#A5B4A9}.shell{box-shadow:0 0 42px rgba(45,62,52,.16)}}
+
+/* Tide V7.1 — forest green canvas, warm cream cards, restrained dusty rose accents */
+:root{
+  --forest:#708675;
+  --forest-deep:#40584A;
+  --forest-soft:#8FA191;
+  --cream:#EFE6D7;
+  --cream-2:#F4EBDD;
+  --cream-deep:#E6DAC8;
+  --dusty-pink:#C4828C;
+  --dusty-pink-deep:#A9626E;
+  --dusty-pink-soft:#E2BEC4;
+  --ink:#2D362F;
+  --muted:#6E756F;
+  --line:rgba(60,78,67,.16);
+  --paper:var(--cream);
+  --deep:var(--forest-deep);
+  --sky:var(--dusty-pink);
+  --soft:var(--cream-deep);
+  --success:var(--forest-deep);
+  --danger:var(--dusty-pink-deep);
+}
+html,body{background:#667C6B;color:var(--ink)}
+.shell{background:linear-gradient(180deg,#788E7C 0%,#6D8372 100%);padding-left:14px;padding-right:14px}
+.page-title{color:#F6EFE4}.topbar{color:#F6EFE4}.topbar .page-title{color:#F6EFE4}
+.card,.compact-card,.today-goal-card,.today-progress-card,.change-goal-card,.settings-list,.day-summary{background:var(--cream);border-color:rgba(52,72,60,.14);box-shadow:0 7px 20px rgba(35,51,41,.08)}
+.card.soft,.card.blue-soft,.insight{background:var(--cream-2)}
+.insight.priority,.today-reminder{background:var(--dusty-pink-soft);border-color:rgba(169,98,110,.18)}
+.today-reminder{border-radius:16px}.reminder-label{color:#86545D}.reminder-copy{color:#493A3D}
+.today-goal-line,.progress,.bar{background:rgba(64,88,74,.14)}.today-goal-line i,.progress i,.bar i{background:linear-gradient(90deg,var(--forest-deep),var(--dusty-pink))}
+.today-summary-grid{grid-template-columns:repeat(3,1fr)}
+.summary-tile.green,.summary-tile.green-soft{background:#D9D3C5}.summary-tile.pink{background:#DFC0C4}
+.today-progress-card{background:var(--cream)}.goal-ring{background:conic-gradient(var(--dusty-pink) calc(var(--p)*1%),rgba(64,88,74,.13) 0)}.goal-ring:after{background:var(--cream)}
+.today-edit-button{background:#DDD3C3;border-color:rgba(64,88,74,.16);color:#3D5145}
+.nav{background:rgba(64,88,74,.97);border-top-color:rgba(244,235,221,.12)}.nav button{color:#D8E0D9}.nav button.active{color:#F1C8CE}.nav svg{stroke:currentColor}
+.month-btn{background:var(--cream);color:var(--forest-deep);border-color:rgba(64,88,74,.16)}.day-cell{color:#F2EBDD}.day-cell.out{opacity:.38}.day-cell.selected{background:rgba(239,230,215,.18)}.day-cell.today .day-number{background:var(--dusty-pink);color:#fff}
+.weekdays,.calendar-title{color:#F2EBDD}.legend{color:#E4E8E3}.dot.food{background:#F1E8DB}.dot.move{background:var(--dusty-pink)}.dot.move-outline{border-color:var(--dusty-pink)}.dot.event{background:#B9C4BA}
+.settings-list{background:var(--cream)}.setting-row{border-bottom-color:rgba(64,88,74,.12)}
+input,select,textarea{background:var(--cream-2);border-color:rgba(64,88,74,.16);color:var(--ink)}
+input:focus,select:focus,textarea:focus{border-color:rgba(169,98,110,.5);box-shadow:0 0 0 3px rgba(196,130,140,.12)}
+.pill{background:var(--cream-2);border-color:rgba(64,88,74,.14);color:var(--forest-deep)}.pill.on{background:var(--forest-deep);color:#fff;border-color:var(--forest-deep)}
+.btn,.btn.sky{background:var(--forest-deep)}.btn.secondary{background:var(--cream-deep);color:var(--forest-deep)}
+.status.active{background:#E6C8CD;color:#744A53}.status.done{background:#C7D2C8;color:#355442}.status.close{background:#E8D0D4;color:#7B5058}.status.ended{background:#DDD7CB;color:#66665F}
+.event-chip{background:#DED6C9;border-color:rgba(64,88,74,.14);color:#526057}.event-chip.on,.rule-exception{background:#DFC3C7;border-color:rgba(169,98,110,.24);color:#724B54}
+.plan-mode,.range-tabs{background:#D7CEBF}.plan-mode button.on,.range-tabs button.on{background:var(--forest-deep);color:#fff}
+.tooltip{background:var(--cream);border-color:rgba(64,88,74,.14)}
+.change-goal-card{background:var(--cream)}.forecast-card.green{background:#D8D2C4}.forecast-card.pink{background:#E0BFC4}.forecast-insight{background:var(--cream-2)}
+.chart .grid{stroke:rgba(64,88,74,.14)}.chart .axis{stroke:rgba(64,88,74,.42)}.chart .tick{stroke:rgba(64,88,74,.58)}.chart .actual{stroke:var(--forest-deep)}.chart .smooth{stroke:#74897A}.chart .forecast{stroke:var(--dusty-pink-deep)}.chart .point{fill:var(--forest-deep);stroke:var(--cream)}
+
+/* instant morning-weight entry */
+.quick-weight-card{width:100%;border:0;background:var(--cream);border-radius:17px;padding:13px 15px;margin:9px 0;display:flex;align-items:center;justify-content:space-between;text-align:left;color:var(--ink);box-shadow:0 7px 20px rgba(35,51,41,.07)}
+.quick-weight-card.empty-weight{background:#E7D5D2}.quick-weight-label{font-size:10px;color:var(--muted);margin-bottom:3px}.quick-weight-value{font-size:24px;font-weight:770;letter-spacing:-.3px}.quick-weight-value span{font-size:12px;font-weight:550}.quick-weight-action{font-size:12px;color:var(--dusty-pink-deep);font-weight:720}
+.modal-backdrop{position:fixed;inset:0;background:rgba(24,34,28,.42);z-index:100;display:flex;align-items:flex-end;justify-content:center;padding:18px 12px calc(env(safe-area-inset-bottom) + 12px);backdrop-filter:blur(4px)}
+.weight-modal{width:min(456px,100%);background:var(--cream);border-radius:24px;padding:10px 18px 16px;box-shadow:0 24px 60px rgba(20,30,24,.24)}.weight-modal-handle{width:42px;height:4px;border-radius:99px;background:rgba(64,88,74,.24);margin:0 auto 14px}.weight-modal-title{font-size:20px;font-weight:760;text-align:center}.weight-modal-sub{text-align:center;font-size:11px;color:var(--muted);margin-top:4px}.weight-input-wrap{display:flex;align-items:center;gap:8px;background:var(--cream-2);border:1px solid rgba(64,88,74,.15);border-radius:18px;padding:8px 14px;margin:18px 0 12px}.weight-input-wrap input{border:0;background:transparent;padding:4px 0;text-align:center;font-size:42px;font-weight:760;box-shadow:none}.weight-input-wrap input:focus{box-shadow:none;border:0}.weight-input-wrap span{font-size:15px;color:var(--muted)}.weight-save{width:100%;border:0;border-radius:15px;background:var(--dusty-pink);color:#fff;padding:13px;font-size:15px;font-weight:760}.weight-cancel{width:100%;border:0;background:transparent;color:var(--muted);padding:12px 10px 4px;font-size:13px}
+@media(min-width:700px){body{background:#5E7463}.shell{box-shadow:0 0 42px rgba(24,39,29,.18)}}

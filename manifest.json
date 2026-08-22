@@ -3,8 +3,8 @@
   "short_name": "Tide",
   "start_url": "./",
   "display": "standalone",
-  "background_color": "#7F9686",
-  "theme_color": "#8F5D69",
+  "background_color": "#708675",
+  "theme_color": "#40584A",
   "lang": "zh-CN",
   "icons": [
     {
