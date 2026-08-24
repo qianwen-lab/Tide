@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'tide.v1';
-const VERSION = '7.8.0';
+const VERSION = '7.9.0';
 const SCHEMA_VERSION = 10;
 
 const COLORS = { sage:'#5E836F', sageDeep:'#244C3E', pink:'#C98994', pinkSoft:'#EBCFD4', blue:'#8C918D', ink:'#1F2823' };
@@ -222,6 +222,14 @@ function topbar(title, kicker='', actions=''){
 }
 function flashHtml(){ if(!flash)return ''; const s=flash; flash=''; return `<div class="insight" style="margin-bottom:10px">${escapeHtml(s)}</div>`; }
 
+function todayGoalLearning(){
+  const r=latestReview(db.goal);
+  if(!r) return '';
+  const preview=String(r.preview||r.summary||'').trim();
+  if(!preview) return '';
+  return `<section class="today-learning-card"><div class="row between"><div class="today-learning-label">Goal learning</div><div class="small">${fmtShortDate(r.date)}${r.day?` · Day ${r.day}`:''}</div></div><div class="today-learning-copy">${escapeHtml(preview)}</div><button class="review-inline-link" data-review-goal="${escapeHtml(db.goal.id)}">View review →</button></section>`;
+}
+
 function todayPage(){
   const d=day(today()), lw=latestWeight(today());
   const startW=activeGoalStartWeight(), current=lw?.weight??startW, progress=goalProgress(current), dayNum=dayIndexInGoal(today()), total=goalDuration();
@@ -241,6 +249,7 @@ function todayPage(){
     <div><div class="quick-weight-label">Morning weight</div><div class="quick-weight-value">${d.weight==null?'Log morning weight':`${fmt(d.weight)} <span>kg</span>`}</div></div>
     <div class="quick-weight-action">${d.weight==null?'Log now':'Edit'} ›</div>
   </button>
+  ${todayGoalLearning()}
   <section class="today-reminder"><div class="reminder-label">Today's note</div><div class="reminder-copy">${dynamicInsight()}</div></section>
   <section class="today-summary-grid">
     <button class="summary-tile green" data-action="editToday"><div class="summary-label">Food</div><div class="summary-value">${foodDone?'On plan':food.recorded?'In progress':'Not logged'}</div><span class="summary-dot ${foodDone?'done':''}"></span></button>
