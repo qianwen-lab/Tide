@@ -1,6 +1,6 @@
 const STORAGE_KEY = 'tide.v1';
-const VERSION = '7.7.0';
-const SCHEMA_VERSION = 9;
+const VERSION = '7.8.0';
+const SCHEMA_VERSION = 10;
 
 const COLORS = { sage:'#5E836F', sageDeep:'#244C3E', pink:'#C98994', pinkSoft:'#EBCFD4', blue:'#8C918D', ink:'#1F2823' };
 const iso = d => {
@@ -35,12 +35,13 @@ function normalizeCheckpoint(r={}, goalStart=''){
   if(r.nextExperiment && !next.includes(String(r.nextExperiment).trim())) next.push(String(r.nextExperiment).trim());
   const date=String(r.date||r.reviewedAt||r.updatedAt||today()).slice(0,10);
   const dayNum=goalStart ? Math.max(1,Math.floor((parseDate(date)-parseDate(goalStart))/86400000)+1) : (r.day??null);
-  return {id:r.id||`review-${date}-${Math.random().toString(36).slice(2,8)}`,date,day:r.day??dayNum,summary:String(r.summary||'').trim(),learnings:asList(r.learnings),next,createdAt:r.createdAt||r.updatedAt||new Date().toISOString()};
+  const preview=String(r.preview||r.overview||r.takeaway||'').trim();
+  return {id:r.id||`review-${date}-${Math.random().toString(36).slice(2,8)}`,date,day:r.day??dayNum,preview,summary:String(r.summary||'').trim(),learnings:asList(r.learnings),next,createdAt:r.createdAt||r.updatedAt||new Date().toISOString()};
 }
 function normalizeReviews(g={}){
   let rows=Array.isArray(g.reviews)?g.reviews.map(r=>normalizeCheckpoint(r,g.start)):[];
   if(!rows.length && hasLegacyReview(g.review)) rows=[normalizeCheckpoint(g.review,g.start)];
-  return rows.filter(r=>r.summary||r.learnings.length||r.next.length).sort((a,b)=>String(a.createdAt||a.date).localeCompare(String(b.createdAt||b.date)));
+  return rows.filter(r=>r.preview||r.summary||r.learnings.length||r.next.length).sort((a,b)=>String(a.createdAt||a.date).localeCompare(String(b.createdAt||b.date)));
 }
 function latestReview(g){ const rows=normalizeReviews(g); return rows.length?rows[rows.length-1]:null; }
 const stableGoalId = (g={}, suffix='') => g.id || `goal-${g.start||'na'}-${g.end||'na'}-${String(g.name||'goal').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')}${suffix}`;
@@ -526,9 +527,9 @@ function reviewCarryCard(){
 }
 function activeGoalLearning(){
   const r=latestReview(db.goal); if(!r) return '';
-  const learning=r.learnings[0]||r.summary||'', next=r.next[0]||'';
-  if(!learning&&!next) return '';
-  return `<div class="active-learning"><div class="row between"><b>Latest learning</b><span class="small">${fmtShortDate(r.date)}${r.day?` · Day ${r.day}`:''}</span></div>${learning?`<div class="active-learning-text">${escapeHtml(learning)}</div>`:''}${next?`<div class="active-next"><span>Next</span>${escapeHtml(next)}</div>`:''}</div>`;
+  const preview=r.preview||r.summary||r.learnings.join(' · ');
+  if(!preview) return '';
+  return `<div class="active-learning"><div class="row between"><b>Latest review</b><span class="small">${fmtShortDate(r.date)}${r.day?` · Day ${r.day}`:''}</span></div><div class="active-learning-text">${escapeHtml(preview)}</div><button class="review-inline-link" data-review-goal="${escapeHtml(db.goal.id)}">View full review →</button></div>`;
 }
 
 function goalsPage(){
@@ -601,7 +602,7 @@ function goalReviewPack(g){
   const endWeight=active ? latestWeight(through)?.weight??null : g.endWeight??null;
   const startWeight=active ? activeGoalStartWeight() : +g.startWeight;
   return {
-    tideGoalReviewVersion:2,
+    tideGoalReviewVersion:3,
     goalId:g.id,
     exportedAt:new Date().toISOString(),
     goal:{name:g.name,start:g.start,end:g.end,startWeight,targetWeight:+g.target,currentOrEndWeight:endWeight,status:active?'active':goalStatus(g,endWeight)},
@@ -610,8 +611,8 @@ function goalReviewPack(g){
     summary:{daysCovered:records.length,weightChange:endWeight==null?null:+(endWeight-startWeight).toFixed(2),targetChange:+(+g.target-startWeight).toFixed(2)},
     reviewHistory:normalizeReviews(g),
     daily:records,
-    recommendedPrompt:'Review this Tide goal briefly and practically. Focus on the most useful patterns, including lagged/multi-day patterns rather than blaming a morning weight on an event from the same day. Keep it concise. Reply directly in chat with ONE JSON code block that I can copy and paste into Tide; do not create a downloadable file. Use goalId, summary, learnings (1-3 short items), and next (1-3 specific actions). You may add extra concise fields if something important stands out; Tide will ignore fields it does not use.',
-    chatgptReturnExample:{goalId:g.id,summary:'1-3 concise sentences',learnings:['short learning 1','short learning 2'],next:['specific next action 1','specific next action 2']}
+    recommendedPrompt:'Review this Tide goal briefly and practically. Look for useful patterns and lagged/multi-day effects; do not blame a morning weight on an event from the same day. Reply directly in chat with ONE JSON code block that I can copy into Tide; do not create a download. Return TWO layers: preview = a 1-2 sentence synthesis of the whole review for the Goals screen (not just the first learning), and review = the fuller details with summary, 1-3 learnings, and 1-3 specific next actions. Keep everything concise. You may add one short extra field inside review if something important stands out.',
+    chatgptReturnExample:{goalId:g.id,preview:'1-2 sentence overall takeaway that synthesizes the full review',review:{summary:'brief overall assessment',learnings:['short learning 1','short learning 2'],next:['specific next action 1','specific next action 2']}}
   };
 }
 function downloadJSON(obj,name){
@@ -623,7 +624,7 @@ function exportGoalReviewData(g){
   downloadJSON(goalReviewPack(g),`tide-goal-${String(g.name||'goal').toLowerCase().replace(/[^a-z0-9]+/g,'-')}-${g.start}.json`);
 }
 function checkpointHtml(r){
-  return `<div class="checkpoint"><div class="row between"><b>${fmtShortDate(r.date)}</b><span class="small">${r.day?`Day ${r.day}`:''}</span></div>${r.summary?`<p>${escapeHtml(r.summary)}</p>`:''}${r.learnings.length?`<div class="checkpoint-block"><span>Learnings</span><ul>${r.learnings.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`:''}${r.next.length?`<div class="checkpoint-block"><span>Next</span><ul>${r.next.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`:''}</div>`;
+  return `<div class="checkpoint"><div class="row between"><b>${fmtShortDate(r.date)}</b><span class="small">${r.day?`Day ${r.day}`:''}</span></div>${r.preview?`<div class="checkpoint-preview"><span>Preview</span><p>${escapeHtml(r.preview)}</p></div>`:''}${r.summary?`<div class="checkpoint-block"><span>Summary</span><p>${escapeHtml(r.summary)}</p></div>`:''}${r.learnings.length?`<div class="checkpoint-block"><span>Learnings</span><ul>${r.learnings.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`:''}${r.next.length?`<div class="checkpoint-block"><span>Next</span><ul>${r.next.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`:''}</div>`;
 }
 function goalReviewPage(){
   const g=findGoalById(reviewGoalId); if(!g) return `${topbar('Goal Review','',`<button class="btn ghost" data-action="backGoals">Done</button>`)}<div class="empty">Goal not found.</div>`;
@@ -634,8 +635,8 @@ function goalReviewPage(){
   return `${topbar('Goal Review','',`<button class="btn ghost" data-action="backGoals">Done</button>`)}
     ${flashHtml()}
     <section class="card soft review-summary"><div class="row between"><div><b>${escapeHtml(g.name)}</b><div class="small">${fmtShortDate(g.start)} → ${fmtShortDate(active?g.end:(g.ended||g.end))}</div></div><span class="status ${active?'active':goalStatus(g,end)==='reached'?'done':goalStatus(g,end)==='close'?'close':'ended'}">${status}</span></div><div class="review-metrics"><div><span>Start</span><b>${fmt(start)} kg</b></div><div><span>${active?'Current':'End'}</span><b>${fmt(end)} kg</b></div><div><span>Target</span><b>${fmt(g.target)} kg</b></div></div></section>
-    <section class="card"><div class="actual-label">ChatGPT check-in</div><p class="small review-copy"><b>1.</b> Export goal data and upload it to ChatGPT. <b>2.</b> Ask ChatGPT to follow the prompt inside the file. <b>3.</b> Copy its JSON code block and paste it here.</p><div class="review-actions"><button class="btn secondary" data-action="exportReviewGoal">Export Goal Data</button></div><label class="review-paste-label">Paste review<textarea id="reviewPaste" rows="6" placeholder='{"summary":"...","learnings":["..."],"next":["..."]}'>${escapeHtml(draft?.rawText||'')}</textarea></label><button class="btn secondary full" data-action="previewGoalReview">Preview review</button></section>
-    ${draft?`<section class="card review-preview"><div class="row between"><div class="actual-label" style="margin:0">Ready to save</div><span class="small">Review the result first</span></div>${draft.checkpoint.summary?`<p>${escapeHtml(draft.checkpoint.summary)}</p>`:''}${draft.checkpoint.learnings.length?`<div class="checkpoint-block"><span>Learnings</span><ul>${draft.checkpoint.learnings.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`:''}${draft.checkpoint.next.length?`<div class="checkpoint-block"><span>Next</span><ul>${draft.checkpoint.next.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`:''}<button class="btn sky full review-save-final" data-action="saveGoalReviewDraft">Save Review</button></section>`:''}
+    <section class="card"><div class="actual-label">ChatGPT check-in</div><p class="small review-copy"><b>1.</b> Export goal data and upload it to ChatGPT. <b>2.</b> Ask ChatGPT to follow the prompt inside the file. <b>3.</b> Copy its JSON code block and paste it here.</p><div class="review-actions"><button class="btn secondary" data-action="exportReviewGoal">Export Goal Data</button></div><label class="review-paste-label">Paste review<textarea id="reviewPaste" rows="7" placeholder='{"preview":"...","review":{"summary":"...","learnings":["..."],"next":["..."]}}'>${escapeHtml(draft?.rawText||'')}</textarea></label><button class="btn secondary full" data-action="previewGoalReview">Preview review</button></section>
+    ${draft?`<section class="card review-preview"><div class="row between"><div class="actual-label" style="margin:0">Ready to save</div><span class="small">Review the result first</span></div>${draft.checkpoint.preview?`<div class="draft-preview-summary"><span>Goals preview</span><p>${escapeHtml(draft.checkpoint.preview)}</p></div>`:''}<div class="full-review-label">Full review</div>${draft.checkpoint.summary?`<div class="checkpoint-block"><span>Summary</span><p>${escapeHtml(draft.checkpoint.summary)}</p></div>`:''}${draft.checkpoint.learnings.length?`<div class="checkpoint-block"><span>Learnings</span><ul>${draft.checkpoint.learnings.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`:''}${draft.checkpoint.next.length?`<div class="checkpoint-block"><span>Next</span><ul>${draft.checkpoint.next.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`:''}<button class="btn sky full review-save-final" data-action="saveGoalReviewDraft">Save Review</button></section>`:''}
     <div class="section-title">Review history</div>
     <section class="card review-history">${rows.length?rows.map(checkpointHtml).join(''):'<div class="empty">No check-ins yet.</div>'}</section>
     <button class="btn ghost full" data-action="backGoals">Back to Goals</button>`;
@@ -646,12 +647,13 @@ function parseReviewJSON(text){
   return JSON.parse(cleaned);
 }
 function makeCheckpoint(raw,g){
-  const root=raw?.review||raw||{};
+  const root=raw?.review||raw?.fullReview||raw?.details||raw||{};
+  const preview=String(raw?.preview||root.preview||raw?.overview||raw?.takeaway||'').trim();
   const summary=String(root.summary||'').trim(), learnings=asList(root.learnings), next=asList(root.next??root.actionItems);
   if(root.nextExperiment && !next.includes(String(root.nextExperiment).trim())) next.push(String(root.nextExperiment).trim());
-  if(!summary && !learnings.length && !next.length) throw new Error('Empty review');
+  if(!preview && !summary && !learnings.length && !next.length) throw new Error('Empty review');
   const date=today();
-  return {id:`review-${date}-${Date.now().toString(36)}`,date,day:Math.max(1,Math.floor((parseDate(date)-parseDate(g.start))/86400000)+1),summary,learnings:learnings.slice(0,5),next:next.slice(0,5),createdAt:new Date().toISOString()};
+  return {id:`review-${date}-${Date.now().toString(36)}`,date,day:Math.max(1,Math.floor((parseDate(date)-parseDate(g.start))/86400000)+1),preview,summary,learnings:learnings.slice(0,5),next:next.slice(0,5),createdAt:new Date().toISOString()};
 }
 function addGoalCheckpoint(g,raw){
   if(!g) throw new Error('Goal not found');
