@@ -462,3 +462,19 @@ input:focus,select:focus,textarea:focus{border-color:var(--lab-mid);box-shadow:0
 .forecast-line{border-top:2px dashed var(--lab-deep)!important}
 .chart .guide{stroke:rgba(48,74,59,.36);stroke-width:1;stroke-dasharray:3 4}
 .tooltip{justify-content:flex-start!important;gap:7px!important;align-items:baseline}.tooltip span{white-space:nowrap}
+
+/* V7.7 — one clean projection curve + review preview */
+.chart .forecast{stroke:var(--lab-pink);stroke-width:1.45;stroke-dasharray:none;stroke-linecap:round;stroke-linejoin:round;fill:none}
+.chart .actual{stroke-width:1.55;opacity:.88}
+.chart .point{r:2px;stroke-width:.8}
+.forecast-line{border-top:1.5px solid var(--lab-pink)!important}
+.average-line{display:none!important}
+.tooltip .tip-average{display:none!important}
+.compact-forecast{gap:8px;margin:7px 0}
+.compact-forecast .forecast-card{min-height:0;padding:8px 11px;border-radius:13px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.compact-forecast .forecast-card .small{font-size:11px;margin:0;white-space:nowrap}
+.compact-forecast .forecast-value,.compact-forecast .forecast-text{font-size:17px;line-height:1.1;margin:0;font-weight:740;white-space:nowrap}
+.compact-forecast .forecast-value span{font-size:10px}
+.review-preview{border:1px solid rgba(36,76,62,.12)}
+.review-preview>p{font-size:13px;line-height:1.5;margin:10px 0}
+.review-save-final{margin-top:14px}

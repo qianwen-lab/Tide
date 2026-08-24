@@ -1,12 +1,13 @@
-# Tide PWA V7.6
+# Tide PWA V7.7
 
-Goal review and Progress-chart refinements.
+Progress and Goal Review refinements.
 
-- Goal Review is copy/paste-first: export Tide goal data, upload to ChatGPT, then paste the returned JSON code block.
-- Review has Done / Back controls and returns to Goals after saving.
-- Active Goals show the latest Learning and Next action directly on the Goals page.
-- Progress adds a movable vertical guide line for the selected weight point.
-- Weight dots are smaller and the tooltip is tighter.
-- Forecast is explicitly derived from the recent 7-calendar-day-average trend and starts exactly at the last visible 7-day-average point.
-- Historical 7-day average is solid; forecast is its dashed continuation.
+- Progress shows Weight, Target, and one thin pink Forecast trajectory.
+- The visible 7-day-average line and tooltip value are removed.
+- Internally, a calendar-based 7-day smoothing is still used to estimate the current trend and recent pace.
+- The pink trajectory is back-traced to the Goal start weight, joins the current smoothed state, then projects forward with a gradually damped pace.
+- A vertical guide line aligns selected weight points with the date axis.
+- Forecast summary cards are more compact.
+- Goal Review is two-step: paste JSON and Preview Review first; history stays visible; only final Save Review commits the checkpoint and returns to Goals.
+- Active Goals continue to show the latest Learning and Next action directly on the Goals page.
 - Same `tide.v1` local data store; no reset.

@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'tide.v1';
-const VERSION = '7.6.0';
+const VERSION = '7.7.0';
 const SCHEMA_VERSION = 9;
 
 const COLORS = { sage:'#5E836F', sageDeep:'#244C3E', pink:'#C98994', pinkSoft:'#EBCFD4', blue:'#8C918D', ink:'#1F2823' };
@@ -64,6 +64,7 @@ let range = '30';
 let flash = '';
 let quickWeightOpen = false;
 let reviewGoalId = null;
+let reviewDraft = null;
 
 function fresh(){ return JSON.parse(JSON.stringify(defaults)); }
 function mergeDay(x={}){
@@ -187,7 +188,7 @@ function dynamicInsight(){
     pool.push("The scale jumped. Your plan doesn't need to.","One noisy weigh-in is not a new trend. Stay with the plan.");
   }
   if(a!=null && ay!=null && a<ay-.05){
-    pool.push("It's moving down. Don't eat the progress back.","Your 7-day average is falling. Keep doing the boring things that work.");
+    pool.push("It's moving down. Don't eat the progress back.","Your trend is moving down. Keep doing the boring things that work.");
   }
   if(events){
     pool.push("Real life is allowed. Turning one event into a whole-day free-for-all is optional.","Eating out is a plan change, not a plan collapse.");
@@ -342,15 +343,21 @@ function goalForecast(){
   const records=latestWeights(db.goal.end).filter(x=>x.date>=db.goal.start && x.date<=today());
   if(records.length<4) return {ready:false,reason:'Log at least 4 weights before forecasting begins.'};
 
-  // Build the historical trend exactly from the same 7-day-average series shown on the chart.
-  const trend=records.map(r=>({date:r.date,value:goalMovingAverage(r.date)??+r.weight}));
+  // INTERNAL smoothing only: use a calendar-based 7-day mean so one noisy weigh-in does not drive the projection.
+  // It is no longer shown as a separate chart line.
+  let trend=records.map(r=>({date:r.date,value:goalMovingAverage(r.date)??+r.weight}));
+  if(trend[0].date>db.goal.start){
+    trend.unshift({date:db.goal.start,value:activeGoalStartWeight()});
+  } else if(trend[0].date===db.goal.start){
+    trend[0].value=activeGoalStartWeight();
+  }
   const last=trend[trend.length-1];
+
+  // Estimate the CURRENT pace from the recent smoothed trajectory, not raw daily weight.
   const recentStart=addDays(last.date,-14);
   let usable=trend.filter(r=>r.date>=recentStart);
   if(usable.length<4) usable=trend.slice(-8);
   if(usable.length<4) return {ready:false,reason:'The data window is still too short. Keep logging for a few more days.'};
-
-  // Regress the recent 7-day averages against actual calendar days.
   const x0=parseDate(usable[0].date);
   const xs=usable.map(r=>(parseDate(r.date)-x0)/86400000);
   const ys=usable.map(r=>+r.value);
@@ -359,12 +366,25 @@ function goalForecast(){
   let slope=xs.reduce((a,x,i)=>a+(x-mx)*(ys[i]-my),0)/denom;
   slope=clamp(slope,-0.18,0.10);
 
-  // Forecast starts at the LAST VISIBLE 7-day-average point, then lets the recent pace fade gradually.
+  // Future projection is anchored to today's smoothed trajectory and lets the current pace fade over time.
+  // This prevents an unrealistically straight, indefinitely fast weight-loss line.
   const current=+last.value;
+  const startValue=activeGoalStartWeight();
+  const elapsed=Math.max(1,Math.round((parseDate(last.date)-parseDate(db.goal.start))/86400000));
+  const overallSlope=(current-startValue)/elapsed;
   const daysToEnd=Math.max(0,Math.round((parseDate(db.goal.end)-parseDate(last.date))/86400000));
   const damping=0.035;
   const forecastValue=(days)=>current + slope*(1-Math.exp(-damping*Math.max(0,days)))/damping;
   const projectedEnd=forecastValue(daysToEnd);
+
+  // Back-trace for the DISPLAYED pink trajectory: a cubic Hermite curve anchored to the
+  // actual goal-start weight and today's smoothed state, with today's recent slope as the end tangent.
+  // This makes the past and future one continuous arc without exposing the 7-day-average line itself.
+  const backcastValue=(daysFromStart)=>{
+    const u=clamp(daysFromStart/elapsed,0,1), u2=u*u, u3=u2*u;
+    const h00=2*u3-3*u2+1, h10=u3-2*u2+u, h01=-2*u3+3*u2, h11=u3-u2;
+    return h00*startValue + h10*elapsed*overallSlope + h01*current + h11*elapsed*slope;
+  };
 
   let targetDate=null, deltaDays=null;
   if(current<=+db.goal.target){
@@ -375,7 +395,7 @@ function goalForecast(){
     }
   }
   if(targetDate) deltaDays=Math.round((parseDate(targetDate)-parseDate(db.goal.end))/86400000);
-  return {ready:true,slope,current,lastDate:last.date,projectedEnd,targetDate,deltaDays,damping,forecastValue,trendWindowStart:usable[0].date,trendPoints:usable.length};
+  return {ready:true,slope,current,startValue,elapsed,lastDate:last.date,projectedEnd,targetDate,deltaDays,damping,forecastValue,backcastValue,trendWindowStart:usable[0].date,trendPoints:usable.length};
 }
 function forecastMessage(f){
   if(!f.ready) return f.reason;
@@ -390,17 +410,17 @@ function forecastMessage(f){
 
 function changePage(){
   const series=chartData();
-  const ma=movingAverage(today()); const lw=latestWeight(today()); const f=goalForecast();
-  const desc=lw?`${tr('actualWeight')} ${fmt(lw.weight)} kg · ${tr('sevenAvg')} ${fmt(ma)} kg`:tr('noRecord');
+  const lw=latestWeight(today()); const f=goalForecast();
+  const desc=lw?`${tr('actualWeight')} ${fmt(lw.weight)} kg`:tr('noRecord');
   const w=weekStats();
   return `${topbar(tr('weightChange'))}
     <section class="card change-goal-card">
       <div class="row between"><div><b>${escapeHtml(db.goal.name)}</b><div class="small">${fmtDate(db.goal.start)} → ${fmtDate(db.goal.end)}</div></div><div class="small">${tr('goalLine')} ${fmt(db.goal.target)} kg</div></div>
       <div class="small" style="margin-top:8px">${desc}</div>
-      <div class="legend" style="justify-content:flex-start;margin-top:13px"><span><span class="legend-line actual-line"></span>${tr('actualWeight')}</span><span><span class="legend-line average-line"></span>${tr('sevenAvg')}</span><span><span class="legend-line goal-line"></span>${tr('goalLine')}</span><span><span class="legend-line forecast-line"></span>Forecast</span></div>
+      <div class="legend" style="justify-content:flex-start;margin-top:13px"><span><span class="legend-line actual-line"></span>${tr('actualWeight')}</span><span><span class="legend-line goal-line"></span>${tr('goalLine')}</span><span><span class="legend-line forecast-line"></span>Forecast</span></div>
       <div class="chart-wrap">${renderChart(series,f)}</div>
     </section>
-    <section class="forecast-grid">
+    <section class="forecast-grid compact-forecast">
       <div class="forecast-card pink"><div class="small">By ${fmtDate(db.goal.end,'en')}</div><div class="forecast-value">${f.ready?fmt(f.projectedEnd):'—'} <span>kg</span></div></div>
       <div class="forecast-card green"><div class="small">Reach ${fmt(db.goal.target)}</div><div class="forecast-text">${f.ready&&f.targetDate?fmtDate(f.targetDate,'en'):'Keep logging'}</div></div>
     </section>
@@ -414,12 +434,30 @@ function chartData(){
   // Change is a goal-centric view: existing data begins at goal start and the chart always ends at goal end.
   return latestWeights(db.goal.end).filter(x=>x.date>=db.goal.start && x.date<=today()).map(x=>({date:x.date,weight:+x.weight,avg:goalMovingAverage(x.date)}));
 }
+function smoothSvgPath(points){
+  if(!points.length) return '';
+  if(points.length===1) return `M ${points[0][0].toFixed(1)} ${points[0][1].toFixed(1)}`;
+  if(points.length===2) return `M ${points[0][0].toFixed(1)} ${points[0][1].toFixed(1)} L ${points[1][0].toFixed(1)} ${points[1][1].toFixed(1)}`;
+  let d=`M ${points[0][0].toFixed(1)} ${points[0][1].toFixed(1)}`;
+  const tension=.16;
+  for(let i=0;i<points.length-1;i++){
+    const p0=points[Math.max(0,i-1)],p1=points[i],p2=points[i+1],p3=points[Math.min(points.length-1,i+2)];
+    const c1=[p1[0]+(p2[0]-p0[0])*tension,p1[1]+(p2[1]-p0[1])*tension];
+    const c2=[p2[0]-(p3[0]-p1[0])*tension,p2[1]-(p3[1]-p1[1])*tension];
+    d+=` C ${c1[0].toFixed(1)} ${c1[1].toFixed(1)}, ${c2[0].toFixed(1)} ${c2[1].toFixed(1)}, ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;
+  }
+  return d;
+}
 function renderChart(data,forecast){
   if(data.length<2) return `<div class="empty">Log at least two weights to see the chart.</div>`;
   const W=340,H=238,L=48,R=12,Tp=25,B=37;
   const last=data[data.length-1], lastDate=last.date;
-  const vals=data.flatMap(d=>[d.weight,d.avg]).filter(v=>v!=null); vals.push(+db.goal.target);
-  if(forecast?.ready) vals.push(forecast.projectedEnd);
+  const vals=data.map(d=>d.weight).filter(v=>v!=null); vals.push(+db.goal.target);
+  if(forecast?.ready){
+    vals.push(forecast.projectedEnd);
+    const pastSamples=Math.min(20,Math.max(6,forecast.elapsed+1));
+    for(let i=0;i<pastSamples;i++) vals.push(forecast.backcastValue(forecast.elapsed*i/(pastSamples-1)));
+  }
   let min=Math.floor(Math.min(...vals)-.35), max=Math.ceil(Math.max(...vals)+.35); if(max-min<3){min-=1;max+=1;}
   const span=max-min, tickStep=span<=6?1:2;
   const startD=parseDate(db.goal.start), endD=parseDate(db.goal.end), totalDays=Math.max(1,(endD-startD)/86400000);
@@ -430,30 +468,34 @@ function renderChart(data,forecast){
   const labelCount=Math.min(7,Math.max(5,Math.ceil(totalDays/6)+1));
   const xDates=[]; for(let i=0;i<labelCount;i++){const off=Math.round(totalDays*i/(labelCount-1));const ds=addDays(db.goal.start,off);if(!xDates.includes(ds))xDates.push(ds);}
   const xLabels=xDates.map((s,i)=>`<text x="${xDate(s)}" y="${H-9}" text-anchor="${i===0?'start':i===xDates.length-1?'end':'middle'}">${fmtShortDate(s)}</text>`).join('');
-  const path=k=>data.map((d,i)=>`${i?'L':'M'} ${xDate(d.date).toFixed(1)} ${y(d[k]).toFixed(1)}`).join(' ');
+  const actualPath=data.map((d,i)=>`${i?'L':'M'} ${xDate(d.date).toFixed(1)} ${y(d.weight).toFixed(1)}`).join(' ');
   const goalY=y(+db.goal.target);
-  const points=data.map((d,i)=>`<circle class="point" data-chart-index="${i}" cx="${xDate(d.date)}" cy="${y(d.weight)}" r="2.25"></circle>`).join('');
+  const points=data.map((d,i)=>`<circle class="point" data-chart-index="${i}" cx="${xDate(d.date)}" cy="${y(d.weight)}" r="2"></circle>`).join('');
 
-  const guideX=xDate(lastDate);
-  let forecastPath='', forecastAnchor='';
-  if(forecast?.ready && lastDate<db.goal.end){
-    const anchor=last.avg??goalMovingAverage(lastDate)??last.weight;
-    const horizon=Math.max(1,Math.round((parseDate(db.goal.end)-parseDate(lastDate))/86400000));
-    const count=Math.min(18,horizon), samples=[];
-    for(let i=0;i<=count;i++){
-      const dayOffset=Math.round(horizon*i/count), date=addDays(lastDate,dayOffset);
-      const value=i===0?anchor:forecast.forecastValue(dayOffset);
-      samples.push([xDate(date),y(value)]);
+  // One pink trajectory from goal start through today and on to goal end.
+  // Historical section uses the internal smoothed trend; future section uses the damped projection.
+  let projectionPath='';
+  if(forecast?.ready){
+    const trajectory=[];
+    const anchorDate=forecast.lastDate;
+    const pastCount=Math.min(20,Math.max(6,forecast.elapsed+1));
+    for(let i=0;i<pastCount;i++){
+      const d=Math.round(forecast.elapsed*i/(pastCount-1));
+      trajectory.push({date:addDays(db.goal.start,d),value:forecast.backcastValue(d)});
     }
-    const dPath=samples.map((pt,i)=>`${i?'L':'M'} ${pt[0].toFixed(1)} ${pt[1].toFixed(1)}`).join(' ');
-    forecastPath=`<path class="forecast" d="${dPath}"/>`;
-    forecastAnchor=`<circle class="forecast-anchor" cx="${xDate(lastDate)}" cy="${y(anchor)}" r="3"></circle>`;
+    const horizon=Math.max(0,Math.round((parseDate(db.goal.end)-parseDate(anchorDate))/86400000));
+    const step=Math.max(1,Math.round(horizon/14));
+    for(let d=step;d<=horizon;d+=step) trajectory.push({date:addDays(anchorDate,d),value:forecast.forecastValue(d)});
+    if(horizon>0 && trajectory[trajectory.length-1]?.date!==db.goal.end) trajectory.push({date:db.goal.end,value:forecast.projectedEnd});
+    const pts=trajectory.filter((p,i,a)=>i===0||p.date!==a[i-1].date).map(p=>[xDate(p.date),y(p.value)]);
+    projectionPath=`<path class="forecast" d="${smoothSvgPath(pts)}"/>`;
   }
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Current goal weight chart"><text x="4" y="13" class="axis-unit">kg</text>${grid}<line class="axis" x1="${L}" y1="${Tp}" x2="${L}" y2="${H-B}"/><line class="axis" x1="${L}" y1="${H-B}" x2="${W-R}" y2="${H-B}"/><line class="goal" x1="${L}" y1="${goalY}" x2="${W-R}" y2="${goalY}"/><line id="chartGuide" class="guide" x1="${guideX}" y1="${Tp}" x2="${guideX}" y2="${H-B}"/><path class="actual" d="${path('weight')}"/><path class="smooth" d="${path('avg')}"/>${forecastPath}${forecastAnchor}${points}${xLabels}</svg><div id="chartTip" class="tooltip">${chartTipHtml(last)}</div>`;
+  const guideX=xDate(lastDate);
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Current goal weight chart"><text x="4" y="13" class="axis-unit">kg</text>${grid}<line class="axis" x1="${L}" y1="${Tp}" x2="${L}" y2="${H-B}"/><line class="axis" x1="${L}" y1="${H-B}" x2="${W-R}" y2="${H-B}"/><line class="goal" x1="${L}" y1="${goalY}" x2="${W-R}" y2="${goalY}"/><line id="chartGuide" class="guide" x1="${guideX}" y1="${Tp}" x2="${guideX}" y2="${H-B}"/>${projectionPath}<path class="actual" d="${actualPath}"/>${points}${xLabels}</svg><div id="chartTip" class="tooltip">${chartTipHtml(last)}</div>`;
 }
 function chartTipHtml(d){
   if(!d) return '';
-  return `<b>${fmtShortDate(d.date)}</b><span>${fmt(d.weight)} kg</span><span class="tip-average">7-day avg ${fmt(d.avg)} kg</span>`;
+  return `<b>${fmtShortDate(d.date)}</b><span>${fmt(d.weight)} kg</span>`;
 }
 function weeklyReviewText(){
   const now=parseDate(today()), offset=(now.getDay()+6)%7, monday=addDays(today(),-offset); const records=[];
@@ -588,10 +630,12 @@ function goalReviewPage(){
   const active=g===db.goal || !g.snapshot, end=active?(latestWeight(today())?.weight??activeGoalStartWeight()):(g.endWeight??null), start=active?activeGoalStartWeight():+g.startWeight;
   const status=active?'Active':({reached:'Reached',close:'Nearly reached',ended:'Ended'}[goalStatus(g,end)]||'Ended');
   const rows=normalizeReviews(g).slice().reverse();
+  const draft=reviewDraft?.goalId===g.id?reviewDraft:null;
   return `${topbar('Goal Review','',`<button class="btn ghost" data-action="backGoals">Done</button>`)}
     ${flashHtml()}
     <section class="card soft review-summary"><div class="row between"><div><b>${escapeHtml(g.name)}</b><div class="small">${fmtShortDate(g.start)} → ${fmtShortDate(active?g.end:(g.ended||g.end))}</div></div><span class="status ${active?'active':goalStatus(g,end)==='reached'?'done':goalStatus(g,end)==='close'?'close':'ended'}">${status}</span></div><div class="review-metrics"><div><span>Start</span><b>${fmt(start)} kg</b></div><div><span>${active?'Current':'End'}</span><b>${fmt(end)} kg</b></div><div><span>Target</span><b>${fmt(g.target)} kg</b></div></div></section>
-    <section class="card"><div class="actual-label">ChatGPT check-in</div><p class="small review-copy"><b>1.</b> Export goal data and upload it to ChatGPT. <b>2.</b> Ask ChatGPT to follow the prompt inside the file. <b>3.</b> Copy its JSON code block and paste it here.</p><div class="review-actions"><button class="btn secondary" data-action="exportReviewGoal">Export Goal Data</button></div><label class="review-paste-label">Paste review<textarea id="reviewPaste" rows="6" placeholder='{"summary":"...","learnings":["..."],"next":["..."]}'></textarea></label><button class="btn sky full" data-action="pasteGoalReview">Save review</button></section>
+    <section class="card"><div class="actual-label">ChatGPT check-in</div><p class="small review-copy"><b>1.</b> Export goal data and upload it to ChatGPT. <b>2.</b> Ask ChatGPT to follow the prompt inside the file. <b>3.</b> Copy its JSON code block and paste it here.</p><div class="review-actions"><button class="btn secondary" data-action="exportReviewGoal">Export Goal Data</button></div><label class="review-paste-label">Paste review<textarea id="reviewPaste" rows="6" placeholder='{"summary":"...","learnings":["..."],"next":["..."]}'>${escapeHtml(draft?.rawText||'')}</textarea></label><button class="btn secondary full" data-action="previewGoalReview">Preview review</button></section>
+    ${draft?`<section class="card review-preview"><div class="row between"><div class="actual-label" style="margin:0">Ready to save</div><span class="small">Review the result first</span></div>${draft.checkpoint.summary?`<p>${escapeHtml(draft.checkpoint.summary)}</p>`:''}${draft.checkpoint.learnings.length?`<div class="checkpoint-block"><span>Learnings</span><ul>${draft.checkpoint.learnings.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`:''}${draft.checkpoint.next.length?`<div class="checkpoint-block"><span>Next</span><ul>${draft.checkpoint.next.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`:''}<button class="btn sky full review-save-final" data-action="saveGoalReviewDraft">Save Review</button></section>`:''}
     <div class="section-title">Review history</div>
     <section class="card review-history">${rows.length?rows.map(checkpointHtml).join(''):'<div class="empty">No check-ins yet.</div>'}</section>
     <button class="btn ghost full" data-action="backGoals">Back to Goals</button>`;
@@ -619,9 +663,24 @@ function importGoalReview(file){
     addGoalCheckpoint(g,raw); reviewGoalId=g.id; persist(); flash='Goal review added.'; render();
   }catch(e){alert('This review could not be imported.');}}; r.readAsText(file);
 }
-function pasteGoalReview(){
-  try{const raw=parseReviewJSON(document.getElementById('reviewPaste')?.value||''),g=findGoalById(raw.goalId||reviewGoalId);if(!g)throw new Error('Goal not found');addGoalCheckpoint(g,raw);reviewGoalId=g.id;persist();flash='Review saved.';view='goals';render();}catch(e){alert('Paste the complete JSON code block returned by ChatGPT.');}
+function previewGoalReview(){
+  try{
+    const rawText=document.getElementById('reviewPaste')?.value||'';
+    const raw=parseReviewJSON(rawText),g=findGoalById(raw.goalId||reviewGoalId);if(!g)throw new Error('Goal not found');
+    reviewGoalId=g.id;
+    reviewDraft={goalId:g.id,rawText,raw,checkpoint:makeCheckpoint(raw,g)};
+    flash='Review loaded. Check it below before saving.';
+    render();
+  }catch(e){alert('Paste the complete JSON code block returned by ChatGPT.');}
 }
+function saveGoalReviewDraft(){
+  try{
+    const g=findGoalById(reviewDraft?.goalId||reviewGoalId);if(!g||!reviewDraft)throw new Error('No review loaded');
+    g.reviews=normalizeReviews(g); g.reviews.push(reviewDraft.checkpoint); g.review=blankReview();
+    reviewDraft=null;persist();flash='Review saved.';view='goals';render();
+  }catch(e){alert('Preview a review before saving it.');}
+}
+function pasteGoalReview(){ previewGoalReview(); }
 function lastReviewedGoal(){ return [...db.goals].reverse().find(g=>latestReview(g)); }
 
 function settingsPage(){
@@ -732,7 +791,9 @@ function bind(){
     if(a==='export')exportData();
     if(a==='exportReviewGoal')exportGoalReviewData(findGoalById(reviewGoalId));
     if(a==='pasteGoalReview')pasteGoalReview();
-    if(a==='backGoals'){view='goals';render();}
+    if(a==='previewGoalReview')previewGoalReview();
+    if(a==='saveGoalReviewDraft')saveGoalReviewDraft();
+    if(a==='backGoals'){reviewDraft=null;view='goals';render();}
   }));
   document.querySelectorAll('[data-set-food]').forEach(b=>b.addEventListener('click',()=>setFood(b.dataset.setFood,+b.dataset.value)));
   document.querySelectorAll('[data-toggle-food]').forEach(b=>b.addEventListener('click',()=>toggleFood(b.dataset.toggleFood)));
@@ -747,7 +808,7 @@ function bind(){
   document.querySelectorAll('[data-day-field]').forEach(el=>el.addEventListener('change',()=>{saveInputsFromDOM();persist();}));
   document.querySelectorAll('[data-plan]').forEach(el=>el.addEventListener('change',()=>{saveInputsFromDOM();persist();}));
   const f=document.getElementById('importFile'); if(f) f.addEventListener('change',()=>importData(f.files[0]));
-  document.querySelectorAll('[data-review-goal]').forEach(b=>b.addEventListener('click',()=>{reviewGoalId=b.dataset.reviewGoal;view='goalReview';render();}));
+  document.querySelectorAll('[data-review-goal]').forEach(b=>b.addEventListener('click',()=>{reviewGoalId=b.dataset.reviewGoal;reviewDraft=null;view='goalReview';render();}));
   document.querySelectorAll('[data-chart-index]').forEach(p=>{
     const update=()=>{const data=chartData(),i=+p.dataset.chartIndex,d=data[i],tip=document.getElementById('chartTip'),guide=document.getElementById('chartGuide');if(tip&&d)tip.innerHTML=chartTipHtml(d);if(guide){const x=p.getAttribute('cx');guide.setAttribute('x1',x);guide.setAttribute('x2',x);}};
     p.addEventListener('click',update); p.addEventListener('mouseenter',update); p.addEventListener('touchstart',update,{passive:true});
