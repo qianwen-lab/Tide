@@ -1,12 +1,12 @@
-# Tide PWA V7.3
+# Tide PWA V7.4
 
-Visual refresh matched directly to the user's Life Lab reference.
+Goal Review + Progress polish.
 
-## V7.3 changes
-- Life Lab palette: warm stone background, ivory cards, forest green, sage, pale mint, restrained dusty pink.
-- User-facing `Movement` wording changed to `Exercise` throughout the app.
-- Calendar status dots are slightly larger and higher contrast.
-- App icon redesigned around the selected C concept: two-color progress ring with `tide` wordmark.
-- No storage-key or schema changes. Existing Tide data remains in `tide.v1`.
-
-Upload all 8 flat files to the existing GitHub Pages repository and overwrite the previous version.
+## V7.4 changes
+- Goal Review workflow: export goal-scoped JSON, analyze in ChatGPT, import compatible review JSON, and retain learnings/action items with the archived goal.
+- Latest review action items can surface on the active Goals page.
+- Progress chart wording polished; `Weight` replaces `Fasting weight`.
+- Actual chart points are smaller. Tooltip shows date, weight, and 7-day average only (no same-day life event attribution).
+- Life event `Dinner out` renamed to `Eating out`; `Long flight` removed. Existing data migrates automatically.
+- Progress x-axis uses more compact M/D labels and keeps edge labels inside the chart.
+- Storage key remains `tide.v1`; schema migrates automatically.
