@@ -347,3 +347,87 @@ html,body{background:#D8E2D9;color:var(--ll-ink)}
 .status.active{background:#F1D6DA;color:#8C5260}.status.done{background:#DCE9DE;color:#365744}.status.close{background:#E8EEF2;color:#567187}
 .setting-row{background:var(--ll-card)!important}.weight-modal{background:var(--ll-card)}.weight-save{background:var(--ll-pink-deep)}
 @media(min-width:700px){body{background:#BCCABD}.shell{box-shadow:0 0 42px rgba(48,65,57,.14)}}
+
+/* Tide V7.3 — match Life Lab palette from reference screenshot */
+:root{
+  --lab-bg:#F1F0E8;
+  --lab-surface:#FBFAF4;
+  --lab-surface-2:#F6F5EE;
+  --lab-deep:#244C3E;
+  --lab-mid:#5E836F;
+  --lab-soft:#DCE8E2;
+  --lab-soft-2:#E8EFEB;
+  --lab-border:#D4D4CB;
+  --lab-text:#1F2823;
+  --lab-muted:#707971;
+  --lab-pink:#C98994;
+  --lab-pink-soft:#EBCFD4;
+  --ink:var(--lab-text);
+  --muted:var(--lab-muted);
+  --deep:var(--lab-deep);
+  --forest:var(--lab-mid);
+  --forest-deep:var(--lab-deep);
+  --cream:var(--lab-surface);
+  --cream-2:var(--lab-surface-2);
+  --cream-deep:#ECEBE3;
+  --dusty-pink:var(--lab-pink);
+  --dusty-pink-deep:#A96874;
+  --dusty-pink-soft:var(--lab-pink-soft);
+  --sky:var(--lab-mid);
+  --soft:var(--lab-soft-2);
+  --line:var(--lab-border);
+}
+html,body{background:var(--lab-bg);color:var(--lab-text)}
+.shell{background:var(--lab-bg)}
+.page-title,.topbar .page-title{color:var(--lab-text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif;font-weight:760;letter-spacing:-.45px}
+.kicker,.small,.muted{color:var(--lab-muted)}
+.card,.compact-card,.today-goal-card,.today-progress-card,.change-goal-card,.settings-list,.day-summary,.quick-weight-card{
+  background:var(--lab-surface);border:1px solid var(--lab-border);box-shadow:0 5px 16px rgba(37,51,43,.05)
+}
+.card.soft,.card.blue-soft,.insight,.forecast-insight{background:var(--lab-surface-2)}
+.today-goal-card{background:var(--lab-surface)}
+.today-reminder{background:var(--lab-mid);border:0;color:#fff}
+.today-reminder .reminder-label{color:#D6E0DA;letter-spacing:.08em;text-transform:uppercase;font-weight:760}
+.today-reminder .reminder-copy{color:#fff}
+.today-summary-grid{gap:10px}
+.summary-tile.green,.summary-tile.green-soft{background:var(--lab-surface);border:1px solid var(--lab-border)}
+.summary-tile.pink{background:var(--lab-surface);border:1px solid var(--lab-border)}
+.summary-tile .summary-dot{background:var(--lab-soft)}
+.summary-tile .summary-dot.done{background:var(--lab-mid)}
+.summary-tile.pink .summary-dot.done{background:var(--lab-pink)}
+.today-progress-card{background:var(--lab-surface)}
+.goal-ring{background:conic-gradient(var(--lab-deep) calc(var(--p)*1%),#E3E5DE 0)}
+.goal-ring:after{background:var(--lab-surface)}
+.today-goal-line,.progress,.bar{background:#E3E5DE}
+.today-goal-line i,.progress i,.bar i{background:var(--lab-mid)}
+.today-edit-button{background:var(--lab-soft);border:1px solid #C9D8D0;color:var(--lab-deep)}
+.quick-weight-card{background:var(--lab-surface)}
+.quick-weight-card.empty-weight{background:var(--lab-soft)}
+.quick-weight-action{color:var(--lab-deep)}
+.btn,.btn.sky{background:var(--lab-deep);color:#fff}.btn.secondary{background:var(--lab-soft);color:var(--lab-deep)}
+.btn.ghost{background:var(--lab-surface);color:var(--lab-deep);border-color:var(--lab-border)}
+.pill{background:var(--lab-surface-2);border-color:var(--lab-border);color:var(--lab-deep)}
+.pill.on,.plan-mode button.on,.range-tabs button.on{background:var(--lab-deep);color:#fff;border-color:var(--lab-deep)}
+.pill.soft-on{background:var(--lab-soft);border-color:#C7D8CF;color:var(--lab-deep)}
+.toggle.on{background:var(--lab-mid)}
+.nav{background:rgba(241,240,232,.97);border-top:1px solid var(--lab-border)}
+.nav button{color:#6F7771}.nav button.active{color:var(--lab-deep)}
+.month-btn{background:var(--lab-surface);border-color:var(--lab-border);color:var(--lab-deep)}
+.weekdays,.calendar-title{color:var(--lab-text)}
+.day-cell{color:var(--lab-text)}.day-cell.selected{background:var(--lab-soft)}.day-cell.today .day-number{background:var(--lab-mid);color:#fff}
+.dot.food{background:var(--lab-deep);width:7px;height:7px}
+.dot.move{background:var(--lab-pink);width:7px;height:7px}
+.dot.move-outline{border-color:var(--lab-pink);width:7px;height:7px}
+.dot.event{background:#8C918D;width:7px;height:7px}
+.legend{color:var(--lab-muted)}
+.settings-list{background:var(--lab-surface)}.setting-row{background:var(--lab-surface)!important;border-bottom-color:var(--lab-border)}
+input,select,textarea{background:var(--lab-surface);border-color:var(--lab-border);color:var(--lab-text)}
+input:focus,select:focus,textarea:focus{border-color:var(--lab-mid);box-shadow:0 0 0 3px rgba(94,131,111,.12)}
+.status.active{background:var(--lab-pink-soft);color:#82515A}.status.done{background:var(--lab-soft);color:var(--lab-deep)}.status.close{background:#ECE6DF;color:#735F55}.status.ended{background:#E8E8E2;color:#666C67}
+.event-chip{background:#EEEDE6;border-color:var(--lab-border);color:#626A64}.event-chip.on,.rule-exception{background:var(--lab-pink-soft);border-color:#D7A9B1;color:#754B53}
+.plan-mode,.range-tabs{background:#E7E8E2}.plan-mode button.on,.range-tabs button.on{background:var(--lab-deep);color:#fff}
+.chart .grid{stroke:#E0E2DC}.chart .axis{stroke:#BFC4BF}.chart .tick{stroke:#929A94}.chart .actual{stroke:var(--lab-mid)}.chart .smooth{stroke:var(--lab-deep)}.chart .forecast{stroke:var(--lab-pink)}.chart .goal{stroke:#8C918D}.chart .point{fill:var(--lab-mid);stroke:var(--lab-surface)}
+.tooltip{background:var(--lab-surface);border-color:var(--lab-border)}
+.forecast-card.green{background:var(--lab-soft)}.forecast-card.pink{background:var(--lab-pink-soft)}
+.weight-modal{background:var(--lab-surface)}.weight-input-wrap{background:var(--lab-surface-2);border-color:var(--lab-border)}.weight-save{background:var(--lab-deep)}
+@media(min-width:700px){body{background:#D6D8D1}.shell{box-shadow:0 0 42px rgba(32,44,37,.12)}}
