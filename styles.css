@@ -446,3 +446,19 @@ input:focus,select:focus,textarea:focus{border-color:var(--lab-mid);box-shadow:0
 /* V7.5 goal review checkpoints */
 .review-paste-label{margin-top:14px;display:block}.review-paste-label textarea{margin-top:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.45;background:var(--lab-ivory)}
 .review-history{padding-top:5px;padding-bottom:5px}.checkpoint{padding:14px 0;border-bottom:1px solid rgba(36,76,62,.12)}.checkpoint:last-child{border-bottom:0}.checkpoint p{font-size:13px;line-height:1.5;margin:9px 0}.checkpoint-block{margin-top:10px}.checkpoint-block>span{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:750}.checkpoint-block ul,.review-mini-block ul{margin:5px 0 0;padding-left:18px}.checkpoint-block li,.review-mini-block li{font-size:12.5px;line-height:1.4;margin:4px 0}.review-mini-summary{font-size:13px;line-height:1.45;margin-top:9px}.review-mini-block{margin-top:10px}.review-mini-block b{font-size:11px;color:var(--lab-forest)}
+
+/* V7.6 review + chart clarity */
+.active-learning{margin-top:13px;padding-top:12px;border-top:1px solid rgba(48,74,59,.14)}
+.active-learning b{font-size:12px;color:var(--lab-deep);text-transform:uppercase;letter-spacing:.04em}
+.active-learning-text{margin-top:7px;font-size:14px;line-height:1.4;color:var(--ink)}
+.active-next{margin-top:7px;font-size:12px;line-height:1.4;color:var(--muted)}
+.active-next span{font-weight:700;color:var(--lab-mid);margin-right:6px}
+.review-actions{display:flex;gap:8px;margin:10px 0 4px}.review-paste-label textarea{margin-top:6px}
+.chart .point{r:2.25px;stroke-width:1}
+.chart .smooth{stroke:var(--lab-deep);stroke-width:2.25;stroke-dasharray:none}
+.chart .forecast{stroke:var(--lab-deep);stroke-width:2.1;stroke-dasharray:4 4;stroke-linecap:round;stroke-linejoin:round}
+.chart .forecast-anchor{fill:var(--lab-deep);stroke:var(--lab-card);stroke-width:1.5}
+.average-line{border-top:2px solid var(--lab-deep)!important}
+.forecast-line{border-top:2px dashed var(--lab-deep)!important}
+.chart .guide{stroke:rgba(48,74,59,.36);stroke-width:1;stroke-dasharray:3 4}
+.tooltip{justify-content:flex-start!important;gap:7px!important;align-items:baseline}.tooltip span{white-space:nowrap}

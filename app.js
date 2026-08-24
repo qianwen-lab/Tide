@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'tide.v1';
-const VERSION = '7.5.0';
+const VERSION = '7.6.0';
 const SCHEMA_VERSION = 9;
 
 const COLORS = { sage:'#5E836F', sageDeep:'#244C3E', pink:'#C98994', pinkSoft:'#EBCFD4', blue:'#8C918D', ink:'#1F2823' };
@@ -113,8 +113,8 @@ function latestWeights(until=today()){
   return Object.values(db.days).filter(x=>x.weight!=null && x.date<=until).sort((a,b)=>a.date.localeCompare(b.date));
 }
 function latestWeight(until=today()){ const a=latestWeights(until); return a.length?a[a.length-1]:null; }
-function movingAverage(date, window=7){ const a=latestWeights(date).slice(-window).map(x=>+x.weight); return avg(a); }
-function goalMovingAverage(date, window=7){ const a=latestWeights(date).filter(x=>x.date>=db.goal.start).slice(-window).map(x=>+x.weight); return avg(a); }
+function movingAverage(date, window=7){ const from=addDays(date,-(window-1)); const a=latestWeights(date).filter(x=>x.date>=from).map(x=>+x.weight); return avg(a); }
+function goalMovingAverage(date, window=7){ const from=addDays(date,-(window-1)); const start=from>db.goal.start?from:db.goal.start; const a=latestWeights(date).filter(x=>x.date>=start && x.date<=date).map(x=>+x.weight); return avg(a); }
 function activeGoalStartWeight(){ const rec=db.days[db.goal.start]; return rec?.weight!=null ? +rec.weight : +db.goal.startWeight; }
 function dayPlan(d){
   const base={veg:db.plan.veg,fruit:db.plan.fruit,noSnack:db.plan.noSnack,stop:db.plan.stop,satiety:db.plan.satiety,water:db.plan.water,steps:10000,stretch:null,cardio:null,strength:null};
@@ -341,19 +341,31 @@ function customPlanControls(d){const p=d.customPlan||{};return `<div class="cust
 function goalForecast(){
   const records=latestWeights(db.goal.end).filter(x=>x.date>=db.goal.start && x.date<=today());
   if(records.length<4) return {ready:false,reason:'Log at least 4 weights before forecasting begins.'};
-  const usable=records.slice(-18).map(r=>({date:r.date,value:goalMovingAverage(r.date)??+r.weight}));
-  const x0=parseDate(usable[0].date); const xs=usable.map(r=>(parseDate(r.date)-x0)/86400000); const ys=usable.map(r=>+r.value);
+
+  // Build the historical trend exactly from the same 7-day-average series shown on the chart.
+  const trend=records.map(r=>({date:r.date,value:goalMovingAverage(r.date)??+r.weight}));
+  const last=trend[trend.length-1];
+  const recentStart=addDays(last.date,-14);
+  let usable=trend.filter(r=>r.date>=recentStart);
+  if(usable.length<4) usable=trend.slice(-8);
+  if(usable.length<4) return {ready:false,reason:'The data window is still too short. Keep logging for a few more days.'};
+
+  // Regress the recent 7-day averages against actual calendar days.
+  const x0=parseDate(usable[0].date);
+  const xs=usable.map(r=>(parseDate(r.date)-x0)/86400000);
+  const ys=usable.map(r=>+r.value);
   const mx=avg(xs), my=avg(ys), denom=xs.reduce((a,x)=>a+(x-mx)**2,0);
   if(!denom) return {ready:false,reason:'The data window is still too short. Keep logging for a few more days.'};
   let slope=xs.reduce((a,x,i)=>a+(x-mx)*(ys[i]-my),0)/denom;
   slope=clamp(slope,-0.18,0.10);
-  const last=usable[usable.length-1]; const current=+last.value;
+
+  // Forecast starts at the LAST VISIBLE 7-day-average point, then lets the recent pace fade gradually.
+  const current=+last.value;
   const daysToEnd=Math.max(0,Math.round((parseDate(db.goal.end)-parseDate(last.date))/86400000));
-  // Damped trend: follow the current direction but gradually flatten, which is more realistic than a straight-line extrapolation.
   const damping=0.035;
-  const projectedDelta = Math.abs(damping)<1e-6 ? slope*daysToEnd : slope*(1-Math.exp(-damping*daysToEnd))/damping;
-  const projectedEnd=current+projectedDelta;
   const forecastValue=(days)=>current + slope*(1-Math.exp(-damping*Math.max(0,days)))/damping;
+  const projectedEnd=forecastValue(daysToEnd);
+
   let targetDate=null, deltaDays=null;
   if(current<=+db.goal.target){
     targetDate=last.date;
@@ -363,7 +375,7 @@ function goalForecast(){
     }
   }
   if(targetDate) deltaDays=Math.round((parseDate(targetDate)-parseDate(db.goal.end))/86400000);
-  return {ready:true,slope,current,lastDate:last.date,projectedEnd,targetDate,deltaDays,damping,forecastValue};
+  return {ready:true,slope,current,lastDate:last.date,projectedEnd,targetDate,deltaDays,damping,forecastValue,trendWindowStart:usable[0].date,trendPoints:usable.length};
 }
 function forecastMessage(f){
   if(!f.ready) return f.reason;
@@ -403,40 +415,41 @@ function chartData(){
   return latestWeights(db.goal.end).filter(x=>x.date>=db.goal.start && x.date<=today()).map(x=>({date:x.date,weight:+x.weight,avg:goalMovingAverage(x.date)}));
 }
 function renderChart(data,forecast){
-  if(data.length<2) return `<div class="empty">Log at least two morning weights to see the chart.</div>`;
+  if(data.length<2) return `<div class="empty">Log at least two weights to see the chart.</div>`;
   const W=340,H=238,L=48,R=12,Tp=25,B=37;
-  const lastDate=data[data.length-1].date;
+  const last=data[data.length-1], lastDate=last.date;
   const vals=data.flatMap(d=>[d.weight,d.avg]).filter(v=>v!=null); vals.push(+db.goal.target);
   if(forecast?.ready) vals.push(forecast.projectedEnd);
   let min=Math.floor(Math.min(...vals)-.35), max=Math.ceil(Math.max(...vals)+.35); if(max-min<3){min-=1;max+=1;}
-  const span=max-min; const tickStep=span<=6?1:2;
-  const startD=parseDate(db.goal.start), endD=parseDate(db.goal.end); const totalDays=Math.max(1,(endD-startD)/86400000);
+  const span=max-min, tickStep=span<=6?1:2;
+  const startD=parseDate(db.goal.start), endD=parseDate(db.goal.end), totalDays=Math.max(1,(endD-startD)/86400000);
   const xDate=date=>L+clamp((parseDate(date)-startD)/86400000/totalDays,0,1)*(W-L-R);
   const y=v=>Tp+(max-v)/(max-min)*(H-Tp-B);
   let grid='';
   for(let v=Math.ceil(min/tickStep)*tickStep;v<=max+.001;v+=tickStep){const yy=y(v);grid+=`<line class="grid" x1="${L}" y1="${yy}" x2="${W-R}" y2="${yy}"/><line class="tick" x1="${L-4}" y1="${yy}" x2="${L}" y2="${yy}"/><text class="y-label" x="${L-9}" y="${yy+3}" text-anchor="end">${v}</text>`;}
-  const labelCount=Math.min(6,Math.max(4,Math.ceil(totalDays/6)+1));
+  const labelCount=Math.min(7,Math.max(5,Math.ceil(totalDays/6)+1));
   const xDates=[]; for(let i=0;i<labelCount;i++){const off=Math.round(totalDays*i/(labelCount-1));const ds=addDays(db.goal.start,off);if(!xDates.includes(ds))xDates.push(ds);}
   const xLabels=xDates.map((s,i)=>`<text x="${xDate(s)}" y="${H-9}" text-anchor="${i===0?'start':i===xDates.length-1?'end':'middle'}">${fmtShortDate(s)}</text>`).join('');
   const path=k=>data.map((d,i)=>`${i?'L':'M'} ${xDate(d.date).toFixed(1)} ${y(d[k]).toFixed(1)}`).join(' ');
   const goalY=y(+db.goal.target);
-  const points=data.map((d,i)=>`<circle class="point" data-chart-index="${i}" cx="${xDate(d.date)}" cy="${y(d.weight)}" r="3.1"></circle>`).join('');
-  let forecastPath='';
+  const points=data.map((d,i)=>`<circle class="point" data-chart-index="${i}" cx="${xDate(d.date)}" cy="${y(d.weight)}" r="2.25"></circle>`).join('');
+
+  const guideX=xDate(lastDate);
+  let forecastPath='', forecastAnchor='';
   if(forecast?.ready && lastDate<db.goal.end){
-    const anchor=goalMovingAverage(lastDate)??data[data.length-1].weight;
+    const anchor=last.avg??goalMovingAverage(lastDate)??last.weight;
     const horizon=Math.max(1,Math.round((parseDate(db.goal.end)-parseDate(lastDate))/86400000));
-    const samples=[];
-    for(let i=0;i<=Math.min(18,horizon);i++){
-      const dayOffset=Math.round(horizon*i/Math.min(18,horizon));
-      const date=addDays(lastDate,dayOffset);
+    const count=Math.min(18,horizon), samples=[];
+    for(let i=0;i<=count;i++){
+      const dayOffset=Math.round(horizon*i/count), date=addDays(lastDate,dayOffset);
       const value=i===0?anchor:forecast.forecastValue(dayOffset);
       samples.push([xDate(date),y(value)]);
     }
     const dPath=samples.map((pt,i)=>`${i?'L':'M'} ${pt[0].toFixed(1)} ${pt[1].toFixed(1)}`).join(' ');
     forecastPath=`<path class="forecast" d="${dPath}"/>`;
+    forecastAnchor=`<circle class="forecast-anchor" cx="${xDate(lastDate)}" cy="${y(anchor)}" r="3"></circle>`;
   }
-  const last=data[data.length-1];
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Current goal weight chart"><text x="4" y="13" class="axis-unit">kg</text>${grid}<line class="axis" x1="${L}" y1="${Tp}" x2="${L}" y2="${H-B}"/><line class="axis" x1="${L}" y1="${H-B}" x2="${W-R}" y2="${H-B}"/><line class="goal" x1="${L}" y1="${goalY}" x2="${W-R}" y2="${goalY}"/><path class="actual" d="${path('weight')}"/><path class="smooth" d="${path('avg')}"/>${forecastPath}${points}${xLabels}</svg><div id="chartTip" class="tooltip">${chartTipHtml(last)}</div>`;
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Current goal weight chart"><text x="4" y="13" class="axis-unit">kg</text>${grid}<line class="axis" x1="${L}" y1="${Tp}" x2="${L}" y2="${H-B}"/><line class="axis" x1="${L}" y1="${H-B}" x2="${W-R}" y2="${H-B}"/><line class="goal" x1="${L}" y1="${goalY}" x2="${W-R}" y2="${goalY}"/><line id="chartGuide" class="guide" x1="${guideX}" y1="${Tp}" x2="${guideX}" y2="${H-B}"/><path class="actual" d="${path('weight')}"/><path class="smooth" d="${path('avg')}"/>${forecastPath}${forecastAnchor}${points}${xLabels}</svg><div id="chartTip" class="tooltip">${chartTipHtml(last)}</div>`;
 }
 function chartTipHtml(d){
   if(!d) return '';
@@ -469,16 +482,25 @@ function reviewCarryCard(){
   const learn=r.learnings.slice(0,2), next=r.next.slice(0,2);
   return `<section class="card review-carry"><div class="row between"><div class="actual-label">${active?'Latest checkpoint':'From your last goal'}</div><div class="small">${fmtShortDate(r.date)}${r.day?` · Day ${r.day}`:''}</div></div>${r.summary?`<div class="review-mini-summary">${escapeHtml(r.summary)}</div>`:''}${learn.length?`<div class="review-mini-block"><b>Learning</b><ul>${learn.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`:''}${next.length?`<div class="review-mini-block"><b>Next</b><ul>${next.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`:''}</section>`;
 }
+function activeGoalLearning(){
+  const r=latestReview(db.goal); if(!r) return '';
+  const learning=r.learnings[0]||r.summary||'', next=r.next[0]||'';
+  if(!learning&&!next) return '';
+  return `<div class="active-learning"><div class="row between"><b>Latest learning</b><span class="small">${fmtShortDate(r.date)}${r.day?` · Day ${r.day}`:''}</span></div>${learning?`<div class="active-learning-text">${escapeHtml(learning)}</div>`:''}${next?`<div class="active-next"><span>Next</span>${escapeHtml(next)}</div>`:''}</div>`;
+}
+
 function goalsPage(){
   const lw=latestWeight(today());
   return `${topbar(tr('goals'))}
+    ${flashHtml()}
     <div class="section-title" style="margin-top:2px">${tr('goalJourney')}</div>
     <section class="card soft">
       <div class="row between"><div><div class="brand" style="font-size:18px;letter-spacing:0">${escapeHtml(db.goal.name)}</div><div class="small">${db.goal.start} → ${db.goal.end}</div></div><span class="status active">${tr('active')}</span></div>
       <div class="metric-row" style="margin-top:10px"><div class="metric"><div class="label">${tr('start')}</div><div class="value">${fmt(activeGoalStartWeight())} <span class="small">kg</span></div></div><div class="metric" style="text-align:right"><div class="label">${tr('target')}</div><div class="value">${fmt(db.goal.target)} <span class="small">kg</span></div></div></div>
       <div class="progress"><i style="width:${goalProgress(lw?.weight??db.goal.startWeight)}%"></i></div>
       <div class="goal-actions"><button class="btn secondary" data-action="editGoal">Edit goal</button><button class="btn ghost" data-review-goal="${escapeHtml(db.goal.id)}">Review goal</button></div>
-    </section>${reviewCarryCard()}
+      ${activeGoalLearning()}
+    </section>
     <div class="section-title">${tr('pastGoals')}</div>
     <section class="card"><div class="goal-list">${db.goals.length?db.goals.slice().reverse().map(goalHistoryItem).join(''):`<div class="empty">No past goals yet.</div>`}</div></section>`;
 }
@@ -546,7 +568,7 @@ function goalReviewPack(g){
     summary:{daysCovered:records.length,weightChange:endWeight==null?null:+(endWeight-startWeight).toFixed(2),targetChange:+(+g.target-startWeight).toFixed(2)},
     reviewHistory:normalizeReviews(g),
     daily:records,
-    recommendedPrompt:'Review this Tide goal briefly and practically. Focus on the most useful patterns, including lagged/multi-day patterns rather than blaming a morning weight on an event from the same day. Keep it concise. Return ONLY JSON with goalId, summary, learnings (1-3 short items), and next (1-3 specific actions). You may add extra concise fields if something important stands out; Tide will ignore fields it does not use.',
+    recommendedPrompt:'Review this Tide goal briefly and practically. Focus on the most useful patterns, including lagged/multi-day patterns rather than blaming a morning weight on an event from the same day. Keep it concise. Reply directly in chat with ONE JSON code block that I can copy and paste into Tide; do not create a downloadable file. Use goalId, summary, learnings (1-3 short items), and next (1-3 specific actions). You may add extra concise fields if something important stands out; Tide will ignore fields it does not use.',
     chatgptReturnExample:{goalId:g.id,summary:'1-3 concise sentences',learnings:['short learning 1','short learning 2'],next:['specific next action 1','specific next action 2']}
   };
 }
@@ -562,17 +584,17 @@ function checkpointHtml(r){
   return `<div class="checkpoint"><div class="row between"><b>${fmtShortDate(r.date)}</b><span class="small">${r.day?`Day ${r.day}`:''}</span></div>${r.summary?`<p>${escapeHtml(r.summary)}</p>`:''}${r.learnings.length?`<div class="checkpoint-block"><span>Learnings</span><ul>${r.learnings.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`:''}${r.next.length?`<div class="checkpoint-block"><span>Next</span><ul>${r.next.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`:''}</div>`;
 }
 function goalReviewPage(){
-  const g=findGoalById(reviewGoalId); if(!g) return `${topbar('Goal Review')}<div class="empty">Goal not found.</div>`;
-  const active=g===db.goal || !g.snapshot;
-  const end=active?(latestWeight(today())?.weight??null):(g.endWeight??null);
-  const start=active?activeGoalStartWeight():+g.startWeight;
-  const status=active?'Active':goalStatus(g,end)==='reached'?'Reached':goalStatus(g,end)==='close'?'Nearly reached':'Ended';
+  const g=findGoalById(reviewGoalId); if(!g) return `${topbar('Goal Review','',`<button class="btn ghost" data-action="backGoals">Done</button>`)}<div class="empty">Goal not found.</div>`;
+  const active=g===db.goal || !g.snapshot, end=active?(latestWeight(today())?.weight??activeGoalStartWeight()):(g.endWeight??null), start=active?activeGoalStartWeight():+g.startWeight;
+  const status=active?'Active':({reached:'Reached',close:'Nearly reached',ended:'Ended'}[goalStatus(g,end)]||'Ended');
   const rows=normalizeReviews(g).slice().reverse();
-  return `${topbar('Goal Review')}
+  return `${topbar('Goal Review','',`<button class="btn ghost" data-action="backGoals">Done</button>`)}
+    ${flashHtml()}
     <section class="card soft review-summary"><div class="row between"><div><b>${escapeHtml(g.name)}</b><div class="small">${fmtShortDate(g.start)} → ${fmtShortDate(active?g.end:(g.ended||g.end))}</div></div><span class="status ${active?'active':goalStatus(g,end)==='reached'?'done':goalStatus(g,end)==='close'?'close':'ended'}">${status}</span></div><div class="review-metrics"><div><span>Start</span><b>${fmt(start)} kg</b></div><div><span>${active?'Current':'End'}</span><b>${fmt(end)} kg</b></div><div><span>Target</span><b>${fmt(g.target)} kg</b></div></div></section>
-    <section class="card"><div class="actual-label">ChatGPT check-in</div><p class="small review-copy">Export the goal, upload it to ChatGPT, then paste or import the short JSON review. You can do this anytime — no need to end the goal.</p><div class="review-actions"><button class="btn secondary" data-action="exportReviewGoal">Export Goal Data</button><label class="btn ghost file-btn">Import JSON<input id="reviewImportFile" type="file" accept="application/json" style="display:none"></label></div><label class="review-paste-label">Paste ChatGPT Review<textarea id="reviewPaste" rows="5" placeholder='{"summary":"...","learnings":["..."],"next":["..."]}'></textarea></label><button class="btn ghost full" data-action="pasteGoalReview">Add pasted review</button></section>
+    <section class="card"><div class="actual-label">ChatGPT check-in</div><p class="small review-copy"><b>1.</b> Export goal data and upload it to ChatGPT. <b>2.</b> Ask ChatGPT to follow the prompt inside the file. <b>3.</b> Copy its JSON code block and paste it here.</p><div class="review-actions"><button class="btn secondary" data-action="exportReviewGoal">Export Goal Data</button></div><label class="review-paste-label">Paste review<textarea id="reviewPaste" rows="6" placeholder='{"summary":"...","learnings":["..."],"next":["..."]}'></textarea></label><button class="btn sky full" data-action="pasteGoalReview">Save review</button></section>
     <div class="section-title">Review history</div>
-    <section class="card review-history">${rows.length?rows.map(checkpointHtml).join(''):'<div class="empty">No check-ins yet.</div>'}</section>`;
+    <section class="card review-history">${rows.length?rows.map(checkpointHtml).join(''):'<div class="empty">No check-ins yet.</div>'}</section>
+    <button class="btn ghost full" data-action="backGoals">Back to Goals</button>`;
 }
 function parseReviewJSON(text){
   let cleaned=String(text||'').trim().replace(/^```(?:json)?\s*/i,'').replace(/```$/,'').trim();
@@ -598,7 +620,7 @@ function importGoalReview(file){
   }catch(e){alert('This review could not be imported.');}}; r.readAsText(file);
 }
 function pasteGoalReview(){
-  try{const raw=parseReviewJSON(document.getElementById('reviewPaste')?.value||''),g=findGoalById(raw.goalId||reviewGoalId);if(!g)throw new Error('Goal not found');addGoalCheckpoint(g,raw);reviewGoalId=g.id;persist();flash='Goal review added.';render();}catch(e){alert('Paste the JSON review returned by ChatGPT.');}
+  try{const raw=parseReviewJSON(document.getElementById('reviewPaste')?.value||''),g=findGoalById(raw.goalId||reviewGoalId);if(!g)throw new Error('Goal not found');addGoalCheckpoint(g,raw);reviewGoalId=g.id;persist();flash='Review saved.';view='goals';render();}catch(e){alert('Paste the complete JSON code block returned by ChatGPT.');}
 }
 function lastReviewedGoal(){ return [...db.goals].reverse().find(g=>latestReview(g)); }
 
@@ -710,6 +732,7 @@ function bind(){
     if(a==='export')exportData();
     if(a==='exportReviewGoal')exportGoalReviewData(findGoalById(reviewGoalId));
     if(a==='pasteGoalReview')pasteGoalReview();
+    if(a==='backGoals'){view='goals';render();}
   }));
   document.querySelectorAll('[data-set-food]').forEach(b=>b.addEventListener('click',()=>setFood(b.dataset.setFood,+b.dataset.value)));
   document.querySelectorAll('[data-toggle-food]').forEach(b=>b.addEventListener('click',()=>toggleFood(b.dataset.toggleFood)));
@@ -724,10 +747,9 @@ function bind(){
   document.querySelectorAll('[data-day-field]').forEach(el=>el.addEventListener('change',()=>{saveInputsFromDOM();persist();}));
   document.querySelectorAll('[data-plan]').forEach(el=>el.addEventListener('change',()=>{saveInputsFromDOM();persist();}));
   const f=document.getElementById('importFile'); if(f) f.addEventListener('change',()=>importData(f.files[0]));
-  const rf=document.getElementById('reviewImportFile'); if(rf) rf.addEventListener('change',()=>importGoalReview(rf.files[0]));
   document.querySelectorAll('[data-review-goal]').forEach(b=>b.addEventListener('click',()=>{reviewGoalId=b.dataset.reviewGoal;view='goalReview';render();}));
   document.querySelectorAll('[data-chart-index]').forEach(p=>{
-    const update=()=>{const data=chartData(),i=+p.dataset.chartIndex,d=data[i],tip=document.getElementById('chartTip');if(tip&&d)tip.innerHTML=chartTipHtml(d);};
+    const update=()=>{const data=chartData(),i=+p.dataset.chartIndex,d=data[i],tip=document.getElementById('chartTip'),guide=document.getElementById('chartGuide');if(tip&&d)tip.innerHTML=chartTipHtml(d);if(guide){const x=p.getAttribute('cx');guide.setAttribute('x1',x);guide.setAttribute('x2',x);}};
     p.addEventListener('click',update); p.addEventListener('mouseenter',update); p.addEventListener('touchstart',update,{passive:true});
   });
 }
