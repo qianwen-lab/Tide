@@ -493,5 +493,8 @@ input:focus,select:focus,textarea:focus{border-color:var(--lab-mid);box-shadow:0
 /* V7.9 — surface latest Goal learning on Today */
 .today-learning-card{background:var(--lab-surface);border:1px solid var(--lab-border);border-radius:16px;padding:12px 14px;margin:9px 0;box-shadow:0 5px 16px rgba(37,51,43,.045)}
 .today-learning-label{font-size:10px;line-height:1;text-transform:uppercase;letter-spacing:.08em;font-weight:780;color:var(--lab-deep)}
-.today-learning-copy{margin-top:7px;font-size:13.5px;line-height:1.42;color:var(--lab-text);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.today-learning-copy{margin-top:8px;font-size:13.5px;line-height:1.5;color:var(--lab-text)}
 .today-learning-card .review-inline-link{margin-top:7px}
+
+/* V8.0 review reading mode */
+.latest-review-card{padding-top:14px}.latest-review-card .review-main-summary p{font-size:14px;line-height:1.55}.review-add-button{margin:10px 0 4px}.review-composer{margin-top:10px}.review-cancel-inline{margin:0}.review-main-summary{margin-top:4px}

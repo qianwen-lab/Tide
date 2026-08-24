@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'tide.v1';
-const VERSION = '7.9.0';
+const VERSION = '8.0.0';
 const SCHEMA_VERSION = 10;
 
 const COLORS = { sage:'#5E836F', sageDeep:'#244C3E', pink:'#C98994', pinkSoft:'#EBCFD4', blue:'#8C918D', ink:'#1F2823' };
@@ -66,6 +66,7 @@ let flash = '';
 let quickWeightOpen = false;
 let reviewGoalId = null;
 let reviewDraft = null;
+let reviewComposerOpen = false;
 
 function fresh(){ return JSON.parse(JSON.stringify(defaults)); }
 function mergeDay(x={}){
@@ -225,9 +226,9 @@ function flashHtml(){ if(!flash)return ''; const s=flash; flash=''; return `<div
 function todayGoalLearning(){
   const r=latestReview(db.goal);
   if(!r) return '';
-  const preview=String(r.preview||r.summary||'').trim();
-  if(!preview) return '';
-  return `<section class="today-learning-card"><div class="row between"><div class="today-learning-label">Goal learning</div><div class="small">${fmtShortDate(r.date)}${r.day?` · Day ${r.day}`:''}</div></div><div class="today-learning-copy">${escapeHtml(preview)}</div><button class="review-inline-link" data-review-goal="${escapeHtml(db.goal.id)}">View review →</button></section>`;
+  const summary=String(r.summary||r.preview||'').trim();
+  if(!summary) return '';
+  return `<section class="today-learning-card"><div class="row between"><div class="today-learning-label">Goal review</div><div class="small">${fmtShortDate(r.date)}${r.day?` · Day ${r.day}`:''}</div></div><div class="today-learning-copy">${escapeHtml(summary)}</div><button class="review-inline-link" data-review-goal="${escapeHtml(db.goal.id)}">Review history →</button></section>`;
 }
 
 function todayPage(){
@@ -538,7 +539,7 @@ function activeGoalLearning(){
   const r=latestReview(db.goal); if(!r) return '';
   const preview=r.preview||r.summary||r.learnings.join(' · ');
   if(!preview) return '';
-  return `<div class="active-learning"><div class="row between"><b>Latest review</b><span class="small">${fmtShortDate(r.date)}${r.day?` · Day ${r.day}`:''}</span></div><div class="active-learning-text">${escapeHtml(preview)}</div><button class="review-inline-link" data-review-goal="${escapeHtml(db.goal.id)}">View full review →</button></div>`;
+  return `<div class="active-learning"><div class="row between"><b>Latest review</b><span class="small">${fmtShortDate(r.date)}${r.day?` · Day ${r.day}`:''}</span></div><div class="active-learning-text">${escapeHtml(preview)}</div><button class="review-inline-link" data-review-goal="${escapeHtml(db.goal.id)}">Review history →</button></div>`;
 }
 
 function goalsPage(){
@@ -635,19 +636,27 @@ function exportGoalReviewData(g){
 function checkpointHtml(r){
   return `<div class="checkpoint"><div class="row between"><b>${fmtShortDate(r.date)}</b><span class="small">${r.day?`Day ${r.day}`:''}</span></div>${r.preview?`<div class="checkpoint-preview"><span>Preview</span><p>${escapeHtml(r.preview)}</p></div>`:''}${r.summary?`<div class="checkpoint-block"><span>Summary</span><p>${escapeHtml(r.summary)}</p></div>`:''}${r.learnings.length?`<div class="checkpoint-block"><span>Learnings</span><ul>${r.learnings.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`:''}${r.next.length?`<div class="checkpoint-block"><span>Next</span><ul>${r.next.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`:''}</div>`;
 }
+function fullReviewHtml(r){
+  if(!r) return '<div class="empty">No review yet.</div>';
+  return `${r.summary?`<div class="checkpoint-block review-main-summary"><span>Summary</span><p>${escapeHtml(r.summary)}</p></div>`:''}${r.learnings.length?`<div class="checkpoint-block"><span>Learnings</span><ul>${r.learnings.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`:''}${r.next.length?`<div class="checkpoint-block"><span>Next</span><ul>${r.next.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`:''}`;
+}
 function goalReviewPage(){
   const g=findGoalById(reviewGoalId); if(!g) return `${topbar('Goal Review','',`<button class="btn ghost" data-action="backGoals">Done</button>`)}<div class="empty">Goal not found.</div>`;
   const active=g===db.goal || !g.snapshot, end=active?(latestWeight(today())?.weight??activeGoalStartWeight()):(g.endWeight??null), start=active?activeGoalStartWeight():+g.startWeight;
   const status=active?'Active':({reached:'Reached',close:'Nearly reached',ended:'Ended'}[goalStatus(g,end)]||'Ended');
   const rows=normalizeReviews(g).slice().reverse();
+  const latest=rows[0]||null;
+  const older=rows.slice(1);
   const draft=reviewDraft?.goalId===g.id?reviewDraft:null;
+  const composer=reviewComposerOpen;
   return `${topbar('Goal Review','',`<button class="btn ghost" data-action="backGoals">Done</button>`)}
     ${flashHtml()}
     <section class="card soft review-summary"><div class="row between"><div><b>${escapeHtml(g.name)}</b><div class="small">${fmtShortDate(g.start)} → ${fmtShortDate(active?g.end:(g.ended||g.end))}</div></div><span class="status ${active?'active':goalStatus(g,end)==='reached'?'done':goalStatus(g,end)==='close'?'close':'ended'}">${status}</span></div><div class="review-metrics"><div><span>Start</span><b>${fmt(start)} kg</b></div><div><span>${active?'Current':'End'}</span><b>${fmt(end)} kg</b></div><div><span>Target</span><b>${fmt(g.target)} kg</b></div></div></section>
-    <section class="card"><div class="actual-label">ChatGPT check-in</div><p class="small review-copy"><b>1.</b> Export goal data and upload it to ChatGPT. <b>2.</b> Ask ChatGPT to follow the prompt inside the file. <b>3.</b> Copy its JSON code block and paste it here.</p><div class="review-actions"><button class="btn secondary" data-action="exportReviewGoal">Export Goal Data</button></div><label class="review-paste-label">Paste review<textarea id="reviewPaste" rows="7" placeholder='{"preview":"...","review":{"summary":"...","learnings":["..."],"next":["..."]}}'>${escapeHtml(draft?.rawText||'')}</textarea></label><button class="btn secondary full" data-action="previewGoalReview">Preview review</button></section>
-    ${draft?`<section class="card review-preview"><div class="row between"><div class="actual-label" style="margin:0">Ready to save</div><span class="small">Review the result first</span></div>${draft.checkpoint.preview?`<div class="draft-preview-summary"><span>Goals preview</span><p>${escapeHtml(draft.checkpoint.preview)}</p></div>`:''}<div class="full-review-label">Full review</div>${draft.checkpoint.summary?`<div class="checkpoint-block"><span>Summary</span><p>${escapeHtml(draft.checkpoint.summary)}</p></div>`:''}${draft.checkpoint.learnings.length?`<div class="checkpoint-block"><span>Learnings</span><ul>${draft.checkpoint.learnings.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`:''}${draft.checkpoint.next.length?`<div class="checkpoint-block"><span>Next</span><ul>${draft.checkpoint.next.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`:''}<button class="btn sky full review-save-final" data-action="saveGoalReviewDraft">Save Review</button></section>`:''}
-    <div class="section-title">Review history</div>
-    <section class="card review-history">${rows.length?rows.map(checkpointHtml).join(''):'<div class="empty">No check-ins yet.</div>'}</section>
+    ${latest?`<div class="section-title">Latest review</div><section class="card latest-review-card"><div class="row between"><div class="actual-label" style="margin:0">${fmtShortDate(latest.date)}${latest.day?` · Day ${latest.day}`:''}</div></div>${fullReviewHtml(latest)}</section>`:`<section class="card"><div class="empty">No reviews yet.</div></section>`}
+    ${!composer?`<button class="btn secondary full review-add-button" data-action="openReviewComposer">Add new review</button>`:''}
+    ${composer?`<section class="card review-composer"><div class="row between"><div class="actual-label" style="margin:0">Add new review</div><button class="review-inline-link review-cancel-inline" data-action="closeReviewComposer">Cancel</button></div><p class="small review-copy"><b>1.</b> Export goal data and upload it to ChatGPT. <b>2.</b> Ask ChatGPT to follow the prompt inside the file. <b>3.</b> Copy its JSON code block and paste it here.</p><div class="review-actions"><button class="btn secondary" data-action="exportReviewGoal">Export Goal Data</button></div><label class="review-paste-label">Paste ChatGPT JSON<textarea id="reviewPaste" rows="7" placeholder='{"preview":"...","review":{"summary":"...","learnings":["..."],"next":["..."]}}'>${escapeHtml(draft?.rawText||'')}</textarea></label><button class="btn secondary full" data-action="previewGoalReview">Preview review</button></section>`:''}
+    ${draft&&composer?`<section class="card review-preview"><div class="row between"><div class="actual-label" style="margin:0">Ready to save</div><span class="small">Review the result first</span></div>${draft.checkpoint.preview?`<div class="draft-preview-summary"><span>Goals preview</span><p>${escapeHtml(draft.checkpoint.preview)}</p></div>`:''}<div class="full-review-label">Full review</div>${fullReviewHtml(draft.checkpoint)}<button class="btn sky full review-save-final" data-action="saveGoalReviewDraft">Save Review</button></section>`:''}
+    ${older.length?`<div class="section-title">Earlier reviews</div><section class="card review-history">${older.map(checkpointHtml).join('')}</section>`:''}
     <button class="btn ghost full" data-action="backGoals">Back to Goals</button>`;
 }
 function parseReviewJSON(text){
@@ -680,6 +689,7 @@ function previewGoalReview(){
     const raw=parseReviewJSON(rawText),g=findGoalById(raw.goalId||reviewGoalId);if(!g)throw new Error('Goal not found');
     reviewGoalId=g.id;
     reviewDraft={goalId:g.id,rawText,raw,checkpoint:makeCheckpoint(raw,g)};
+    reviewComposerOpen=true;
     flash='Review loaded. Check it below before saving.';
     render();
   }catch(e){alert('Paste the complete JSON code block returned by ChatGPT.');}
@@ -688,7 +698,7 @@ function saveGoalReviewDraft(){
   try{
     const g=findGoalById(reviewDraft?.goalId||reviewGoalId);if(!g||!reviewDraft)throw new Error('No review loaded');
     g.reviews=normalizeReviews(g); g.reviews.push(reviewDraft.checkpoint); g.review=blankReview();
-    reviewDraft=null;persist();flash='Review saved.';view='goals';render();
+    reviewDraft=null;reviewComposerOpen=false;persist();flash='Review saved.';view='goals';render();
   }catch(e){alert('Preview a review before saving it.');}
 }
 function pasteGoalReview(){ previewGoalReview(); }
@@ -804,7 +814,9 @@ function bind(){
     if(a==='pasteGoalReview')pasteGoalReview();
     if(a==='previewGoalReview')previewGoalReview();
     if(a==='saveGoalReviewDraft')saveGoalReviewDraft();
-    if(a==='backGoals'){reviewDraft=null;view='goals';render();}
+    if(a==='openReviewComposer'){reviewComposerOpen=true;reviewDraft=null;render();}
+    if(a==='closeReviewComposer'){reviewComposerOpen=false;reviewDraft=null;render();}
+    if(a==='backGoals'){reviewDraft=null;reviewComposerOpen=false;view='goals';render();}
   }));
   document.querySelectorAll('[data-set-food]').forEach(b=>b.addEventListener('click',()=>setFood(b.dataset.setFood,+b.dataset.value)));
   document.querySelectorAll('[data-toggle-food]').forEach(b=>b.addEventListener('click',()=>toggleFood(b.dataset.toggleFood)));
@@ -819,7 +831,7 @@ function bind(){
   document.querySelectorAll('[data-day-field]').forEach(el=>el.addEventListener('change',()=>{saveInputsFromDOM();persist();}));
   document.querySelectorAll('[data-plan]').forEach(el=>el.addEventListener('change',()=>{saveInputsFromDOM();persist();}));
   const f=document.getElementById('importFile'); if(f) f.addEventListener('change',()=>importData(f.files[0]));
-  document.querySelectorAll('[data-review-goal]').forEach(b=>b.addEventListener('click',()=>{reviewGoalId=b.dataset.reviewGoal;reviewDraft=null;view='goalReview';render();}));
+  document.querySelectorAll('[data-review-goal]').forEach(b=>b.addEventListener('click',()=>{reviewGoalId=b.dataset.reviewGoal;reviewDraft=null;reviewComposerOpen=false;view='goalReview';render();}));
   document.querySelectorAll('[data-chart-index]').forEach(p=>{
     const update=()=>{const data=chartData(),i=+p.dataset.chartIndex,d=data[i],tip=document.getElementById('chartTip'),guide=document.getElementById('chartGuide');if(tip&&d)tip.innerHTML=chartTipHtml(d);if(guide){const x=p.getAttribute('cx');guide.setAttribute('x1',x);guide.setAttribute('x2',x);}};
     p.addEventListener('click',update); p.addEventListener('mouseenter',update); p.addEventListener('touchstart',update,{passive:true});
