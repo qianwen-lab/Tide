@@ -1,11 +1,14 @@
-# Tide PWA v7.1
+# Tide PWA V7.2
 
-Visual refinement release.
+English-first visual refresh inspired by the calm, polished Life Lab design language.
 
-- Green page canvas with warm cream cards and restrained dusty-pink accents
-- One-tap morning weight entry directly from Today
-- New minimal Tide app icon
-- Existing Goal, Calendar, forecast, backup and migration logic preserved
-- Uses the same `tide.v1` localStorage key; this release does not reset user data
+## V7.2 changes
+- English UI throughout the active experience
+- Life Lab-inspired palette: sage, cream, powder blue, dusty pink
+- New Tide icon: two-part progress ring around a serif T
+- Progress replaces the old Change label
+- Existing local data remains under the same `tide.v1` storage key
+- Existing Goal, Calendar, forecast, archive, migration, and backup logic preserved
 
-Deploy by uploading all 8 files to the same GitHub Pages repository root.
+## Deploy
+Upload all eight files to the root of the existing Tide GitHub Pages repository and overwrite the previous files.

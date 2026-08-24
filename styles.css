@@ -308,3 +308,42 @@ input:focus,select:focus,textarea:focus{border-color:rgba(169,98,110,.5);box-sha
 .modal-backdrop{position:fixed;inset:0;background:rgba(24,34,28,.42);z-index:100;display:flex;align-items:flex-end;justify-content:center;padding:18px 12px calc(env(safe-area-inset-bottom) + 12px);backdrop-filter:blur(4px)}
 .weight-modal{width:min(456px,100%);background:var(--cream);border-radius:24px;padding:10px 18px 16px;box-shadow:0 24px 60px rgba(20,30,24,.24)}.weight-modal-handle{width:42px;height:4px;border-radius:99px;background:rgba(64,88,74,.24);margin:0 auto 14px}.weight-modal-title{font-size:20px;font-weight:760;text-align:center}.weight-modal-sub{text-align:center;font-size:11px;color:var(--muted);margin-top:4px}.weight-input-wrap{display:flex;align-items:center;gap:8px;background:var(--cream-2);border:1px solid rgba(64,88,74,.15);border-radius:18px;padding:8px 14px;margin:18px 0 12px}.weight-input-wrap input{border:0;background:transparent;padding:4px 0;text-align:center;font-size:42px;font-weight:760;box-shadow:none}.weight-input-wrap input:focus{box-shadow:none;border:0}.weight-input-wrap span{font-size:15px;color:var(--muted)}.weight-save{width:100%;border:0;border-radius:15px;background:var(--dusty-pink);color:#fff;padding:13px;font-size:15px;font-weight:760}.weight-cancel{width:100%;border:0;background:transparent;color:var(--muted);padding:12px 10px 4px;font-size:13px}
 @media(min-width:700px){body{background:#5E7463}.shell{box-shadow:0 0 42px rgba(24,39,29,.18)}}
+
+/* Tide V7.2 — Life Lab inspired: editorial cream, sage, powder blue, dusty pink */
+:root{
+  --ll-cream:#F5F0E7;
+  --ll-card:#FBF8F2;
+  --ll-sage:#A7B8A8;
+  --ll-sage-deep:#3F5A49;
+  --ll-sage-mid:#78917D;
+  --ll-blue:#B8CDDD;
+  --ll-blue-deep:#567A96;
+  --ll-pink:#E7A7B0;
+  --ll-pink-deep:#B96F7C;
+  --ll-ink:#304139;
+  --ll-muted:#7A847D;
+  --ink:var(--ll-ink); --muted:var(--ll-muted); --deep:var(--ll-sage-deep);
+  --forest:var(--ll-sage); --forest-deep:var(--ll-sage-deep);
+  --cream:var(--ll-card); --cream-2:var(--ll-cream); --cream-deep:#EBE5D9;
+  --dusty-pink:var(--ll-pink); --dusty-pink-deep:var(--ll-pink-deep); --dusty-pink-soft:#F3D7DC;
+  --sky:var(--ll-blue-deep); --soft:#E9F0F4;
+}
+html,body{background:#D8E2D9;color:var(--ll-ink)}
+.shell{background:linear-gradient(180deg,#D5E0D6 0%,#C9D8CB 100%)}
+.page-title,.topbar .page-title{color:var(--ll-sage-deep);font-family:Georgia,"Times New Roman",serif;font-weight:600;letter-spacing:-.3px}
+.card,.compact-card,.today-goal-card,.today-progress-card,.change-goal-card,.settings-list,.day-summary,.quick-weight-card{background:var(--ll-card);border-color:rgba(63,90,73,.10);box-shadow:0 7px 24px rgba(48,65,57,.07)}
+.today-reminder{background:#F2D8DC}.today-goal-card{background:#F8F4EC}.today-progress-card{background:#F8F4EC}
+.summary-tile.green,.summary-tile.green-soft{background:#DDE7DD}.summary-tile.pink{background:#F1D6DA}.summary-tile{box-shadow:none}
+.goal-ring{background:conic-gradient(var(--ll-sage-deep) calc(var(--p)*1%),#DDE5DD 0)}.goal-ring:after{background:#F8F4EC}
+.quick-weight-card.empty-weight{background:#F1D6DA}.quick-weight-action{color:var(--ll-pink-deep)}
+.btn,.btn.sky{background:var(--ll-sage-deep)}.btn.secondary{background:#E7EEE8;color:var(--ll-sage-deep)}
+.pill.on,.plan-mode button.on,.range-tabs button.on{background:var(--ll-sage-deep);border-color:var(--ll-sage-deep)}
+.toggle.on{background:var(--ll-pink-deep)}
+.nav{background:rgba(248,245,238,.96);border-top-color:rgba(63,90,73,.10)}.nav button{color:#87938B}.nav button.active{color:var(--ll-sage-deep)}
+.day-cell{color:var(--ll-ink)}.weekdays,.calendar-title{color:var(--ll-sage-deep)}.day-cell.today .day-number{background:var(--ll-sage-deep)}.day-cell.selected{background:rgba(167,184,168,.26)}
+.dot.food{background:var(--ll-sage-deep);width:6px;height:6px}.dot.move{background:var(--ll-pink-deep);width:6px;height:6px}.dot.move-outline{border-color:var(--ll-pink-deep);width:6px;height:6px}.dot.event{background:var(--ll-blue-deep);width:6px;height:6px}
+.chart .actual{stroke:var(--ll-sage-deep)}.chart .smooth{stroke:var(--ll-blue-deep)}.chart .forecast{stroke:var(--ll-pink-deep)}.chart .goal{stroke:#9A7E84}.chart .point{fill:var(--ll-sage-deep);stroke:var(--ll-card)}
+.forecast-card.green{background:#DDE7DD}.forecast-card.pink{background:#F1D6DA}.forecast-insight,.insight{background:#E7EEF1}
+.status.active{background:#F1D6DA;color:#8C5260}.status.done{background:#DCE9DE;color:#365744}.status.close{background:#E8EEF2;color:#567187}
+.setting-row{background:var(--ll-card)!important}.weight-modal{background:var(--ll-card)}.weight-save{background:var(--ll-pink-deep)}
+@media(min-width:700px){body{background:#BCCABD}.shell{box-shadow:0 0 42px rgba(48,65,57,.14)}}
