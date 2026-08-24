@@ -1,6 +1,6 @@
 const STORAGE_KEY = 'tide.v1';
-const VERSION = '7.4.0';
-const SCHEMA_VERSION = 8;
+const VERSION = '7.5.0';
+const SCHEMA_VERSION = 9;
 
 const COLORS = { sage:'#5E836F', sageDeep:'#244C3E', pink:'#C98994', pinkSoft:'#EBCFD4', blue:'#8C918D', ink:'#1F2823' };
 const iso = d => {
@@ -20,7 +20,7 @@ const fmtDate = (s, lang='en') => {
 const fmtShortDate = s => { const d=parseDate(s); return `${d.getMonth()+1}/${d.getDate()}`; };
 const escapeHtml = s => String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
-const blankReview = () => ({summary:'',learnings:[],actionItems:[],nextExperiment:'',updatedAt:null});
+const blankReview = () => ({summary:'',learnings:[],actionItems:[],nextExperiment:'',updatedAt:null}); // legacy v7.4 shape
 const normalizeReview = r => ({
   summary:String(r?.summary||''),
   learnings:Array.isArray(r?.learnings)?r.learnings.map(x=>String(x)).filter(Boolean):[],
@@ -28,6 +28,21 @@ const normalizeReview = r => ({
   nextExperiment:String(r?.nextExperiment||''),
   updatedAt:r?.updatedAt||null
 });
+const asList = v => Array.isArray(v) ? v.map(x=>String(x).trim()).filter(Boolean) : (v==null||v===''?[]:[String(v).trim()]);
+const hasLegacyReview = r => !!(r && (String(r.summary||'').trim() || asList(r.learnings).length || asList(r.actionItems).length || String(r.nextExperiment||'').trim()));
+function normalizeCheckpoint(r={}, goalStart=''){
+  const next=asList(r.next??r.actionItems);
+  if(r.nextExperiment && !next.includes(String(r.nextExperiment).trim())) next.push(String(r.nextExperiment).trim());
+  const date=String(r.date||r.reviewedAt||r.updatedAt||today()).slice(0,10);
+  const dayNum=goalStart ? Math.max(1,Math.floor((parseDate(date)-parseDate(goalStart))/86400000)+1) : (r.day??null);
+  return {id:r.id||`review-${date}-${Math.random().toString(36).slice(2,8)}`,date,day:r.day??dayNum,summary:String(r.summary||'').trim(),learnings:asList(r.learnings),next,createdAt:r.createdAt||r.updatedAt||new Date().toISOString()};
+}
+function normalizeReviews(g={}){
+  let rows=Array.isArray(g.reviews)?g.reviews.map(r=>normalizeCheckpoint(r,g.start)):[];
+  if(!rows.length && hasLegacyReview(g.review)) rows=[normalizeCheckpoint(g.review,g.start)];
+  return rows.filter(r=>r.summary||r.learnings.length||r.next.length).sort((a,b)=>String(a.createdAt||a.date).localeCompare(String(b.createdAt||b.date)));
+}
+function latestReview(g){ const rows=normalizeReviews(g); return rows.length?rows[rows.length-1]:null; }
 const stableGoalId = (g={}, suffix='') => g.id || `goal-${g.start||'na'}-${g.end||'na'}-${String(g.name||'goal').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')}${suffix}`;
 const newGoalId = () => `goal-${today()}-${Date.now().toString(36)}`;
 
@@ -35,7 +50,7 @@ const defaults = {
   schemaVersion:SCHEMA_VERSION,
   version:SCHEMA_VERSION,
   language:'en',
-  goal:{id:`goal-${today()}-active`,name:'Back to 50',start:today(),end:addDays(today(),31),startWeight:52.7,target:50,status:'active',review:blankReview()},
+  goal:{id:`goal-${today()}-active`,name:'Back to 50',start:today(),end:addDays(today(),31),startWeight:52.7,target:50,status:'active',review:blankReview(),reviews:[]},
   days:{},
   plan:{veg:3,fruit:2,noSnack:true,stop:'18:00',satiety:7,water:2,stepsTarget:10000,stepsDays:5,stretchDays:5,cardio:90,strength:60},
   goals:[]
@@ -72,9 +87,9 @@ function migrate(raw){
   if(!raw || typeof raw!=='object') return out;
   out.language='en';
   out.goal={...out.goal,...(raw.goal||{})};
-  out.goal.id=stableGoalId(out.goal,'-active'); out.goal.review=normalizeReview(out.goal.review);
+  out.goal.id=stableGoalId(out.goal,'-active'); out.goal.review=normalizeReview(out.goal.review); out.goal.reviews=normalizeReviews(out.goal);
   out.plan={...out.plan,...(raw.plan||{}),stepsTarget:10000};
-  out.goals=Array.isArray(raw.goals)?raw.goals.map((g,i)=>({...g,id:stableGoalId(g,`-${i}`),review:normalizeReview(g.review),planSnapshot:g.planSnapshot?{...g.planSnapshot}:null,snapshot:true})):[];
+  out.goals=Array.isArray(raw.goals)?raw.goals.map((g,i)=>{const x={...g,id:stableGoalId(g,`-${i}`),review:normalizeReview(g.review),planSnapshot:g.planSnapshot?{...g.planSnapshot}:null,snapshot:true};x.reviews=normalizeReviews(x);return x;}):[];
   out.days={};
   Object.entries(raw.days||{}).forEach(([k,v])=>out.days[k]=mergeDay({...v,date:k}));
   out.schemaVersion=SCHEMA_VERSION; out.version=SCHEMA_VERSION;
@@ -353,13 +368,14 @@ function goalForecast(){
 function forecastMessage(f){
   if(!f.ready) return f.reason;
   if(f.targetDate){
-    if(f.deltaDays<=-1) return `At your recent pace, you're projected to reach ${fmt(db.goal.target)} kg on ${fmtDate(f.targetDate,'en')} — ${Math.abs(f.deltaDays)} days ahead of your goal date.`;
-    if(f.deltaDays>=1) return `At your recent pace, you're projected to reach ${fmt(db.goal.target)} kg on ${fmtDate(f.targetDate,'en')} — ${f.deltaDays} days after your goal date.`;
-    return "At your recent pace, you're projected to reach your target around the goal date.";
+    if(f.deltaDays<=-1) return `${Math.abs(f.deltaDays)} days ahead of pace.`;
+    if(f.deltaDays>=1) return `${f.deltaDays} days behind pace.`;
+    return 'Right on pace.';
   }
-  if(f.slope>=-.005) return "There isn't enough downward trend yet to project when you'll reach the target. Keep logging before changing the plan.";
-  return 'A few more weigh-ins will make the forecast more stable.';
+  if(f.slope>=-.005) return 'Goal date is still unclear. Keep logging.';
+  return 'A few more weigh-ins will steady the forecast.';
 }
+
 function changePage(){
   const series=chartData();
   const ma=movingAverage(today()); const lw=latestWeight(today()); const f=goalForecast();
@@ -373,8 +389,8 @@ function changePage(){
       <div class="chart-wrap">${renderChart(series,f)}</div>
     </section>
     <section class="forecast-grid">
-      <div class="forecast-card pink"><div class="small">Projected weight on ${fmtDate(db.goal.end,'en')}</div><div class="forecast-value">${f.ready?fmt(f.projectedEnd):'—'} <span>kg</span></div></div>
-      <div class="forecast-card green"><div class="small">Projected date to reach ${fmt(db.goal.target)} kg</div><div class="forecast-text">${f.ready&&f.targetDate?fmtDate(f.targetDate,'en'):'Keep logging'}</div></div>
+      <div class="forecast-card pink"><div class="small">By ${fmtDate(db.goal.end,'en')}</div><div class="forecast-value">${f.ready?fmt(f.projectedEnd):'—'} <span>kg</span></div></div>
+      <div class="forecast-card green"><div class="small">Reach ${fmt(db.goal.target)}</div><div class="forecast-text">${f.ready&&f.targetDate?fmtDate(f.targetDate,'en'):'Keep logging'}</div></div>
     </section>
     <div class="insight forecast-insight">${forecastMessage(f)}</div>
     <div class="section-title">${tr('todayNote')}</div>
@@ -443,6 +459,16 @@ function changeSummary(){
   return `<div class="metric-row"><div class="metric"><div class="label">${db.language==='zh'?'7天秤重变化':'7-day scale change'}</div><div class="value">${diff>0?'+':''}${diff.toFixed(1)} <span class="small">kg</span></div></div><div class="metric"><div class="label">${db.language==='zh'?'7日平均变化':'7-day avg change'}</div><div class="value">${md==null?'—':`${md>0?'+':''}${md.toFixed(1)}`} <span class="small">kg</span></div></div></div>`;
 }
 
+function reviewCarryCard(){
+  let source=db.goal, r=latestReview(db.goal), active=true;
+  if(!r){
+    const g=[...db.goals].reverse().find(x=>latestReview(x));
+    if(g){source=g;r=latestReview(g);active=false;}
+  }
+  if(!r) return '';
+  const learn=r.learnings.slice(0,2), next=r.next.slice(0,2);
+  return `<section class="card review-carry"><div class="row between"><div class="actual-label">${active?'Latest checkpoint':'From your last goal'}</div><div class="small">${fmtShortDate(r.date)}${r.day?` · Day ${r.day}`:''}</div></div>${r.summary?`<div class="review-mini-summary">${escapeHtml(r.summary)}</div>`:''}${learn.length?`<div class="review-mini-block"><b>Learning</b><ul>${learn.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`:''}${next.length?`<div class="review-mini-block"><b>Next</b><ul>${next.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`:''}</section>`;
+}
 function goalsPage(){
   const lw=latestWeight(today());
   return `${topbar(tr('goals'))}
@@ -451,22 +477,24 @@ function goalsPage(){
       <div class="row between"><div><div class="brand" style="font-size:18px;letter-spacing:0">${escapeHtml(db.goal.name)}</div><div class="small">${db.goal.start} → ${db.goal.end}</div></div><span class="status active">${tr('active')}</span></div>
       <div class="metric-row" style="margin-top:10px"><div class="metric"><div class="label">${tr('start')}</div><div class="value">${fmt(activeGoalStartWeight())} <span class="small">kg</span></div></div><div class="metric" style="text-align:right"><div class="label">${tr('target')}</div><div class="value">${fmt(db.goal.target)} <span class="small">kg</span></div></div></div>
       <div class="progress"><i style="width:${goalProgress(lw?.weight??db.goal.startWeight)}%"></i></div>
-      <div class="goal-actions"><button class="btn secondary" data-action="editGoal">Edit current goal</button><button class="btn ghost" data-action="exportActiveGoal">Export goal data</button></div>
-    </section>${(()=>{const prev=lastReviewedGoal();const items=prev?normalizeReview(prev.review).actionItems.slice(0,3):[];return items.length?`<section class="card review-carry"><div class="actual-label">From your last review</div><ul>${items.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></section>`:'';})()}
+      <div class="goal-actions"><button class="btn secondary" data-action="editGoal">Edit goal</button><button class="btn ghost" data-review-goal="${escapeHtml(db.goal.id)}">Review goal</button></div>
+    </section>${reviewCarryCard()}
     <div class="section-title">${tr('pastGoals')}</div>
-    <section class="card"><div class="goal-list">${db.goals.length?db.goals.slice().reverse().map(goalHistoryItem).join(''):`<div class="empty">${db.language==='zh'?'还没有过去的目标。':'No past goals yet.'}</div>`}</div></section>`;
+    <section class="card"><div class="goal-list">${db.goals.length?db.goals.slice().reverse().map(goalHistoryItem).join(''):`<div class="empty">No past goals yet.</div>`}</div></section>`;
 }
 function goalHistoryItem(g){
   const end=g.endWeight??null; const status=goalStatus(g,end); const labels={reached:tr('reached'),close:tr('close'),ended:tr('ended')};
   const lost=end==null?null:g.startWeight-end;
   const total=g.startWeight-g.target; const achieved=(end!=null&&total>0)?clamp((g.startWeight-end)/total*100,0,100):null;
   const process=[];
-  if(g.planDays!=null) process.push(`${db.language==='zh'?'饮食执行':'Food on plan'} ${g.planDays}${db.language==='zh'?'天':' days'}`);
+  if(g.planDays!=null) process.push(`Food on plan ${g.planDays} days`);
   if(g.strengthMinutes!=null) process.push(`${tr('strength')} ${g.strengthMinutes}${tr('minutes')}`);
   if(g.cardioMinutes!=null) process.push(`${tr('cardio')} ${g.cardioMinutes}${tr('minutes')}`);
-  if(g.eventCount) process.push(`${g.eventCount}${db.language==='zh'?'个特殊安排':' life events'}`);
-  return `<div class="goal-item"><div class="row between"><div class="name">${escapeHtml(g.name)}</div><span class="status ${status==='reached'?'done':status==='close'?'close':'ended'}">${labels[status]}</span></div><div class="numbers">${fmt(g.startWeight)} → ${fmt(end)} kg <span class="muted">· target ${fmt(g.target)}</span></div>${achieved!=null?`<div class="progress compact"><i style="width:${achieved}%"></i></div><div class="small">${Math.round(achieved)}% of target change</div>`:''}<div class="meta">${g.start} → ${g.ended||g.end}${lost==null?'':` · ${lost>=0?'-':'+'}${Math.abs(lost).toFixed(1)} kg`}${process.length?`<br>${process.join(' · ')}`:''}</div><button class="review-link" data-review-goal="${escapeHtml(g.id)}">${g.review?.updatedAt?'View goal review':'Goal review'}</button></div>`;
+  if(g.eventCount) process.push(`${g.eventCount} life events`);
+  const reviewCount=normalizeReviews(g).length;
+  return `<div class="goal-item"><div class="row between"><div class="name">${escapeHtml(g.name)}</div><span class="status ${status==='reached'?'done':status==='close'?'close':'ended'}">${labels[status]}</span></div><div class="numbers">${fmt(g.startWeight)} → ${fmt(end)} kg <span class="muted">· target ${fmt(g.target)}</span></div>${achieved!=null?`<div class="progress compact"><i style="width:${achieved}%"></i></div><div class="small">${Math.round(achieved)}% of target change</div>`:''}<div class="meta">${g.start} → ${g.ended||g.end}${lost==null?'':` · ${lost>=0?'-':'+'}${Math.abs(lost).toFixed(1)} kg`}${process.length?`<br>${process.join(' · ')}`:''}</div><button class="review-link" data-review-goal="${escapeHtml(g.id)}">${reviewCount?`Review history · ${reviewCount}`:'Goal review'}</button></div>`;
 }
+
 function goalStatus(g,end){
   if(g.resultStatus) return g.resultStatus;
   if(end==null) return 'ended';
@@ -504,30 +532,22 @@ function goalReviewPack(g){
     const rec=day(s), fs=foodStatus(rec);
     const hasData=rec.weight!=null || rec.sleep!=null || fs.recorded>0 || Object.values(rec.move||{}).some(v=>v!==null&&v!==false) || rec.events.length || rec.note;
     if(!hasData) continue;
-    records.push({
-      date:s, weight:rec.weight, sevenDayAverage:goalAverageFor(g,s), sleepHours:rec.sleep,
-      food:{...rec.food}, exercise:{...rec.move},
-      lifeEvents:rec.events.map(eventLabel), note:rec.note||''
-    });
+    records.push({date:s,weight:rec.weight,sevenDayAverage:goalAverageFor(g,s),sleepHours:rec.sleep,food:{...rec.food},exercise:{...rec.move},lifeEvents:rec.events.map(eventLabel),note:rec.note||''});
   }
   const endWeight=active ? latestWeight(through)?.weight??null : g.endWeight??null;
   const startWeight=active ? activeGoalStartWeight() : +g.startWeight;
   return {
-    tideGoalReviewVersion:1,
+    tideGoalReviewVersion:2,
     goalId:g.id,
     exportedAt:new Date().toISOString(),
-    goal:{name:g.name,start:g.start,end:g.end,startWeight,targetWeight:+g.target,endWeight,status:active?'active':goalStatus(g,endWeight)},
+    goal:{name:g.name,start:g.start,end:g.end,startWeight,targetWeight:+g.target,currentOrEndWeight:endWeight,status:active?'active':goalStatus(g,endWeight)},
     plan:{...(g.planSnapshot||db.plan)},
     planWasFrozenAtArchive:!!g.planSnapshot,
-    analysisGuidance:['Use trends and lagged patterns rather than attributing a morning weight to an event logged on the same date.','Prioritize repeatable behaviors, adherence patterns, and weekly/goal-level changes.','Return the review in the exact chatgptReturnSchema so Tide can import it.'],
-    recommendedPrompt:'Analyze this Tide goal as a goal review. Identify what worked, what did not, the most useful behavioral patterns, and a small number of specific action items for the next goal. Do not attribute a morning weight change to an event logged on the same date; use lagged and multi-day patterns. Return only JSON matching chatgptReturnSchema.',
     summary:{daysCovered:records.length,weightChange:endWeight==null?null:+(endWeight-startWeight).toFixed(2),targetChange:+(+g.target-startWeight).toFixed(2)},
+    reviewHistory:normalizeReviews(g),
     daily:records,
-    existingReview:normalizeReview(g.review),
-    chatgptReturnSchema:{
-      tideReviewVersion:1, goalId:g.id,
-      review:{summary:'2-4 sentence synthesis',learnings:['learning 1','learning 2'],actionItems:['specific action 1','specific action 2'],nextExperiment:'one concrete experiment for the next goal'}
-    }
+    recommendedPrompt:'Review this Tide goal briefly and practically. Focus on the most useful patterns, including lagged/multi-day patterns rather than blaming a morning weight on an event from the same day. Keep it concise. Return ONLY JSON with goalId, summary, learnings (1-3 short items), and next (1-3 specific actions). You may add extra concise fields if something important stands out; Tide will ignore fields it does not use.',
+    chatgptReturnExample:{goalId:g.id,summary:'1-3 concise sentences',learnings:['short learning 1','short learning 2'],next:['specific next action 1','specific next action 2']}
   };
 }
 function downloadJSON(obj,name){
@@ -538,27 +558,49 @@ function exportGoalReviewData(g){
   if(!g) return;
   downloadJSON(goalReviewPack(g),`tide-goal-${String(g.name||'goal').toLowerCase().replace(/[^a-z0-9]+/g,'-')}-${g.start}.json`);
 }
+function checkpointHtml(r){
+  return `<div class="checkpoint"><div class="row between"><b>${fmtShortDate(r.date)}</b><span class="small">${r.day?`Day ${r.day}`:''}</span></div>${r.summary?`<p>${escapeHtml(r.summary)}</p>`:''}${r.learnings.length?`<div class="checkpoint-block"><span>Learnings</span><ul>${r.learnings.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`:''}${r.next.length?`<div class="checkpoint-block"><span>Next</span><ul>${r.next.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`:''}</div>`;
+}
 function goalReviewPage(){
   const g=findGoalById(reviewGoalId); if(!g) return `${topbar('Goal Review')}<div class="empty">Goal not found.</div>`;
-  const r=normalizeReview(g.review), end=g.endWeight??latestWeight(g.ended||today())?.weight??null;
-  return `${topbar('Goal Review','',`<button class="btn secondary save-top" data-action="saveGoalReview">Save</button>`)}
-    <section class="card soft review-summary"><div class="row between"><div><b>${escapeHtml(g.name)}</b><div class="small">${fmtShortDate(g.start)} → ${fmtShortDate(g.ended||g.end)}</div></div><span class="status ${goalStatus(g,end)==='reached'?'done':goalStatus(g,end)==='close'?'close':'ended'}">${goalStatus(g,end)==='reached'?'Reached':goalStatus(g,end)==='close'?'Nearly reached':'Ended'}</span></div><div class="review-metrics"><div><span>Start</span><b>${fmt(g.startWeight)} kg</b></div><div><span>End</span><b>${fmt(end)} kg</b></div><div><span>Target</span><b>${fmt(g.target)} kg</b></div></div></section>
-    <section class="card"><div class="actual-label">ChatGPT workflow</div><p class="small review-copy">Export this goal, upload the JSON to ChatGPT for analysis, then import the review JSON back here. Tide will keep the learnings with this archived goal.</p><div class="review-actions"><button class="btn secondary" data-action="exportReviewGoal">Export Goal Data</button><label class="btn ghost file-btn">Import ChatGPT Review<input id="reviewImportFile" type="file" accept="application/json" style="display:none"></label></div></section>
-    <section class="card"><label>Summary<textarea id="reviewSummary" rows="3" placeholder="What happened overall?">${escapeHtml(r.summary)}</textarea></label><label>Key learnings <span class="small">one per line</span><textarea id="reviewLearnings" rows="4" placeholder="What did you learn?">${escapeHtml(r.learnings.join('\n'))}</textarea></label><label>Action items <span class="small">one per line</span><textarea id="reviewActions" rows="4" placeholder="What should you do differently next time?">${escapeHtml(r.actionItems.join('\n'))}</textarea></label><label>Next experiment<textarea id="reviewExperiment" rows="3" placeholder="One thing to test in the next goal">${escapeHtml(r.nextExperiment)}</textarea></label></section>
-    <button class="btn sky full" data-action="saveGoalReviewBottom">Save Review</button>`;
+  const active=g===db.goal || !g.snapshot;
+  const end=active?(latestWeight(today())?.weight??null):(g.endWeight??null);
+  const start=active?activeGoalStartWeight():+g.startWeight;
+  const status=active?'Active':goalStatus(g,end)==='reached'?'Reached':goalStatus(g,end)==='close'?'Nearly reached':'Ended';
+  const rows=normalizeReviews(g).slice().reverse();
+  return `${topbar('Goal Review')}
+    <section class="card soft review-summary"><div class="row between"><div><b>${escapeHtml(g.name)}</b><div class="small">${fmtShortDate(g.start)} → ${fmtShortDate(active?g.end:(g.ended||g.end))}</div></div><span class="status ${active?'active':goalStatus(g,end)==='reached'?'done':goalStatus(g,end)==='close'?'close':'ended'}">${status}</span></div><div class="review-metrics"><div><span>Start</span><b>${fmt(start)} kg</b></div><div><span>${active?'Current':'End'}</span><b>${fmt(end)} kg</b></div><div><span>Target</span><b>${fmt(g.target)} kg</b></div></div></section>
+    <section class="card"><div class="actual-label">ChatGPT check-in</div><p class="small review-copy">Export the goal, upload it to ChatGPT, then paste or import the short JSON review. You can do this anytime — no need to end the goal.</p><div class="review-actions"><button class="btn secondary" data-action="exportReviewGoal">Export Goal Data</button><label class="btn ghost file-btn">Import JSON<input id="reviewImportFile" type="file" accept="application/json" style="display:none"></label></div><label class="review-paste-label">Paste ChatGPT Review<textarea id="reviewPaste" rows="5" placeholder='{"summary":"...","learnings":["..."],"next":["..."]}'></textarea></label><button class="btn ghost full" data-action="pasteGoalReview">Add pasted review</button></section>
+    <div class="section-title">Review history</div>
+    <section class="card review-history">${rows.length?rows.map(checkpointHtml).join(''):'<div class="empty">No check-ins yet.</div>'}</section>`;
 }
-function saveGoalReviewForm(){
-  const g=findGoalById(reviewGoalId); if(!g) return;
-  const lines=id=>String(document.getElementById(id)?.value||'').split(/\n+/).map(x=>x.trim()).filter(Boolean);
-  g.review={summary:String(document.getElementById('reviewSummary')?.value||'').trim(),learnings:lines('reviewLearnings'),actionItems:lines('reviewActions'),nextExperiment:String(document.getElementById('reviewExperiment')?.value||'').trim(),updatedAt:new Date().toISOString()};
+function parseReviewJSON(text){
+  let cleaned=String(text||'').trim().replace(/^```(?:json)?\s*/i,'').replace(/```$/,'').trim();
+  const first=cleaned.indexOf('{'), last=cleaned.lastIndexOf('}'); if(first>=0&&last>first) cleaned=cleaned.slice(first,last+1);
+  return JSON.parse(cleaned);
+}
+function makeCheckpoint(raw,g){
+  const root=raw?.review||raw||{};
+  const summary=String(root.summary||'').trim(), learnings=asList(root.learnings), next=asList(root.next??root.actionItems);
+  if(root.nextExperiment && !next.includes(String(root.nextExperiment).trim())) next.push(String(root.nextExperiment).trim());
+  if(!summary && !learnings.length && !next.length) throw new Error('Empty review');
+  const date=today();
+  return {id:`review-${date}-${Date.now().toString(36)}`,date,day:Math.max(1,Math.floor((parseDate(date)-parseDate(g.start))/86400000)+1),summary,learnings:learnings.slice(0,5),next:next.slice(0,5),createdAt:new Date().toISOString()};
+}
+function addGoalCheckpoint(g,raw){
+  if(!g) throw new Error('Goal not found');
+  g.reviews=normalizeReviews(g); g.reviews.push(makeCheckpoint(raw,g)); g.review=blankReview();
 }
 function importGoalReview(file){
   if(!file)return; const r=new FileReader(); r.onload=()=>{try{
-    const raw=JSON.parse(r.result), g=findGoalById(raw.goalId||reviewGoalId); if(!g) throw new Error('Goal not found');
-    g.review=normalizeReview(raw.review||raw); g.review.updatedAt=new Date().toISOString(); reviewGoalId=g.id; persist(); flash='Goal review imported.'; render();
-  }catch(e){alert('This review file could not be imported.');}}; r.readAsText(file);
+    const raw=parseReviewJSON(r.result), g=findGoalById(raw.goalId||reviewGoalId); if(!g) throw new Error('Goal not found');
+    addGoalCheckpoint(g,raw); reviewGoalId=g.id; persist(); flash='Goal review added.'; render();
+  }catch(e){alert('This review could not be imported.');}}; r.readAsText(file);
 }
-function lastReviewedGoal(){ return [...db.goals].reverse().find(g=>normalizeReview(g.review).actionItems.length || normalizeReview(g.review).learnings.length || normalizeReview(g.review).summary); }
+function pasteGoalReview(){
+  try{const raw=parseReviewJSON(document.getElementById('reviewPaste')?.value||''),g=findGoalById(raw.goalId||reviewGoalId);if(!g)throw new Error('Goal not found');addGoalCheckpoint(g,raw);reviewGoalId=g.id;persist();flash='Goal review added.';render();}catch(e){alert('Paste the JSON review returned by ChatGPT.');}
+}
+function lastReviewedGoal(){ return [...db.goals].reverse().find(g=>latestReview(g)); }
 
 function settingsPage(){
   return `${topbar('Settings')}
@@ -622,8 +664,8 @@ function archiveGoal(){
     if(fs.enough&&fs.score>=.8) planDays++;
     strengthMinutes+=(+rec.move.strength||0); cardioMinutes+=(+rec.move.cardio||0); eventCount+=rec.events.length;
   }
-  const snapshot={...db.goal,id:db.goal.id||newGoalId(),review:normalizeReview(db.goal.review),planSnapshot:{...db.plan},startWeight:startSnapshot,ended:today(),endWeight:end,resultStatus:status,planDays,strengthMinutes,cardioMinutes,eventCount,snapshot:true,schemaVersion:SCHEMA_VERSION}; db.goals.push(snapshot);
-  db.goal={id:newGoalId(),name:'New goal',start:today(),end:addDays(today(),30),startWeight:end??db.goal.target,target:Math.max(35,(end??db.goal.target)-2),status:'active',review:blankReview()};
+  const snapshot={...db.goal,id:db.goal.id||newGoalId(),review:blankReview(),reviews:normalizeReviews(db.goal),planSnapshot:{...db.plan},startWeight:startSnapshot,ended:today(),endWeight:end,resultStatus:status,planDays,strengthMinutes,cardioMinutes,eventCount,snapshot:true,schemaVersion:SCHEMA_VERSION}; db.goals.push(snapshot);
+  db.goal={id:newGoalId(),name:'New goal',start:today(),end:addDays(today(),30),startWeight:end??db.goal.target,target:Math.max(35,(end??db.goal.target)-2),status:'active',review:blankReview(),reviews:[]};
   view='goals'; save(db.language==='zh'?'当前目标已归档。':'Goal archived.');
 }
 function exportData(){
@@ -666,9 +708,8 @@ function bind(){
     if(a==='editPlan'){view='planEdit';render();}
     if(a==='savePlan'||a==='savePlanBottom'){saveInputsFromDOM();view='settings';save(tr('saved'));}
     if(a==='export')exportData();
-    if(a==='exportActiveGoal')exportGoalReviewData(db.goal);
     if(a==='exportReviewGoal')exportGoalReviewData(findGoalById(reviewGoalId));
-    if(a==='saveGoalReview'||a==='saveGoalReviewBottom'){saveGoalReviewForm();persist();view='goals';flash='Goal review saved.';render();}
+    if(a==='pasteGoalReview')pasteGoalReview();
   }));
   document.querySelectorAll('[data-set-food]').forEach(b=>b.addEventListener('click',()=>setFood(b.dataset.setFood,+b.dataset.value)));
   document.querySelectorAll('[data-toggle-food]').forEach(b=>b.addEventListener('click',()=>toggleFood(b.dataset.toggleFood)));

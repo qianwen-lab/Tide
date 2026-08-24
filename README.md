@@ -1,12 +1,14 @@
-# Tide PWA V7.4
+# Tide PWA v7.5
 
-Goal Review + Progress polish.
+Goal-review checkpoints + concise forecast labels.
 
-## V7.4 changes
-- Goal Review workflow: export goal-scoped JSON, analyze in ChatGPT, import compatible review JSON, and retain learnings/action items with the archived goal.
-- Latest review action items can surface on the active Goals page.
-- Progress chart wording polished; `Weight` replaces `Fasting weight`.
-- Actual chart points are smaller. Tooltip shows date, weight, and 7-day average only (no same-day life event attribution).
-- Life event `Dinner out` renamed to `Eating out`; `Long flight` removed. Existing data migrates automatically.
-- Progress x-axis uses more compact M/D labels and keeps edge labels inside the chart.
-- Storage key remains `tide.v1`; schema migrates automatically.
+## What changed
+- Progress cards now read **By Sep 20** / **Reach 50.0** (using the current goal date and target).
+- Active goals can be reviewed at any time; no need to archive first.
+- Goal reviews are saved as dated checkpoints with **Summary / Learnings / Next**.
+- Export Goal Data includes a concise ChatGPT prompt and import-friendly JSON example.
+- Paste or import ChatGPT JSON directly into Tide. Multiple reviews build a history instead of overwriting each other.
+- Legacy v7.4 reviews automatically migrate into checkpoint history.
+- Existing Tide data remains in the same `tide.v1` local storage.
+
+Upload all 8 files at repository root and redeploy GitHub Pages.
