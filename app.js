@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'tide.v1';
-const VERSION = '8.1.0';
+const VERSION = '8.2.0';
 const SCHEMA_VERSION = 11;
 
 const COLORS = { sage:'#5E836F', sageDeep:'#244C3E', pink:'#C98994', pinkSoft:'#EBCFD4', blue:'#8C918D', ink:'#1F2823' };
@@ -121,6 +121,7 @@ let quickWeightOpen = false;
 let reviewGoalId = null;
 let reviewDraft = null;
 let reviewComposerOpen = false;
+let archiveConfirmOpen = false;
 
 function fresh(){ return JSON.parse(JSON.stringify(defaults)); }
 function mergeDay(x={}){
@@ -570,6 +571,8 @@ function changePage(){
       <div class="forecast-card green"><div class="small">Reach ${fmt(db.goal.target)}</div><div class="forecast-text">${f.ready&&f.targetDate?fmtDate(f.targetDate,'en'):'Keep logging'}</div></div>
     </section>
     <div class="insight forecast-insight">${forecastMessage(f)}</div>
+    <div class="section-title">Weekly behavior</div>
+    <section class="card progress-behavior-card">${weeklyBehaviorProgress(db.goal)}</section>
     <div class="section-title">${tr('todayNote')}</div>
     <div class="insight">${dynamicInsight()}</div>
     <div class="section-title">Weekly review</div>
@@ -610,10 +613,16 @@ function renderChart(data,forecast){
   const y=v=>Tp+(max-v)/(max-min)*(H-Tp-B);
   let grid='';
   for(let v=Math.ceil(min/tickStep)*tickStep;v<=max+.001;v+=tickStep){const yy=y(v);grid+=`<line class="grid" x1="${L}" y1="${yy}" x2="${W-R}" y2="${yy}"/><line class="tick" x1="${L-4}" y1="${yy}" x2="${L}" y2="${yy}"/><text class="y-label" x="${L-9}" y="${yy+3}" text-anchor="end">${v}</text>`;}
-  const labelCount=Math.min(7,Math.max(5,Math.ceil(totalDays/6)+1));
-  const xDates=[]; for(let i=0;i<labelCount;i++){const off=Math.round(totalDays*i/(labelCount-1));const ds=addDays(db.goal.start,off);if(!xDates.includes(ds))xDates.push(ds);}
-  const plotWidth=W-L-R;
-  const xLabels=xDates.map((s,i)=>{const xx=L+(xDates.length===1?0:plotWidth*i/(xDates.length-1));return `<text x="${xx}" y="${H-9}" text-anchor="${i===0?'start':i===xDates.length-1?'end':'middle'}">${fmtShortDate(s)}</text>`;}).join('');
+  // X-axis labels use one fixed calendar-day interval, so both the dates and their pixel spacing are truly even.
+  // We intentionally do not force the goal end date to be a tick when it would break the interval.
+  const xTickStep=Math.max(1,Math.ceil(totalDays/6));
+  const xDates=[];
+  for(let off=0;off<=totalDays;off+=xTickStep) xDates.push(addDays(db.goal.start,off));
+  const xLabels=xDates.map((s,i)=>{
+    const xx=xDate(s);
+    const anchor=i===0?'start':(xx>W-R-16?'end':'middle');
+    return `<text x="${xx.toFixed(1)}" y="${H-9}" text-anchor="${anchor}">${fmtShortDate(s)}</text>`;
+  }).join('');
   const actualPath=data.map((d,i)=>`${i?'L':'M'} ${xDate(d.date).toFixed(1)} ${y(d.weight).toFixed(1)}`).join(' ');
   const goalY=y(+db.goal.target);
   const points=data.map((d,i)=>`<circle class="point" data-chart-index="${i}" cx="${xDate(d.date)}" cy="${y(d.weight)}" r="2"></circle>`).join('');
@@ -803,6 +812,46 @@ function trackOnlyWeekSummary(g){
   }
   return bits.length?`<div class="behavior-light-row track-only"><b>Track only</b><span>${bits.map(escapeHtml).join(' · ')}</span></div>`:'';
 }
+function goalTrackingSummary(g,id,through){
+  const def=TRACKER_DEFS[id], role=trackerRole(g,id), start=g.start, end=through;
+  if(end<start) return null;
+  if(def.cadence==='daily'){
+    let eligible=0, met=0, recorded=0, skipped=0;
+    for(let date=start;date<=end;date=addDays(date,1)){
+      if(!trackerActiveOn(g,id,date)) continue;
+      const e=dailyTrackerEval(g,id,day(date));
+      if(e.skip||e.na){ if(e.skip) skipped++; continue; }
+      if(date===today()&&!e.recorded&&!e.met) continue;
+      eligible++; if(e.recorded) recorded++; if(e.met) met++;
+    }
+    if(id==='bedtimeHunger'){
+      const vals=[]; for(let date=start;date<=end;date=addDays(date,1)){if(!trackerActiveOn(g,id,date)||day(date).skips?.[id])continue;const v=day(date).food.bedtimeHunger;if(v!=null)vals.push(+v);}
+      return vals.length?`${avg(vals).toFixed(1)}/5 avg · ${vals.length} logged`:'No entries yet';
+    }
+    if(role==='track'){
+      if(id==='water'){const vals=[];for(let date=start;date<=end;date=addDays(date,1)){if(!trackerActiveOn(g,id,date)||day(date).skips?.[id])continue;const v=day(date).food.water;if(v!=null)vals.push(+v);}return vals.length?`${avg(vals).toFixed(1)}L avg · ${vals.length} logged`:'No entries yet';}
+      return recorded?`${recorded} days logged`:'No entries yet';
+    }
+    return eligible?`${met} / ${eligible} days${skipped?` · ${skipped} N/A`:''}`:'No eligible days yet';
+  }
+  let value=0;
+  for(let date=start;date<=end;date=addDays(date,1)) value+=weeklyTrackerContribution(id,day(date),g);
+  if(id==='cardio') return `${Math.round(value)} min total · ${weeklyTargetFor(g,id)} min/wk`;
+  const noun=id==='steps'?'days':id==='strength'?'sessions':'days';
+  return `${Math.round(value)} ${noun} total · ${weeklyTargetFor(g,id)}/wk`;
+}
+function goalTrackingRecord(g){
+  const through=(g.ended||today())<(g.end||today())?(g.ended||today()):(g.end||today());
+  const groups=[['goal','Goal'],['bonus','Bonus'],['track','Track only']];
+  const blocks=[];
+  for(const [role,label] of groups){
+    const ids=TRACKER_IDS.filter(id=>trackerRole(g,id)===role);
+    const rows=ids.map(id=>{const summary=goalTrackingSummary(g,id,through);return summary?`<div class="goal-record-row ${role}"><div><span>${escapeHtml(trackerRuleLabel(g,id,day(through)))}</span>${role!=='goal'?`<em>${label}</em>`:''}</div><b>${escapeHtml(summary)}</b></div>`:'';}).filter(Boolean);
+    if(rows.length) blocks.push(`${role==='goal'?'<div class="goal-record-heading">Goal tracking · to date</div>':`<div class="goal-record-subheading">${label}</div>`}${rows.join('')}`);
+  }
+  return `<div class="goal-record">${blocks.join('')||'<div class="small">No tracker records yet.</div>'}</div>`;
+}
+
 function weeklyBehaviorProgress(g){
   const ids=TRACKER_IDS.filter(id=>trackerRole(g,id)==='goal');
   return `<div class="weekly-behavior"><div class="row between behavior-heading"><b>Weekly behavior</b><span class="small">Goal trackers only</span></div>${ids.length?ids.map(id=>trackerGridRow(g,id)).join(''):'<div class="small">No behavior trackers are set as Goal.</div>'}${bonusWeekSummary(g)}${trackOnlyWeekSummary(g)}</div>`;
@@ -811,10 +860,6 @@ function roleEditorGroup(g,group){
   const ids=TRACKER_IDS.filter(id=>TRACKER_DEFS[id].group===group);
   return `<div class="tracker-role-list">${ids.map(id=>{const role=trackerRole(g,id);return `<div class="tracker-role-row"><div><b>${TRACKER_DEFS[id].label}</b><span>${TRACKER_DEFS[id].cadence==='daily'?'Daily':'Weekly'}</span></div><div class="role-segment">${['goal','bonus','track'].map(r=>`<button class="${role===r?'on':''}" data-tracker-role="${id}" data-role="${r}">${ROLE_LABELS[r]}</button>`).join('')}</div></div>`;}).join('')}</div>`;
 }
-function focusPicker(g){
-  return `<div class="focus-picker">${[['diet','Diet'],['exercise','Exercise'],['both','Both'],['other','Other']].map(([id,label])=>`<button class="${g.focus===id?'on':''}" data-goal-focus="${id}">${label}</button>`).join('')}</div><div class="small focus-note">Focus only suggests tracker roles. You can change every tracker below.</div>`;
-}
-
 function goalsPage(){
   const lw=latestWeight(today()), avgNow=movingAverage(today()), avgPrev=movingAverage(addDays(today(),-7)), avgDelta=(avgNow!=null&&avgPrev!=null)?avgNow-avgPrev:null;
   return `${topbar(tr('goals'))}
@@ -825,7 +870,7 @@ function goalsPage(){
       <div class="metric-row" style="margin-top:10px"><div class="metric"><div class="label">${tr('start')}</div><div class="value">${fmt(activeGoalStartWeight())} <span class="small">kg</span></div></div><div class="metric" style="text-align:right"><div class="label">${tr('target')}</div><div class="value">${fmt(db.goal.target)} <span class="small">kg</span></div></div></div>
       <div class="goal-weight-context"><span>Current ${fmt(lw?.weight??activeGoalStartWeight())} kg</span><span>7-day avg ${fmt(avgNow)} kg${avgDelta==null?'':` · ${avgDelta>0?'+':''}${avgDelta.toFixed(1)}`}</span></div>
       <div class="progress"><i style="width:${goalProgress(lw?.weight??db.goal.startWeight)}%"></i></div>
-      ${weeklyBehaviorProgress(db.goal)}
+      ${goalTrackingRecord(db.goal)}
       <div class="goal-actions"><button class="btn secondary" data-action="editGoal">Edit goal</button><button class="btn ghost" data-review-goal="${escapeHtml(db.goal.id)}">Review goal</button></div>
       ${activeGoalLearning()}
     </section>
@@ -856,14 +901,14 @@ function goalStatus(g,end){
 
 function goalEditPage(){
   const g=db.goal;
-  return `${topbar('Edit goal','',`<button class="btn sky save-top" data-action="saveGoal">${tr('save')}</button>`)}
+  return `${topbar('Edit goal')}
     <section class="card"><label>Goal name</label><input id="goalName" value="${escapeHtml(g.name)}"><div class="two"><label>${tr('start')} kg<input id="goalStartWeight" type="number" step="0.1" value="${activeGoalStartWeight()}"></label><label>${tr('target')} kg<input id="goalTarget" type="number" step="0.1" value="${g.target}"></label></div><div class="two"><label>${tr('start')}<input id="goalStart" type="date" value="${g.start}"></label><label>End date<input id="goalEnd" type="date" value="${g.end}"></label></div></section>
-    <section class="card"><div class="actual-label">Focus</div>${focusPicker(g)}</section>
     <section class="card"><div class="actual-label">Diet targets</div>${planInputsFood()}</section>
     <section class="card"><div class="actual-label">Weekly exercise targets</div>${planInputsMove()}</section>
     <section class="card"><div class="row between"><div class="actual-label" style="margin:0">Diet trackers</div><span class="small">Role for this goal</span></div>${roleEditorGroup(g,'diet')}</section>
     <section class="card"><div class="row between"><div class="actual-label" style="margin:0">Exercise trackers</div><span class="small">Role for this goal</span></div>${roleEditorGroup(g,'exercise')}</section>
-    <button class="btn ghost danger full" data-action="archiveGoal">${tr('archive')}</button>`;
+    <div class="edit-goal-actions"><button class="btn end-archive-safe" data-action="requestArchiveGoal">End & Archive</button><button class="btn sky" data-action="saveGoal">Save</button></div>
+    <div class="archive-helper">Ending a goal requires a second confirmation. Your tracking history will be preserved.</div>`;
 }
 function planInputsFood(){return `<div class="two"><label>Vegetables ≥<input data-plan="veg" type="number" value="${db.plan.veg}"></label><label>Fruit ≤<input data-plan="fruit" type="number" value="${db.plan.fruit}"></label><label>Water ≥ L<input data-plan="water" type="number" step="0.1" value="${db.plan.water}"></label><label>Eating cutoff<input data-plan="stop" type="time" value="${db.plan.stop}"></label></div><div class="small plan-helper">Protein and No snacks are yes/no trackers. Bedtime hunger is a 1–5 observation, not a success score.</div>`;}
 function planInputsMove(){return `<div class="two"><label>10k-step days / week<input data-plan="stepsDays" type="number" min="0" max="7" value="${db.plan.stepsDays}"></label><label>Stretch days / week<input data-plan="stretchDays" type="number" min="0" max="7" value="${db.plan.stretchDays}"></label><label>Cardio · min/week<input data-plan="cardio" type="number" min="0" value="${db.plan.cardio}"></label><label>Strength sessions / week<input data-plan="strengthSessions" type="number" min="0" max="7" value="${db.plan.strengthSessions||2}"></label></div>`;}
@@ -883,7 +928,10 @@ function setTrackerRole(id,role){
   if(!TRACKER_DEFS[id]||!['goal','bonus','track'].includes(role)) return;
   saveGoalForm();
   db.goal.trackers=normalizeTrackers(db.goal,false);
-  const prev=db.goal.trackers[id], activeFrom=(role==='goal'&&prev.role!=='goal')?(today()<db.goal.start?db.goal.start:today()):(prev.activeFrom||db.goal.start);
+  const prev=db.goal.trackers[id];
+  // A role change must never wipe or hide previously entered tracker data.
+  // Keep the tracker's existing activation date; new migrated trackers already start from their safe migration date.
+  const activeFrom=prev.activeFrom||db.goal.start;
   db.goal.trackers[id]={role,activeFrom,roleAuto:false};
   persist();render();
 }
@@ -1109,6 +1157,18 @@ function importData(file){
 }
 
 
+function archiveGoalModal(){
+  if(!archiveConfirmOpen) return '';
+  return `<div class="modal-backdrop archive-confirm-backdrop" data-action="cancelArchiveGoal">
+    <div class="archive-confirm-modal" role="dialog" aria-modal="true" aria-label="End and archive goal">
+      <div class="weight-modal-handle"></div>
+      <div class="archive-confirm-title">End this goal?</div>
+      <div class="archive-confirm-copy">This freezes the current goal and its tracking record, then starts a new goal. Nothing you logged will be deleted.</div>
+      <div class="archive-confirm-actions"><button class="btn ghost" data-action="cancelArchiveGoal">Cancel</button><button class="btn archive-confirm-danger" data-action="confirmArchiveGoal">Yes, end & archive</button></div>
+    </div>
+  </div>`;
+}
+
 function quickWeightModal(){
   if(!quickWeightOpen) return '';
   const d=day(today());
@@ -1137,7 +1197,9 @@ function bind(){
     if(a==='addEvent'){const el=document.getElementById('customEvent');const v=el?.value.trim();if(v){day(selected).events.push(v);save();}}
     if(a==='editGoal'){view='goalEdit';render();}
     if(a==='saveGoal'){saveGoalForm();view='goals';save(tr('saved'));}
-    if(a==='archiveGoal'){if(confirm(db.language==='zh'?'结束并归档当前目标？':'End and archive current goal?')) archiveGoal();}
+    if(a==='requestArchiveGoal'){saveGoalForm();archiveConfirmOpen=true;render();}
+    if(a==='cancelArchiveGoal'){archiveConfirmOpen=false;render();}
+    if(a==='confirmArchiveGoal'){archiveConfirmOpen=false;archiveGoal();}
     if(a==='editPlan'){view='planEdit';render();}
     if(a==='savePlan'||a==='savePlanBottom'){saveInputsFromDOM();view='settings';save(tr('saved'));}
     if(a==='export')exportData();
@@ -1153,7 +1215,6 @@ function bind(){
   document.querySelectorAll('[data-toggle-food]').forEach(b=>b.addEventListener('click',()=>toggleFood(b.dataset.toggleFood)));
   document.querySelectorAll('[data-toggle-move]').forEach(b=>b.addEventListener('click',()=>toggleMove(b.dataset.toggleMove)));
   document.querySelectorAll('[data-toggle-skip]').forEach(b=>b.addEventListener('click',()=>toggleSkip(b.dataset.toggleSkip)));
-  document.querySelectorAll('[data-goal-focus]').forEach(b=>b.addEventListener('click',()=>setGoalFocus(b.dataset.goalFocus)));
   document.querySelectorAll('[data-tracker-role]').forEach(b=>b.addEventListener('click',()=>setTrackerRole(b.dataset.trackerRole,b.dataset.role)));
   document.querySelectorAll('[data-toggle-custom]').forEach(b=>b.addEventListener('click',()=>toggleCustom(b.dataset.toggleCustom)));
   document.querySelectorAll('[data-toggle-planned-move]').forEach(b=>b.addEventListener('click',()=>togglePlannedMove(b.dataset.togglePlannedMove)));
@@ -1183,9 +1244,10 @@ function render(){
   else if(view==='goalReview')content=goalReviewPage();
   else if(view==='settings')content=settingsPage();
   else if(view==='planEdit')content=planEditPage();
-  document.getElementById('app').innerHTML=`<main class="shell">${content}${['today','calendar','change','goals','settings'].includes(view)?nav():''}</main>${quickWeightModal()}`;
+  document.getElementById('app').innerHTML=`<main class="shell">${content}${['today','calendar','change','goals','settings'].includes(view)?nav():''}</main>${quickWeightModal()}${archiveGoalModal()}`;
   bind();
   document.querySelector('.weight-modal')?.addEventListener('click',e=>e.stopPropagation());
+  document.querySelector('.archive-confirm-modal')?.addEventListener('click',e=>e.stopPropagation());
   const q=document.getElementById('quickWeightInput'); if(q) q.addEventListener('keydown',e=>{if(e.key==='Enter')document.querySelector('[data-action=\"saveQuickWeight\"]')?.click();});
 }
 
