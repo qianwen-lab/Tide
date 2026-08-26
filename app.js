@@ -1,6 +1,6 @@
 const STORAGE_KEY = 'tide.v1';
-const VERSION = '8.0.0';
-const SCHEMA_VERSION = 10;
+const VERSION = '8.1.0';
+const SCHEMA_VERSION = 11;
 
 const COLORS = { sage:'#5E836F', sageDeep:'#244C3E', pink:'#C98994', pinkSoft:'#EBCFD4', blue:'#8C918D', ink:'#1F2823' };
 const iso = d => {
@@ -47,13 +47,67 @@ function latestReview(g){ const rows=normalizeReviews(g); return rows.length?row
 const stableGoalId = (g={}, suffix='') => g.id || `goal-${g.start||'na'}-${g.end||'na'}-${String(g.name||'goal').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')}${suffix}`;
 const newGoalId = () => `goal-${today()}-${Date.now().toString(36)}`;
 
+
+const TRACKER_DEFS = {
+  veg:{id:'veg',label:'Vegetables',group:'diet',cadence:'daily'},
+  protein:{id:'protein',label:'Protein',group:'diet',cadence:'daily'},
+  fruit:{id:'fruit',label:'Fruit',group:'diet',cadence:'daily'},
+  noSnack:{id:'noSnack',label:'No snacks',group:'diet',cadence:'daily'},
+  stop6:{id:'stop6',label:'No food after 6 PM',group:'diet',cadence:'daily'},
+  water:{id:'water',label:'Water',group:'diet',cadence:'daily'},
+  bedtimeHunger:{id:'bedtimeHunger',label:'Bedtime hunger',group:'diet',cadence:'daily'},
+  steps:{id:'steps',label:'10k steps',group:'exercise',cadence:'weekly'},
+  cardio:{id:'cardio',label:'Cardio',group:'exercise',cadence:'weekly'},
+  strength:{id:'strength',label:'Strength',group:'exercise',cadence:'weekly'},
+  stretch:{id:'stretch',label:'Stretch',group:'exercise',cadence:'weekly'}
+};
+const TRACKER_IDS = Object.keys(TRACKER_DEFS);
+const ROLE_LABELS = {goal:'Goal',bonus:'Bonus',track:'Track only'};
+const validRole = r => ['goal','bonus','track'].includes(r) ? r : 'track';
+function focusRoles(focus='both'){
+  const track=Object.fromEntries(TRACKER_IDS.map(id=>[id,'track']));
+  const diet={...track,veg:'goal',protein:'goal',fruit:'goal',noSnack:'goal',stop6:'goal',water:'track',bedtimeHunger:'track'};
+  const exercise={...track,steps:'goal',cardio:'goal',strength:'bonus',stretch:'bonus'};
+  if(focus==='diet') return diet;
+  if(focus==='exercise') return exercise;
+  if(focus==='other') return track;
+  return {...diet,steps:'goal',cardio:'goal',strength:'bonus',stretch:'bonus'};
+}
+function defaultTrackersForFocus(focus='both', start=today()){
+  const roles=focusRoles(focus);
+  return Object.fromEntries(TRACKER_IDS.map(id=>[id,{role:roles[id],activeFrom:start,roleAuto:true}]));
+}
+function normalizeTrackers(g={}, archived=false){
+  const focus=['diet','exercise','both','other'].includes(g.focus)?g.focus:'both';
+  const base=defaultTrackersForFocus(focus,g.start||today());
+  const raw=g.trackers&&typeof g.trackers==='object'?g.trackers:null;
+  for(const id of TRACKER_IDS){
+    const x=raw?.[id];
+    if(x && typeof x==='object') base[id]={role:validRole(x.role),activeFrom:String(x.activeFrom||g.start||today()).slice(0,10),roleAuto:x.roleAuto!==false};
+    else if(typeof x==='string') base[id]={role:validRole(x),activeFrom:g.start||today(),roleAuto:false};
+  }
+  // New fields should never turn old days into failures during migration.
+  if(!raw){
+    base.protein.role='track';
+    base.protein.activeFrom=archived ? addDays(g.ended||g.end||today(),1) : today();
+    base.protein.roleAuto=false;
+    base.bedtimeHunger.role='track';
+    base.bedtimeHunger.activeFrom=archived ? addDays(g.ended||g.end||today(),1) : today();
+    base.bedtimeHunger.roleAuto=false;
+  }
+  return base;
+}
+function trackerConfig(g,id){ return normalizeTrackers(g,!!g.snapshot)[id]||{role:'track',activeFrom:g.start||today(),roleAuto:false}; }
+function trackerRole(g,id){ return trackerConfig(g,id).role; }
+function trackerActiveOn(g,id,date){ const c=trackerConfig(g,id); return date>=String(c.activeFrom||g.start||date).slice(0,10) && date>=g.start && date<=(g.ended||g.end); }
+
 const defaults = {
   schemaVersion:SCHEMA_VERSION,
   version:SCHEMA_VERSION,
   language:'en',
-  goal:{id:`goal-${today()}-active`,name:'Back to 50',start:today(),end:addDays(today(),31),startWeight:52.7,target:50,status:'active',review:blankReview(),reviews:[]},
+  goal:{id:`goal-${today()}-active`,name:'Back to 50',start:today(),end:addDays(today(),31),startWeight:52.7,target:50,status:'active',focus:'both',trackers:defaultTrackersForFocus('both',today()),review:blankReview(),reviews:[]},
   days:{},
-  plan:{veg:3,fruit:2,noSnack:true,stop:'18:00',satiety:7,water:2,stepsTarget:10000,stepsDays:5,stretchDays:5,cardio:90,strength:60},
+  plan:{veg:3,fruit:2,noSnack:true,stop:'18:00',satiety:7,water:2,stepsTarget:10000,stepsDays:5,stretchDays:5,cardio:90,strength:60,strengthSessions:2},
   goals:[]
 };
 
@@ -80,7 +134,8 @@ function mergeDay(x={}){
       steps:x.customPlan?.steps??null, stretch:x.customPlan?.stretch??null, cardio:x.customPlan?.cardio??null, strength:x.customPlan?.strength??null
     },
     plannedMove:{steps:x.plannedMove?.steps??null,stretch:x.plannedMove?.stretch??null,cardio:x.plannedMove?.cardio??null,strength:x.plannedMove?.strength??null},
-    food:{veg:x.food?.veg??null,fruit:x.food?.fruit??null,noSnack:x.food?.noSnack??null,stop6:x.food?.stop6??null,water:x.food?.water??null,satiety:x.food?.satiety??null},
+    food:{veg:x.food?.veg??null,protein:x.food?.protein??null,fruit:x.food?.fruit??null,noSnack:x.food?.noSnack??null,stop6:x.food?.stop6??null,water:x.food?.water??null,bedtimeHunger:x.food?.bedtimeHunger??null,satiety:x.food?.satiety??null},
+    skips:(x.skips&&typeof x.skips==='object')?{...x.skips}:{},
     move:{steps:x.move?.steps??null,stretch:x.move?.stretch??null,cardio:x.move?.cardio??null,strength:x.move?.strength??null},
     close:x.close??null,note:x.note??''
   };
@@ -89,10 +144,11 @@ function migrate(raw){
   const out=fresh();
   if(!raw || typeof raw!=='object') return out;
   out.language='en';
-  out.goal={...out.goal,...(raw.goal||{})};
-  out.goal.id=stableGoalId(out.goal,'-active'); out.goal.review=normalizeReview(out.goal.review); out.goal.reviews=normalizeReviews(out.goal);
-  out.plan={...out.plan,...(raw.plan||{}),stepsTarget:10000};
-  out.goals=Array.isArray(raw.goals)?raw.goals.map((g,i)=>{const x={...g,id:stableGoalId(g,`-${i}`),review:normalizeReview(g.review),planSnapshot:g.planSnapshot?{...g.planSnapshot}:null,snapshot:true};x.reviews=normalizeReviews(x);return x;}):[];
+  const rawGoal=raw.goal||{};
+  out.goal={...out.goal,...rawGoal};
+  out.goal.id=stableGoalId(out.goal,'-active'); out.goal.focus=['diet','exercise','both','other'].includes(out.goal.focus)?out.goal.focus:'both'; out.goal.trackers=normalizeTrackers({...out.goal,trackers:rawGoal.trackers||null},false); out.goal.review=normalizeReview(out.goal.review); out.goal.reviews=normalizeReviews(out.goal);
+  out.plan={...out.plan,...(raw.plan||{}),stepsTarget:10000,strengthSessions:raw.plan?.strengthSessions??out.plan.strengthSessions};
+  out.goals=Array.isArray(raw.goals)?raw.goals.map((g,i)=>{const x={...g,id:stableGoalId(g,`-${i}`),focus:['diet','exercise','both','other'].includes(g.focus)?g.focus:'both',review:normalizeReview(g.review),planSnapshot:g.planSnapshot?{...g.planSnapshot}:null,snapshot:true};x.trackers=normalizeTrackers(x,true);x.reviews=normalizeReviews(x);return x;}):[];
   out.days={};
   Object.entries(raw.days||{}).forEach(([k,v])=>out.days[k]=mergeDay({...v,date:k}));
   out.schemaVersion=SCHEMA_VERSION; out.version=SCHEMA_VERSION;
@@ -119,11 +175,65 @@ function latestWeight(until=today()){ const a=latestWeights(until); return a.len
 function movingAverage(date, window=7){ const from=addDays(date,-(window-1)); const a=latestWeights(date).filter(x=>x.date>=from).map(x=>+x.weight); return avg(a); }
 function goalMovingAverage(date, window=7){ const from=addDays(date,-(window-1)); const start=from>db.goal.start?from:db.goal.start; const a=latestWeights(date).filter(x=>x.date>=start && x.date<=date).map(x=>+x.weight); return avg(a); }
 function activeGoalStartWeight(){ const rec=db.days[db.goal.start]; return rec?.weight!=null ? +rec.weight : +db.goal.startWeight; }
-function dayPlan(d){
-  const base={veg:db.plan.veg,fruit:db.plan.fruit,noSnack:db.plan.noSnack,stop:db.plan.stop,satiety:db.plan.satiety,water:db.plan.water,steps:10000,stretch:null,cardio:null,strength:null};
+function planForGoal(g){
+  return g?.planSnapshot ? {...defaults.plan,...g.planSnapshot} : db.plan;
+}
+function dayPlanForGoal(g,d){
+  const src=planForGoal(g);
+  const base={veg:src.veg,fruit:src.fruit,noSnack:src.noSnack,stop:src.stop,satiety:src.satiety,water:src.water,steps:src.stepsTarget||10000,stretch:null,cardio:null,strength:null};
   if(d.planMode==='flexible') return {...base,stop:null};
   if(d.planMode==='custom') return {...base,...Object.fromEntries(Object.entries(d.customPlan||{}).filter(([,v])=>v!==null&&v!==''))};
   return base;
+}
+function dayPlan(d){ return dayPlanForGoal(db.goal,d); }
+function trackerRoleBadge(g,id){ return `<span class="role-mini ${trackerRole(g,id)}">${ROLE_LABELS[trackerRole(g,id)]}</span>`; }
+function dailyTrackerEval(g,id,d){
+  if(!TRACKER_DEFS[id] || TRACKER_DEFS[id].cadence!=='daily') return {recorded:false,met:false,na:true};
+  if(!trackerActiveOn(g,id,d.date)) return {recorded:false,met:false,na:true};
+  if(d.skips?.[id]) return {recorded:false,met:false,skip:true,na:true};
+  const f=d.food||{}, p=dayPlanForGoal(g,d);
+  if(id==='veg') return {recorded:f.veg!=null,met:f.veg!=null && +f.veg>=+p.veg};
+  if(id==='protein') return {recorded:f.protein!=null,met:f.protein===true};
+  if(id==='fruit') return {recorded:f.fruit!=null,met:f.fruit!=null && +f.fruit<=+p.fruit};
+  if(id==='noSnack'){
+    if(p.noSnack===false) return {recorded:false,met:false,na:true,plannedException:true};
+    return {recorded:f.noSnack!=null,met:f.noSnack===true};
+  }
+  if(id==='stop6'){
+    if(p.stop==null) return {recorded:false,met:false,na:true,plannedException:true};
+    return {recorded:f.stop6!=null,met:f.stop6===true};
+  }
+  if(id==='water') return {recorded:f.water!=null,met:f.water!=null && +f.water>=+p.water};
+  if(id==='bedtimeHunger') return {recorded:f.bedtimeHunger!=null,met:null,value:f.bedtimeHunger};
+  return {recorded:false,met:false};
+}
+function weeklyTrackerContribution(id,d,g=db.goal){
+  if(!trackerActiveOn(g,id,d.date) || d.skips?.[id]) return 0;
+  if(id==='steps') return (+d.move.steps||0)>=(planForGoal(g).stepsTarget||10000)?1:0;
+  if(id==='cardio') return +d.move.cardio||0;
+  if(id==='strength') return (+d.move.strength||0)>0?1:0;
+  if(id==='stretch') return d.move.stretch===true?1:0;
+  return 0;
+}
+function trackerRuleLabel(g,id,d){
+  const p=dayPlanForGoal(g,d||day(today())), plan=planForGoal(g);
+  if(id==='veg') return `Vegetables ≥ ${p.veg}`;
+  if(id==='protein') return 'Protein';
+  if(id==='fruit') return `Fruit ≤ ${p.fruit}`;
+  if(id==='noSnack') return 'No snacks';
+  if(id==='stop6') return p.stop?`No food after ${fmtClock(p.stop)}`:'Eating cutoff paused';
+  if(id==='water') return `Water ≥ ${p.water}L`;
+  if(id==='bedtimeHunger') return 'Bedtime hunger';
+  if(id==='steps') return `10k steps × ${plan.stepsDays}`;
+  if(id==='cardio') return `Cardio · ${plan.cardio}m`;
+  if(id==='strength') return `Strength × ${plan.strengthSessions||2}`;
+  if(id==='stretch') return `Stretch × ${plan.stretchDays}`;
+  return TRACKER_DEFS[id]?.label||id;
+}
+function fmtClock(s){
+  if(!s) return '';
+  const [h,m]=String(s).split(':').map(Number), d=new Date(2000,0,1,h||0,m||0);
+  return d.toLocaleTimeString('en-US',{hour:'numeric',minute:m?'2-digit':undefined}).replace(' ',' ');
 }
 function dayIndexInGoal(s){ return Math.max(1,Math.floor((parseDate(s)-parseDate(db.goal.start))/86400000)+1); }
 function goalDuration(){ return Math.max(1,Math.floor((parseDate(db.goal.end)-parseDate(db.goal.start))/86400000)+1); }
@@ -139,19 +249,35 @@ function weightChange(s){
   return +w - +prev[prev.length-1].weight;
 }
 function foodStatus(d){
-  const f=d.food, p=dayPlan(d);
-  const core=[f.veg,f.fruit,f.noSnack,f.stop6,f.satiety];
+  const inGoal=d.date>=db.goal.start && d.date<=db.goal.end;
+  if(inGoal){
+    const ids=TRACKER_IDS.filter(id=>TRACKER_DEFS[id].group==='diet'&&TRACKER_DEFS[id].cadence==='daily'&&trackerRole(db.goal,id)==='goal'&&trackerActiveOn(db.goal,id,d.date));
+    if(ids.length){
+      let recorded=0,pass=0,eligible=0;
+      for(const id of ids){
+        const e=dailyTrackerEval(db.goal,id,d);
+        if(e.na) continue;
+        eligible++;
+        if(e.recorded){recorded++; if(e.met) pass++;}
+      }
+      if(!recorded) return {recorded:0,score:null,enough:false,calendarPass:false,label:'No record'};
+      const score=recorded?pass/recorded:null;
+      const needed=Math.min(4,eligible);
+      const enough=needed>0 && recorded>=needed;
+      const calendarPass=enough && pass>=needed && score>=.8;
+      return {recorded,score,enough,calendarPass,label:calendarPass?'Food goal met':enough?(score>=.6?'Mostly on plan':'Off plan'):'Incomplete'};
+    }
+  }
+  // Legacy behavior outside the active goal range.
+  const f=d.food, p=dayPlan(d), core=[f.veg,f.fruit,f.noSnack,f.stop6];
   const recorded=core.filter(v=>v!==null&&v!=='').length;
   if(!recorded) return {recorded:0,score:null,enough:false,calendarPass:false,label:'No record'};
-  let pass=0, denom=0;
-  if(f.veg!=null){denom++; if(+f.veg>=+p.veg)pass++;}
-  if(f.fruit!=null){denom++; if(+f.fruit<=+p.fruit)pass++;}
-  if(f.noSnack!=null){denom++; if(p.noSnack===false || f.noSnack===true)pass++;}
-  if(p.stop==null){ /* planned exception */ } else if(f.stop6!=null){denom++; if(f.stop6===true)pass++;}
-  if(f.satiety!=null){denom++; if(+f.satiety<=+p.satiety)pass++;}
-  const score=denom?pass/denom:null;
-  const enough=denom>=4;
-  const calendarPass=enough && pass>=4 && score>=.8;
+  let pass=0,denom=0;
+  if(f.veg!=null){denom++;if(+f.veg>=+p.veg)pass++;}
+  if(f.fruit!=null){denom++;if(+f.fruit<=+p.fruit)pass++;}
+  if(f.noSnack!=null){denom++;if(p.noSnack===false||f.noSnack===true)pass++;}
+  if(p.stop!=null&&f.stop6!=null){denom++;if(f.stop6===true)pass++;}
+  const score=denom?pass/denom:null, enough=denom>=3, calendarPass=enough&&score>=.8;
   return {recorded,score,enough,calendarPass,label:calendarPass?'Food goal met':enough?(score>=.6?'Mostly on plan':'Off plan'):'Incomplete'};
 }
 function moveStatus(d){
@@ -264,22 +390,31 @@ function todayPage(){
   </section>
   <button class="today-edit-button" data-action="editToday">View / edit today</button>`;
 }
+function skipButton(id,d){ return `<button class="skip-chip ${d.skips?.[id]?'on':''}" data-toggle-skip="${id}">${d.skips?.[id]?'N/A ✓':'N/A'}</button>`; }
+function trackerHead(id,d){ return `<div class="tracker-head"><div class="actual-label">${TRACKER_DEFS[id].label} ${trackerRoleBadge(db.goal,id)}</div>${skipButton(id,d)}</div>`; }
 function todayPlanChips(d){
-  const p=dayPlan(d); const chips=[`Vegetables ≥ ${p.veg}`,`Fruit ≤ ${p.fruit}`,p.noSnack===false?'Snacks allowed':'No snacks',p.stop==null?'Eating cutoff paused':'No food after 6 PM',`Satiety ≤ ${p.satiety}/10`,`Water ≥ ${p.water}L`];
-  return `<div class="rule-grid compact-rules">${chips.map(x=>`<div class="rule">${x}</div>`).join('')}</div>${d.events.length?`<div class="life-events compact-events">${d.events.map(e=>`<span class="event-chip on">${escapeHtml(eventLabel(e))}</span>`).join('')}</div>`:''}`;
+  const ids=TRACKER_IDS.filter(id=>TRACKER_DEFS[id].cadence==='daily'&&trackerRole(db.goal,id)==='goal'&&trackerActiveOn(db.goal,id,d.date));
+  const chips=ids.map(id=>trackerRuleLabel(db.goal,id,d));
+  return `<div class="rule-grid compact-rules">${chips.length?chips.map(x=>`<div class="rule">${escapeHtml(x)}</div>`).join(''):'<div class="small">No daily behavior goals set.</div>'}</div>${d.events.length?`<div class="life-events compact-events">${d.events.map(e=>`<span class="event-chip on">${escapeHtml(eventLabel(e))}</span>`).join('')}</div>`:''}`;
 }
 function actualFoodControls(d){
-  const veg=[0,1,2,3,4], fruit=[0,1,2,3], sat=[5,6,7,8,9,10];
+  const veg=[0,1,2,3,4], fruit=[0,1,2,3], hunger=[1,2,3,4,5];
   return `
-  <div class="actual-row"><div class="actual-label">${tr('veg')}</div><div class="chip-row">${veg.map(v=>`<button class="pill ${d.food.veg!==null && +d.food.veg===v?'on':''}" data-set-food="veg" data-value="${v}">${v===4?'4+':v}</button>`).join('')}</div></div>
-  <div class="actual-row"><div class="actual-label">${tr('fruit')}</div><div class="chip-row">${fruit.map(v=>`<button class="pill ${d.food.fruit!==null && +d.food.fruit===v?'on':''}" data-set-food="fruit" data-value="${v}">${v===3?'3+':v}</button>`).join('')}</div></div>
-  <div class="actual-row"><div class="switch-row"><div><div class="actual-label" style="margin:0">${tr('noSnack')}</div></div><button class="toggle ${d.food.noSnack===true?'on':''}" data-toggle-food="noSnack" aria-label="${tr('noSnack')}"></button></div></div>
-  <div class="actual-row"><div class="switch-row"><div><div class="actual-label" style="margin:0">${tr('after6')}</div></div><button class="toggle ${d.food.stop6===true?'on':''}" data-toggle-food="stop6" aria-label="${tr('after6')}"></button></div></div>
-  <div class="actual-row"><div class="actual-label">${db.language==='zh'?'今天吃到几分饱？':'How full did you eat today?'}</div><div class="chip-row">${sat.map(v=>`<button class="pill ${d.food.satiety!==null && +d.food.satiety===v?'on':''}" data-set-food="satiety" data-value="${v}">${v}</button>`).join('')}</div></div>
-  <div class="actual-row"><div class="actual-label">${tr('water')}</div><div class="chip-row">${[1,1.5,2,2.5,3].map(v=>`<button class="pill ${d.food.water!==null && +d.food.water===v?'on':''}" data-set-food="water" data-value="${v}">${v}L</button>`).join('')}</div></div>`;
+  <div class="actual-row tracker-row ${d.skips?.veg?'is-skip':''}">${trackerHead('veg',d)}<div class="chip-row">${veg.map(v=>`<button class="pill ${d.food.veg!==null && +d.food.veg===v?'on':''}" data-set-food="veg" data-value="${v}">${v===4?'4+':v}</button>`).join('')}</div></div>
+  <div class="actual-row tracker-row ${d.skips?.protein?'is-skip':''}">${trackerHead('protein',d)}<div class="switch-row compact-switch"><span>${d.food.protein===true?'Target met':'Mark when met'}</span><button class="toggle ${d.food.protein===true?'on':''}" data-toggle-food="protein" aria-label="Protein"></button></div></div>
+  <div class="actual-row tracker-row ${d.skips?.fruit?'is-skip':''}">${trackerHead('fruit',d)}<div class="chip-row">${fruit.map(v=>`<button class="pill ${d.food.fruit!==null && +d.food.fruit===v?'on':''}" data-set-food="fruit" data-value="${v}">${v===3?'3+':v}</button>`).join('')}</div></div>
+  <div class="actual-row tracker-row ${d.skips?.noSnack?'is-skip':''}">${trackerHead('noSnack',d)}<div class="switch-row compact-switch"><span>${d.food.noSnack===true?'On plan':'Mark when met'}</span><button class="toggle ${d.food.noSnack===true?'on':''}" data-toggle-food="noSnack" aria-label="No snacks"></button></div></div>
+  <div class="actual-row tracker-row ${d.skips?.stop6?'is-skip':''}">${trackerHead('stop6',d)}<div class="switch-row compact-switch"><span>${d.food.stop6===true?'On plan':'Mark when met'}</span><button class="toggle ${d.food.stop6===true?'on':''}" data-toggle-food="stop6" aria-label="No food after cutoff"></button></div></div>
+  <div class="actual-row tracker-row ${d.skips?.water?'is-skip':''}">${trackerHead('water',d)}<div class="chip-row">${[1,1.5,2,2.5,3].map(v=>`<button class="pill ${d.food.water!==null && +d.food.water===v?'on':''}" data-set-food="water" data-value="${v}">${v}L</button>`).join('')}</div></div>
+  <div class="actual-row tracker-row ${d.skips?.bedtimeHunger?'is-skip':''}">${trackerHead('bedtimeHunger',d)}<div class="hunger-scale"><span class="small">Low</span><div class="chip-row">${hunger.map(v=>`<button class="pill ${d.food.bedtimeHunger!==null && +d.food.bedtimeHunger===v?'on':''}" data-set-food="bedtimeHunger" data-value="${v}">${v}</button>`).join('')}</div><span class="small">High</span></div></div>`;
 }
 function movementControls(d){
-  return `<div class="two"><label>${tr('steps')}<input data-day-field="move.steps" inputmode="numeric" type="number" min="0" value="${d.move.steps??''}" placeholder="10000"></label><label>${tr('cardio')} · ${tr('minutes')}<input data-day-field="move.cardio" inputmode="numeric" type="number" min="0" value="${d.move.cardio??''}" placeholder="0"></label><label>${tr('strength')} · ${tr('minutes')}<input data-day-field="move.strength" inputmode="numeric" type="number" min="0" value="${d.move.strength??''}" placeholder="0"></label><div style="padding-top:26px"><div class="switch-row"><span style="font-size:14px">${tr('stretch')}</span><button class="toggle ${d.move.stretch===true?'on':''}" data-toggle-move="stretch"></button></div></div></div>`;
+  return `<div class="exercise-log">
+    <div class="tracker-row ${d.skips?.steps?'is-skip':''}">${trackerHead('steps',d)}<input data-day-field="move.steps" data-tracker="steps" inputmode="numeric" type="number" min="0" value="${d.move.steps??''}" placeholder="10000"></div>
+    <div class="tracker-row ${d.skips?.cardio?'is-skip':''}">${trackerHead('cardio',d)}<label class="inline-input"><input data-day-field="move.cardio" data-tracker="cardio" inputmode="numeric" type="number" min="0" value="${d.move.cardio??''}" placeholder="0"><span>min</span></label></div>
+    <div class="tracker-row ${d.skips?.strength?'is-skip':''}">${trackerHead('strength',d)}<label class="inline-input"><input data-day-field="move.strength" data-tracker="strength" inputmode="numeric" type="number" min="0" value="${d.move.strength??''}" placeholder="0"><span>min</span></label></div>
+    <div class="tracker-row ${d.skips?.stretch?'is-skip':''}">${trackerHead('stretch',d)}<div class="switch-row compact-switch"><span>${d.move.stretch===true?'Done':'Mark when done'}</span><button class="toggle ${d.move.stretch===true?'on':''}" data-toggle-move="stretch"></button></div></div>
+  </div>`;
 }
 
 function calendarPage(){
@@ -345,10 +480,10 @@ function dayPage(){
 }
 function futurePlanSummary(d){
   if(d.planMode==='custom') return customPlanControls(d);
-  const p=dayPlan(d);
-  return `<div class="rule-grid"><div class="rule">Vegetables ≥ ${p.veg}</div><div class="rule">Fruit ≤ ${p.fruit}</div><div class="rule">${p.noSnack===false?'Snacks allowed':'No snacks'}</div><div class="rule ${p.stop==null?'rule-exception':''}">${p.stop==null?'Eating cutoff paused':'No food after 6 PM'}</div><div class="rule">Satiety ≤ ${p.satiety}/10</div><div class="rule">Water ≥ ${p.water}L</div></div>${d.planMode==='flexible'?`<div class="insight" style="margin-top:12px">Flexible day: the exception is already part of the plan. It is not a failed day.</div>`:''}`;
+  const ids=TRACKER_IDS.filter(id=>TRACKER_DEFS[id].cadence==='daily'&&trackerRole(db.goal,id)==='goal'&&trackerActiveOn(db.goal,id,d.date));
+  return `<div class="rule-grid">${ids.map(id=>`<div class="rule">${escapeHtml(trackerRuleLabel(db.goal,id,d))}</div>`).join('')}</div>${d.planMode==='flexible'?`<div class="insight" style="margin-top:12px">Flexible day: the exception is part of the plan, not a failed day.</div>`:''}`;
 }
-function customPlanControls(d){const p=d.customPlan||{};return `<div class="custom-plan"><div class="actual-label">Custom food goals</div><div class="two"><label>Vegetables ≥<input data-day-field="customPlan.veg" type="number" value="${p.veg??db.plan.veg}"></label><label>Fruit ≤<input data-day-field="customPlan.fruit" type="number" value="${p.fruit??db.plan.fruit}"></label><label>Satiety ≤<input data-day-field="customPlan.satiety" type="number" value="${p.satiety??db.plan.satiety}"></label><label>Water ≥ L<input data-day-field="customPlan.water" type="number" step="0.1" value="${p.water??db.plan.water}"></label></div><div class="switch-row actual-row"><span>Allow snacks</span><button class="toggle ${p.noSnack===false?'on':''}" data-toggle-custom="allowSnack"></button></div><label>Stop eating time (blank = no cutoff)<input data-day-field="customPlan.stop" type="time" value="${p.stop??db.plan.stop}"></label><hr class="sep"><div class="actual-label">Custom exercise</div><div class="two"><label>Steps<input data-day-field="customPlan.steps" type="number" value="${p.steps??''}" placeholder="10000"></label><label>Cardio · min<input data-day-field="customPlan.cardio" type="number" value="${p.cardio??''}"></label><label>Strength · min<input data-day-field="customPlan.strength" type="number" value="${p.strength??''}"></label><div style="padding-top:26px"><div class="switch-row"><span>Stretch</span><button class="toggle ${p.stretch===true?'on':''}" data-toggle-custom="stretch"></button></div></div></div></div>`; }
+function customPlanControls(d){const p=d.customPlan||{};return `<div class="custom-plan"><div class="actual-label">Custom food goals</div><div class="two"><label>Vegetables ≥<input data-day-field="customPlan.veg" type="number" value="${p.veg??db.plan.veg}"></label><label>Fruit ≤<input data-day-field="customPlan.fruit" type="number" value="${p.fruit??db.plan.fruit}"></label><label>Water ≥ L<input data-day-field="customPlan.water" type="number" step="0.1" value="${p.water??db.plan.water}"></label><label>Stop eating time<input data-day-field="customPlan.stop" type="time" value="${p.stop??db.plan.stop}"></label></div><div class="switch-row actual-row"><span>Allow snacks</span><button class="toggle ${p.noSnack===false?'on':''}" data-toggle-custom="allowSnack"></button></div><div class="small plan-helper">Protein is yes/no. Bedtime hunger is observation only and has no custom target.</div><hr class="sep"><div class="actual-label">Custom exercise</div><div class="two"><label>Steps<input data-day-field="customPlan.steps" type="number" value="${p.steps??''}" placeholder="10000"></label><label>Cardio · min<input data-day-field="customPlan.cardio" type="number" value="${p.cardio??''}"></label><label>Strength · min<input data-day-field="customPlan.strength" type="number" value="${p.strength??''}"></label><div style="padding-top:26px"><div class="switch-row"><span>Stretch</span><button class="toggle ${p.stretch===true?'on':''}" data-toggle-custom="stretch"></button></div></div></div></div>`; }
 
 function goalForecast(){
   const records=latestWeights(db.goal.end).filter(x=>x.date>=db.goal.start && x.date<=today());
@@ -423,7 +558,6 @@ function changePage(){
   const series=chartData();
   const lw=latestWeight(today()); const f=goalForecast();
   const desc=lw?`${tr('actualWeight')} ${fmt(lw.weight)} kg`:tr('noRecord');
-  const w=weekStats();
   return `${topbar(tr('weightChange'))}
     <section class="card change-goal-card">
       <div class="row between"><div><b>${escapeHtml(db.goal.name)}</b><div class="small">${fmtDate(db.goal.start)} → ${fmtDate(db.goal.end)}</div></div><div class="small">${tr('goalLine')} ${fmt(db.goal.target)} kg</div></div>
@@ -438,8 +572,8 @@ function changePage(){
     <div class="insight forecast-insight">${forecastMessage(f)}</div>
     <div class="section-title">${tr('todayNote')}</div>
     <div class="insight">${dynamicInsight()}</div>
-    <div class="section-title">${db.language==='zh'?'本周回顾':'Weekly review'}</div>
-    <section class="card"><div class="week-bars">${weekBars(w)}</div><hr class="sep"><div class="small" style="line-height:1.55">${weeklyReviewText()}</div></section>`;
+    <div class="section-title">Weekly review</div>
+    <section class="card">${weeklyReviewText()}</section>`;
 }
 function chartData(){
   // Change is a goal-centric view: existing data begins at goal start and the chart always ends at goal end.
@@ -478,7 +612,8 @@ function renderChart(data,forecast){
   for(let v=Math.ceil(min/tickStep)*tickStep;v<=max+.001;v+=tickStep){const yy=y(v);grid+=`<line class="grid" x1="${L}" y1="${yy}" x2="${W-R}" y2="${yy}"/><line class="tick" x1="${L-4}" y1="${yy}" x2="${L}" y2="${yy}"/><text class="y-label" x="${L-9}" y="${yy+3}" text-anchor="end">${v}</text>`;}
   const labelCount=Math.min(7,Math.max(5,Math.ceil(totalDays/6)+1));
   const xDates=[]; for(let i=0;i<labelCount;i++){const off=Math.round(totalDays*i/(labelCount-1));const ds=addDays(db.goal.start,off);if(!xDates.includes(ds))xDates.push(ds);}
-  const xLabels=xDates.map((s,i)=>`<text x="${xDate(s)}" y="${H-9}" text-anchor="${i===0?'start':i===xDates.length-1?'end':'middle'}">${fmtShortDate(s)}</text>`).join('');
+  const plotWidth=W-L-R;
+  const xLabels=xDates.map((s,i)=>{const xx=L+(xDates.length===1?0:plotWidth*i/(xDates.length-1));return `<text x="${xx}" y="${H-9}" text-anchor="${i===0?'start':i===xDates.length-1?'end':'middle'}">${fmtShortDate(s)}</text>`;}).join('');
   const actualPath=data.map((d,i)=>`${i?'L':'M'} ${xDate(d.date).toFixed(1)} ${y(d.weight).toFixed(1)}`).join(' ');
   const goalY=y(+db.goal.target);
   const points=data.map((d,i)=>`<circle class="point" data-chart-index="${i}" cx="${xDate(d.date)}" cy="${y(d.weight)}" r="2"></circle>`).join('');
@@ -508,15 +643,87 @@ function chartTipHtml(d){
   if(!d) return '';
   return `<b>${fmtShortDate(d.date)}</b><span>${fmt(d.weight)} kg</span>`;
 }
-function weeklyReviewText(){
-  const now=parseDate(today()), offset=(now.getDay()+6)%7, monday=addDays(today(),-offset); const records=[];
-  for(let s=monday;s<=today();s=addDays(s,1)) records.push(day(s));
-  const logged=records.filter(d=>foodStatus(d).recorded>0); const good=logged.filter(d=>{const f=foodStatus(d);return f.enough&&f.score>=.8;}).length;
-  const events=records.reduce((n,d)=>n+d.events.length,0);
-  const a=latestWeights(today()).filter(x=>x.date>=monday); const delta=a.length>=2?(a[a.length-1].weight-a[0].weight):null;
-  if(db.language==='zh') return `${logged.length?`饮食记录 ${logged.length} 天，其中 ${good} 天整体按计划。`:'本周还没有足够的饮食记录。'} ${events?`有 ${events} 个特殊安排。`:''} ${delta!=null?`本周秤重变化 ${delta>0?'+':''}${delta.toFixed(1)} kg。`:''}先看一周整体，再决定是否调整。`;
-  return `${logged.length?`${logged.length} food days logged; ${good} were mostly on plan.`:'Not enough food logs yet.'} ${events?`${events} life event${events>1?'s':''}.`:''} ${delta!=null?`Scale change this week: ${delta>0?'+':''}${delta.toFixed(1)} kg.`:''} Review the whole week before changing the plan.`;
+function weeklyTargetFor(g,id){
+  const p=planForGoal(g);
+  if(id==='steps') return +p.stepsDays||0;
+  if(id==='cardio') return +p.cardio||0;
+  if(id==='strength') return +p.strengthSessions||0;
+  if(id==='stretch') return +p.stretchDays||0;
+  return null;
 }
+function goalBehaviorMetrics(g,from,to){
+  const dates=[]; for(let s=from;s<=to;s=addDays(s,1)) if(s>=g.start&&s<=(g.ended||g.end)) dates.push(s);
+  const daily={}, weekly={};
+  for(const id of TRACKER_IDS.filter(id=>trackerRole(g,id)==='goal')){
+    const def=TRACKER_DEFS[id];
+    if(def.cadence==='daily'){
+      let eligible=0,met=0,skipped=0,recorded=0,missDates=[];
+      for(const date of dates){
+        if(!trackerActiveOn(g,id,date)) continue;
+        const d=day(date), e=dailyTrackerEval(g,id,d);
+        if(e.skip||e.na){ if(e.skip) skipped++; continue; }
+        if(date===today()&&!e.recorded&&!e.met) continue; // do not fail an unfinished current day
+        eligible++;
+        if(e.recorded) recorded++;
+        if(e.met) met++; else if(date<today()) missDates.push(date);
+      }
+      daily[id]={eligible,met,skipped,recorded,missDates,rate:eligible?met/eligible:null};
+    }else{
+      const value=dates.filter(x=>x<=today()).reduce((sum,date)=>sum+weeklyTrackerContribution(id,day(date),g),0);
+      weekly[id]={value,target:weeklyTargetFor(g,id),met:weeklyTargetFor(g,id)>0?value>=weeklyTargetFor(g,id):null};
+    }
+  }
+  return {daily,weekly};
+}
+function weeklyReviewText(){
+  const dates=weekDates(), monday=dates[0], through=today()<dates[6]?today():dates[6], metrics=goalBehaviorMetrics(db.goal,monday,through);
+  const behavior=[];
+  for(const [id,m] of Object.entries(metrics.daily)){
+    if(m.eligible) behavior.push(`${TRACKER_DEFS[id].label}: ${m.met} of ${m.eligible} eligible days`);
+  }
+  for(const [id,m] of Object.entries(metrics.weekly)){
+    const unit=id==='cardio'?' min':id==='steps'||id==='strength'||id==='stretch'?'×':'';
+    behavior.push(`${TRACKER_DEFS[id].label}: ${m.value}${unit} toward ${m.target}${unit}`);
+  }
+  const missed=Object.entries(metrics.daily).filter(([,m])=>m.eligible>=2&&m.rate!=null&&m.rate<.8).sort((a,b)=>a[1].rate-b[1].rate);
+  let pattern='No clear multi-day execution pattern yet.';
+  if(missed.length) pattern=`The main Goal behavior to watch is ${TRACKER_DEFS[missed[0][0]].label.toLowerCase()}; this is based on repeated Goal misses, not Bonus activity.`;
+  else {
+    const track=trackOnlyWeekSummaryText(db.goal);
+    if(track) pattern=track;
+  }
+  const avgNow=movingAverage(today()), avgPrev=movingAverage(addDays(today(),-7));
+  const weight=avgNow==null?'Not enough weight data yet.':`7-day average ${fmt(avgNow)} kg${avgPrev==null?'':` · ${avgNow-avgPrev>0?'+':''}${(avgNow-avgPrev).toFixed(1)} kg vs 7 days ago`}.`;
+  let next='Keep the current plan steady and judge the week as a whole.';
+  if(missed.length) next=`Next: make ${TRACKER_DEFS[missed[0][0]].label.toLowerCase()} the simplest behavior to protect this week.`;
+  const bonus=bonusWeekSummaryText(db.goal); if(bonus) behavior.push(`Bonus: ${bonus}`);
+  return `<div class="weekly-review-copy"><div><b>Goal behaviors</b><br>${behavior.length?behavior.map(escapeHtml).join(' · '):'No Goal behavior data yet.'}</div><div><b>Pattern</b><br>${escapeHtml(pattern)}</div><div><b>Weight</b><br>${escapeHtml(weight)}</div><div><b>Next</b><br>${escapeHtml(next.replace(/^Next:\s*/,''))}</div></div>`;
+}
+function bonusWeekSummaryText(g){
+  const dates=weekDates().filter(s=>s<=today()&&s>=g.start&&s<=(g.ended||g.end)), bits=[];
+  for(const id of TRACKER_IDS.filter(id=>trackerRole(g,id)==='bonus')){
+    const def=TRACKER_DEFS[id];
+    if(def.cadence==='daily'){
+      const n=dates.filter(s=>{const e=dailyTrackerEval(g,id,day(s));return !e.na&&e.met;}).length; if(n) bits.push(`${def.label} ${n}×`);
+    }else if(id==='cardio'){
+      const n=dates.reduce((a,s)=>a+weeklyTrackerContribution(id,day(s),g),0); if(n) bits.push(`Cardio ${n}m`);
+    }else{
+      const n=dates.reduce((a,s)=>a+weeklyTrackerContribution(id,day(s),g),0); if(n) bits.push(`${def.label} ${n}×`);
+    }
+  }
+  return bits.join(' · ');
+}
+function trackOnlyWeekSummaryText(g){
+  const dates=weekDates().filter(s=>s<=today()&&s>=g.start&&s<=(g.ended||g.end)), bits=[];
+  if(trackerRole(g,'bedtimeHunger')==='track'){
+    const vals=dates.map(s=>day(s).food.bedtimeHunger).filter(v=>v!=null).map(Number); if(vals.length) bits.push(`Bedtime hunger averaged ${avg(vals).toFixed(1)}/5`);
+  }
+  if(trackerRole(g,'water')==='track'){
+    const vals=dates.map(s=>day(s).food.water).filter(v=>v!=null).map(Number); if(vals.length) bits.push(`Water averaged ${avg(vals).toFixed(1)}L`);
+  }
+  return bits.length?`${bits.join(' · ')}. Track-only data is context, not adherence.`:'';
+}
+
 
 function changeSummary(){
   const a=latestWeights(); if(a.length<2)return `<div class="small">${tr('noRecord')}</div>`;
@@ -542,15 +749,83 @@ function activeGoalLearning(){
   return `<div class="active-learning"><div class="row between"><b>Latest review</b><span class="small">${fmtShortDate(r.date)}${r.day?` · Day ${r.day}`:''}</span></div><div class="active-learning-text">${escapeHtml(preview)}</div><button class="review-inline-link" data-review-goal="${escapeHtml(db.goal.id)}">Review history →</button></div>`;
 }
 
+function weekDates(anchor=today()){
+  const d=parseDate(anchor), offset=(d.getDay()+6)%7, monday=addDays(anchor,-offset);
+  return Array.from({length:7},(_,i)=>addDays(monday,i));
+}
+function trackerWeekCellState(g,id,date){
+  const d=day(date);
+  if(date<g.start || date>(g.ended||g.end) || !trackerActiveOn(g,id,date)) return 'na';
+  if(d.skips?.[id]) return 'skip';
+  if(date>today()) return 'future';
+  const def=TRACKER_DEFS[id];
+  if(def.cadence==='daily'){
+    const e=dailyTrackerEval(g,id,d);
+    if(e.na) return 'na';
+    if(e.met) return 'done';
+    if(date===today()) return 'today';
+    return 'missed';
+  }
+  if(weeklyTrackerContribution(id,d,g)>0) return 'done';
+  return 'weekly-neutral';
+}
+function trackerGridRow(g,id){
+  const dates=weekDates();
+  const cells=dates.map(date=>{const st=trackerWeekCellState(g,id,date);return `<span class="week-cell ${st}" title="${fmtShortDate(date)} · ${st==='done'?'done':st==='missed'?'not met':st==='future'?'future':st==='skip'||st==='na'?'N/A':'weekly goal'}">${st==='skip'||st==='na'?'–':''}</span>`;}).join('');
+  return `<div class="behavior-row"><div class="behavior-label">${escapeHtml(trackerRuleLabel(g,id,day(today())))}</div><div class="seven-grid">${cells}</div></div>`;
+}
+function bonusWeekSummary(g){
+  const dates=weekDates().filter(s=>s<=today()&&s>=g.start&&s<=(g.ended||g.end));
+  const bits=[];
+  for(const id of TRACKER_IDS.filter(id=>trackerRole(g,id)==='bonus')){
+    const def=TRACKER_DEFS[id];
+    if(def.cadence==='daily'){
+      const n=dates.filter(s=>{const e=dailyTrackerEval(g,id,day(s));return !e.na&&e.met;}).length;
+      if(n) bits.push(`${def.label} ${n}×`);
+    }else if(id==='cardio'){
+      const n=dates.reduce((a,s)=>a+weeklyTrackerContribution(id,day(s),g),0); if(n) bits.push(`Cardio ${n}m`);
+    }else{
+      const n=dates.reduce((a,s)=>a+weeklyTrackerContribution(id,day(s),g),0); if(n) bits.push(`${def.label} ${n}×`);
+    }
+  }
+  return bits.length?`<div class="behavior-light-row"><b>Bonus</b><span>${bits.map(escapeHtml).join(' · ')}</span></div>`:'';
+}
+function trackOnlyWeekSummary(g){
+  const dates=weekDates().filter(s=>s<=today()&&s>=g.start&&s<=(g.ended||g.end));
+  const bits=[];
+  if(trackerRole(g,'bedtimeHunger')==='track'){
+    const vals=dates.map(s=>day(s).food.bedtimeHunger).filter(v=>v!=null).map(Number);
+    if(vals.length) bits.push(`Bedtime hunger ${avg(vals).toFixed(1)}/5`);
+  }
+  if(trackerRole(g,'water')==='track'){
+    const vals=dates.map(s=>day(s).food.water).filter(v=>v!=null).map(Number);
+    if(vals.length) bits.push(`Water ${avg(vals).toFixed(1)}L avg`);
+  }
+  return bits.length?`<div class="behavior-light-row track-only"><b>Track only</b><span>${bits.map(escapeHtml).join(' · ')}</span></div>`:'';
+}
+function weeklyBehaviorProgress(g){
+  const ids=TRACKER_IDS.filter(id=>trackerRole(g,id)==='goal');
+  return `<div class="weekly-behavior"><div class="row between behavior-heading"><b>Weekly behavior</b><span class="small">Goal trackers only</span></div>${ids.length?ids.map(id=>trackerGridRow(g,id)).join(''):'<div class="small">No behavior trackers are set as Goal.</div>'}${bonusWeekSummary(g)}${trackOnlyWeekSummary(g)}</div>`;
+}
+function roleEditorGroup(g,group){
+  const ids=TRACKER_IDS.filter(id=>TRACKER_DEFS[id].group===group);
+  return `<div class="tracker-role-list">${ids.map(id=>{const role=trackerRole(g,id);return `<div class="tracker-role-row"><div><b>${TRACKER_DEFS[id].label}</b><span>${TRACKER_DEFS[id].cadence==='daily'?'Daily':'Weekly'}</span></div><div class="role-segment">${['goal','bonus','track'].map(r=>`<button class="${role===r?'on':''}" data-tracker-role="${id}" data-role="${r}">${ROLE_LABELS[r]}</button>`).join('')}</div></div>`;}).join('')}</div>`;
+}
+function focusPicker(g){
+  return `<div class="focus-picker">${[['diet','Diet'],['exercise','Exercise'],['both','Both'],['other','Other']].map(([id,label])=>`<button class="${g.focus===id?'on':''}" data-goal-focus="${id}">${label}</button>`).join('')}</div><div class="small focus-note">Focus only suggests tracker roles. You can change every tracker below.</div>`;
+}
+
 function goalsPage(){
-  const lw=latestWeight(today());
+  const lw=latestWeight(today()), avgNow=movingAverage(today()), avgPrev=movingAverage(addDays(today(),-7)), avgDelta=(avgNow!=null&&avgPrev!=null)?avgNow-avgPrev:null;
   return `${topbar(tr('goals'))}
     ${flashHtml()}
     <div class="section-title" style="margin-top:2px">${tr('goalJourney')}</div>
     <section class="card soft">
       <div class="row between"><div><div class="brand" style="font-size:18px;letter-spacing:0">${escapeHtml(db.goal.name)}</div><div class="small">${db.goal.start} → ${db.goal.end}</div></div><span class="status active">${tr('active')}</span></div>
       <div class="metric-row" style="margin-top:10px"><div class="metric"><div class="label">${tr('start')}</div><div class="value">${fmt(activeGoalStartWeight())} <span class="small">kg</span></div></div><div class="metric" style="text-align:right"><div class="label">${tr('target')}</div><div class="value">${fmt(db.goal.target)} <span class="small">kg</span></div></div></div>
+      <div class="goal-weight-context"><span>Current ${fmt(lw?.weight??activeGoalStartWeight())} kg</span><span>7-day avg ${fmt(avgNow)} kg${avgDelta==null?'':` · ${avgDelta>0?'+':''}${avgDelta.toFixed(1)}`}</span></div>
       <div class="progress"><i style="width:${goalProgress(lw?.weight??db.goal.startWeight)}%"></i></div>
+      ${weeklyBehaviorProgress(db.goal)}
       <div class="goal-actions"><button class="btn secondary" data-action="editGoal">Edit goal</button><button class="btn ghost" data-review-goal="${escapeHtml(db.goal.id)}">Review goal</button></div>
       ${activeGoalLearning()}
     </section>
@@ -581,14 +856,37 @@ function goalStatus(g,end){
 
 function goalEditPage(){
   const g=db.goal;
-  return `${topbar(db.language==='zh'?'编辑目标':'Edit goal','',`<button class="btn sky save-top" data-action="saveGoal">${tr('save')}</button>`)}
-    <section class="card"><label>${db.language==='zh'?'目标名字':'Goal name'}</label><input id="goalName" value="${escapeHtml(g.name)}"><div class="two"><label>${tr('start')} kg<input id="goalStartWeight" type="number" step="0.1" value="${activeGoalStartWeight()}"></label><label>${tr('target')} kg<input id="goalTarget" type="number" step="0.1" value="${g.target}"></label></div><div class="two"><label>${tr('start')}<input id="goalStart" type="date" value="${g.start}"></label><label>${db.language==='zh'?'截止日期':'End date'}<input id="goalEnd" type="date" value="${g.end}"></label></div></section>
-    <section class="card"><div class="actual-label">Food goals</div>${planInputsFood()}</section>
-    <section class="card"><div class="actual-label">Weekly exercise goals</div>${planInputsMove()}</section>
+  return `${topbar('Edit goal','',`<button class="btn sky save-top" data-action="saveGoal">${tr('save')}</button>`)}
+    <section class="card"><label>Goal name</label><input id="goalName" value="${escapeHtml(g.name)}"><div class="two"><label>${tr('start')} kg<input id="goalStartWeight" type="number" step="0.1" value="${activeGoalStartWeight()}"></label><label>${tr('target')} kg<input id="goalTarget" type="number" step="0.1" value="${g.target}"></label></div><div class="two"><label>${tr('start')}<input id="goalStart" type="date" value="${g.start}"></label><label>End date<input id="goalEnd" type="date" value="${g.end}"></label></div></section>
+    <section class="card"><div class="actual-label">Focus</div>${focusPicker(g)}</section>
+    <section class="card"><div class="actual-label">Diet targets</div>${planInputsFood()}</section>
+    <section class="card"><div class="actual-label">Weekly exercise targets</div>${planInputsMove()}</section>
+    <section class="card"><div class="row between"><div class="actual-label" style="margin:0">Diet trackers</div><span class="small">Role for this goal</span></div>${roleEditorGroup(g,'diet')}</section>
+    <section class="card"><div class="row between"><div class="actual-label" style="margin:0">Exercise trackers</div><span class="small">Role for this goal</span></div>${roleEditorGroup(g,'exercise')}</section>
     <button class="btn ghost danger full" data-action="archiveGoal">${tr('archive')}</button>`;
 }
-function planInputsFood(){return `<div class="two"><label>${tr('veg')} ≥<input data-plan="veg" type="number" value="${db.plan.veg}"></label><label>${tr('fruit')} ≤<input data-plan="fruit" type="number" value="${db.plan.fruit}"></label><label>${tr('water')} ≥ L<input data-plan="water" type="number" step="0.1" value="${db.plan.water}"></label><label>${db.language==='zh'?'目标饱腹度':'Satiety target'}<input data-plan="satiety" type="number" value="${db.plan.satiety}"></label></div><label>${db.language==='zh'?'停止进食时间':'Stop eating time'}<input data-plan="stop" type="time" value="${db.plan.stop}"></label>`;}
-function planInputsMove(){return `<div class="two"><label>10k-step days / week<input data-plan="stepsDays" type="number" value="${db.plan.stepsDays}"></label><label>Stretch days / week<input data-plan="stretchDays" type="number" value="${db.plan.stretchDays}"></label><label>Cardio · min/week<input data-plan="cardio" type="number" value="${db.plan.cardio}"></label><label>Strength · min/week<input data-plan="strength" type="number" value="${db.plan.strength}"></label></div>`;}
+function planInputsFood(){return `<div class="two"><label>Vegetables ≥<input data-plan="veg" type="number" value="${db.plan.veg}"></label><label>Fruit ≤<input data-plan="fruit" type="number" value="${db.plan.fruit}"></label><label>Water ≥ L<input data-plan="water" type="number" step="0.1" value="${db.plan.water}"></label><label>Eating cutoff<input data-plan="stop" type="time" value="${db.plan.stop}"></label></div><div class="small plan-helper">Protein and No snacks are yes/no trackers. Bedtime hunger is a 1–5 observation, not a success score.</div>`;}
+function planInputsMove(){return `<div class="two"><label>10k-step days / week<input data-plan="stepsDays" type="number" min="0" max="7" value="${db.plan.stepsDays}"></label><label>Stretch days / week<input data-plan="stretchDays" type="number" min="0" max="7" value="${db.plan.stretchDays}"></label><label>Cardio · min/week<input data-plan="cardio" type="number" min="0" value="${db.plan.cardio}"></label><label>Strength sessions / week<input data-plan="strengthSessions" type="number" min="0" max="7" value="${db.plan.strengthSessions||2}"></label></div>`;}
+function setGoalFocus(focus){
+  if(!['diet','exercise','both','other'].includes(focus)) return;
+  saveGoalForm();
+  const g=db.goal, previous=normalizeTrackers(g,false), roles=focusRoles(focus), startToday=today()<g.start?g.start:today();
+  g.focus=focus; g.trackers={};
+  for(const id of TRACKER_IDS){
+    const was=previous[id]||{role:'track',activeFrom:g.start};
+    const role=roles[id];
+    g.trackers[id]={role,activeFrom:(role==='goal'&&was.role!=='goal')?startToday:(was.activeFrom||g.start),roleAuto:true};
+  }
+  persist();render();
+}
+function setTrackerRole(id,role){
+  if(!TRACKER_DEFS[id]||!['goal','bonus','track'].includes(role)) return;
+  saveGoalForm();
+  db.goal.trackers=normalizeTrackers(db.goal,false);
+  const prev=db.goal.trackers[id], activeFrom=(role==='goal'&&prev.role!=='goal')?(today()<db.goal.start?db.goal.start:today()):(prev.activeFrom||db.goal.start);
+  db.goal.trackers[id]={role,activeFrom,roleAuto:false};
+  persist();render();
+}
 
 
 function findGoalById(id){
@@ -596,7 +894,8 @@ function findGoalById(id){
   return db.goals.find(g=>g.id===id)||null;
 }
 function goalAverageFor(g,date,window=7){
-  const rows=latestWeights(date).filter(x=>x.date>=g.start && x.date<=date).slice(-window).map(x=>+x.weight);
+  const from=addDays(date,-(window-1)), start=from>g.start?from:g.start;
+  const rows=latestWeights(date).filter(x=>x.date>=start && x.date<=date).map(x=>+x.weight);
   return avg(rows);
 }
 function goalReviewPack(g){
@@ -604,27 +903,41 @@ function goalReviewPack(g){
   const through=active ? (today()<g.end?today():g.end) : (g.ended||g.end);
   const records=[];
   for(let s=g.start;s<=through;s=addDays(s,1)){
-    const rec=day(s), fs=foodStatus(rec);
-    const hasData=rec.weight!=null || rec.sleep!=null || fs.recorded>0 || Object.values(rec.move||{}).some(v=>v!==null&&v!==false) || rec.events.length || rec.note;
+    const rec=day(s);
+    const foodValues=Object.values(rec.food||{}).some(v=>v!==null&&v!==false&&v!=='');
+    const exerciseValues=Object.values(rec.move||{}).some(v=>v!==null&&v!==false&&v!=='');
+    const hasData=rec.weight!=null || rec.sleep!=null || foodValues || exerciseValues || Object.values(rec.skips||{}).some(Boolean) || rec.events.length || rec.note;
     if(!hasData) continue;
-    records.push({date:s,weight:rec.weight,sevenDayAverage:goalAverageFor(g,s),sleepHours:rec.sleep,food:{...rec.food},exercise:{...rec.move},lifeEvents:rec.events.map(eventLabel),note:rec.note||''});
+    records.push({date:s,weight:rec.weight,sevenDayAverage:goalAverageFor(g,s),sleepHours:rec.sleep,food:{veg:rec.food.veg,protein:rec.food.protein,fruit:rec.food.fruit,noSnack:rec.food.noSnack,noFoodAfterCutoff:rec.food.stop6,waterLiters:rec.food.water,bedtimeHunger:rec.food.bedtimeHunger},exercise:{...rec.move},skipOrNA:{...rec.skips},lifeEvents:rec.events.map(eventLabel),note:rec.note||''});
   }
   const endWeight=active ? latestWeight(through)?.weight??null : g.endWeight??null;
   const startWeight=active ? activeGoalStartWeight() : +g.startWeight;
+  const trackers=normalizeTrackers(g,!active);
+  const trackerConfig=TRACKER_IDS.map(id=>({id,label:TRACKER_DEFS[id].label,group:TRACKER_DEFS[id].group,cadence:TRACKER_DEFS[id].cadence,role:trackers[id].role,activeFrom:trackers[id].activeFrom,target:trackerRuleLabel(g,id,day(through))}));
   return {
-    tideGoalReviewVersion:3,
+    tideGoalReviewVersion:4,
     goalId:g.id,
     exportedAt:new Date().toISOString(),
-    goal:{name:g.name,start:g.start,end:g.end,startWeight,targetWeight:+g.target,currentOrEndWeight:endWeight,status:active?'active':goalStatus(g,endWeight)},
+    goal:{name:g.name,start:g.start,end:g.end,startWeight,targetWeight:+g.target,currentOrEndWeight:endWeight,status:active?'active':goalStatus(g,endWeight),focus:g.focus||'both'},
+    trackerConfig,
     plan:{...(g.planSnapshot||db.plan)},
     planWasFrozenAtArchive:!!g.planSnapshot,
     summary:{daysCovered:records.length,weightChange:endWeight==null?null:+(endWeight-startWeight).toFixed(2),targetChange:+(+g.target-startWeight).toFixed(2)},
     reviewHistory:normalizeReviews(g),
     daily:records,
-    recommendedPrompt:'Review this Tide goal briefly and practically. Look for useful patterns and lagged/multi-day effects; do not blame a morning weight on an event from the same day. Reply directly in chat with ONE JSON code block that I can copy into Tide; do not create a download. Return TWO layers: preview = a 1-2 sentence synthesis of the whole review for the Goals screen (not just the first learning), and review = the fuller details with summary, 1-3 learnings, and 1-3 specific next actions. Keep everything concise. You may add one short extra field inside review if something important stands out.',
-    chatgptReturnExample:{goalId:g.id,preview:'1-2 sentence overall takeaway that synthesizes the full review',review:{summary:'brief overall assessment',learnings:['short learning 1','short learning 2'],next:['specific next action 1','specific next action 2']}}
+    reviewInstructions:[
+      'Review Goal-role behaviors first: these are the only adherence metrics and the only items that may be called execution gaps.',
+      'Bonus items may only be mentioned as positive additions; not doing a Bonus is never a gap or failure.',
+      'Track only items and Weight are context for patterns, not adherence scores.',
+      'Look for multi-day or lagged patterns. Do not attribute a morning weight to an event logged later on that same day.',
+      'Analyze weight seriously using the 7-day average and trend; do not call the plan failed because of one flat or higher weigh-in.',
+      'Keep the review concise and practical.'
+    ],
+    recommendedPrompt:'Analyze this Tide goal using the reviewInstructions in the file. Be concise and practical. Return exactly ONE JSON code block and nothing else. Use EXACTLY these top-level fields: goalId, preview, review. Inside review use EXACTLY: summary, learnings, next. No extra fields are allowed. preview must be a 1-2 sentence synthesis of the whole review. summary must be a concise overall assessment. learnings must contain 1-3 short items. next must contain 1-3 specific actions.',
+    chatgptReturnExample:{goalId:g.id,preview:'1-2 sentence synthesis of the whole review',review:{summary:'brief overall assessment',learnings:['short learning 1','short learning 2'],next:['specific next action 1','specific next action 2']}}
   };
 }
+
 function downloadJSON(obj,name){
   const blob=new Blob([JSON.stringify(obj,null,2)],{type:'application/json'}), a=document.createElement('a');
   a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
@@ -664,35 +977,47 @@ function parseReviewJSON(text){
   const first=cleaned.indexOf('{'), last=cleaned.lastIndexOf('}'); if(first>=0&&last>first) cleaned=cleaned.slice(first,last+1);
   return JSON.parse(cleaned);
 }
-function makeCheckpoint(raw,g){
-  const root=raw?.review||raw?.fullReview||raw?.details||raw||{};
-  const preview=String(raw?.preview||root.preview||raw?.overview||raw?.takeaway||'').trim();
-  const summary=String(root.summary||'').trim(), learnings=asList(root.learnings), next=asList(root.next??root.actionItems);
-  if(root.nextExperiment && !next.includes(String(root.nextExperiment).trim())) next.push(String(root.nextExperiment).trim());
-  if(!preview && !summary && !learnings.length && !next.length) throw new Error('Empty review');
-  const date=today();
-  return {id:`review-${date}-${Date.now().toString(36)}`,date,day:Math.max(1,Math.floor((parseDate(date)-parseDate(g.start))/86400000)+1),preview,summary,learnings:learnings.slice(0,5),next:next.slice(0,5),createdAt:new Date().toISOString()};
+function assertExactKeys(obj,expected,label){
+  if(!obj || typeof obj!=='object' || Array.isArray(obj)) throw new Error(`${label} must be an object`);
+  const keys=Object.keys(obj).sort(), want=[...expected].sort();
+  if(keys.length!==want.length || keys.some((k,i)=>k!==want[i])) throw new Error(`${label} must use exactly: ${expected.join(', ')}`);
 }
+function validateReviewShape(raw,g){
+  assertExactKeys(raw,['goalId','preview','review'],'Review JSON');
+  assertExactKeys(raw.review,['summary','learnings','next'],'review');
+  if(String(raw.goalId)!==String(g.id)) throw new Error('goalId does not match this goal');
+  if(typeof raw.preview!=='string'||!raw.preview.trim()) throw new Error('preview is required');
+  if(typeof raw.review.summary!=='string'||!raw.review.summary.trim()) throw new Error('summary is required');
+  if(!Array.isArray(raw.review.learnings)||raw.review.learnings.length<1||raw.review.learnings.length>3||raw.review.learnings.some(x=>typeof x!=='string'||!x.trim())) throw new Error('learnings must contain 1-3 strings');
+  if(!Array.isArray(raw.review.next)||raw.review.next.length<1||raw.review.next.length>3||raw.review.next.some(x=>typeof x!=='string'||!x.trim())) throw new Error('next must contain 1-3 strings');
+  return raw;
+}
+function makeCheckpoint(raw,g){
+  validateReviewShape(raw,g);
+  const root=raw.review, date=today();
+  return {id:`review-${date}-${Date.now().toString(36)}`,date,day:Math.max(1,Math.floor((parseDate(date)-parseDate(g.start))/86400000)+1),preview:raw.preview.trim(),summary:root.summary.trim(),learnings:root.learnings.map(x=>x.trim()),next:root.next.map(x=>x.trim()),createdAt:new Date().toISOString()};
+}
+
 function addGoalCheckpoint(g,raw){
   if(!g) throw new Error('Goal not found');
   g.reviews=normalizeReviews(g); g.reviews.push(makeCheckpoint(raw,g)); g.review=blankReview();
 }
 function importGoalReview(file){
   if(!file)return; const r=new FileReader(); r.onload=()=>{try{
-    const raw=parseReviewJSON(r.result), g=findGoalById(raw.goalId||reviewGoalId); if(!g) throw new Error('Goal not found');
+    const raw=parseReviewJSON(r.result), g=findGoalById(raw.goalId); if(!g) throw new Error('Goal not found');
     addGoalCheckpoint(g,raw); reviewGoalId=g.id; persist(); flash='Goal review added.'; render();
   }catch(e){alert('This review could not be imported.');}}; r.readAsText(file);
 }
 function previewGoalReview(){
   try{
     const rawText=document.getElementById('reviewPaste')?.value||'';
-    const raw=parseReviewJSON(rawText),g=findGoalById(raw.goalId||reviewGoalId);if(!g)throw new Error('Goal not found');
+    const raw=parseReviewJSON(rawText),g=findGoalById(raw.goalId);if(!g)throw new Error('Goal not found');
     reviewGoalId=g.id;
     reviewDraft={goalId:g.id,rawText,raw,checkpoint:makeCheckpoint(raw,g)};
     reviewComposerOpen=true;
     flash='Review loaded. Check it below before saving.';
     render();
-  }catch(e){alert('Paste the complete JSON code block returned by ChatGPT.');}
+  }catch(e){alert(`Tide could not load this review. ${e.message||'Use the exact Tide JSON schema.'}`);}
 }
 function saveGoalReviewDraft(){
   try{
@@ -730,19 +1055,21 @@ function weekBars(w){
 function saveInputsFromDOM(){
   const targetDate=view==='today'?today():selected;
   document.querySelectorAll('[data-day-field]').forEach(el=>{
-    const path=el.dataset.dayField.split('.'); let obj=day(targetDate);
+    const path=el.dataset.dayField.split('.'); let root=day(targetDate), obj=root;
     for(let i=0;i<path.length-1;i++) obj=obj[path[i]];
     const key=path[path.length-1]; let val=el.value;
     if(el.type==='number') val=val===''?null:+val;
     obj[key]=val;
+    if(el.dataset.tracker && val!==null && val!=='') root.skips[el.dataset.tracker]=false;
   });
   document.querySelectorAll('[data-plan]').forEach(el=>{
     let val=el.value; if(el.type==='number')val=val===''?0:+val; db.plan[el.dataset.plan]=val;
   });
 }
-function setFood(key,val){ day(view==='day'?selected:today()).food[key]=val; save(); }
-function toggleFood(key){ const d=day(view==='day'?selected:today()); d.food[key]=d.food[key]===true?false:true; save(); }
-function toggleMove(key){ const d=day(view==='day'?selected:today()); d.move[key]=d.move[key]===true?false:true; save(); }
+function setFood(key,val){ const d=day(view==='day'?selected:today()); d.food[key]=val; d.skips[key]=false; save(); }
+function toggleFood(key){ const d=day(view==='day'?selected:today()); d.food[key]=d.food[key]===true?false:true; d.skips[key]=false; save(); }
+function toggleMove(key){ const d=day(view==='day'?selected:today()); d.move[key]=d.move[key]===true?false:true; d.skips[key]=false; save(); }
+function toggleSkip(id){ const d=day(view==='day'?selected:today()); d.skips[id]=!d.skips[id]; save(); }
 function toggleCustom(key){ const d=day(selected); if(key==='allowSnack') d.customPlan.noSnack=d.customPlan.noSnack===false?true:false; else d.customPlan[key]=d.customPlan[key]===true?false:true; save(); }
 function togglePlannedMove(key){ const d=day(selected); d.plannedMove[key]=d.plannedMove[key]===true?false:true; save(); }
 function toggleEvent(e){ const d=day(selected); d.events=d.events.includes(e)?d.events.filter(x=>x!==e):[...d.events,e]; save(); }
@@ -753,6 +1080,10 @@ function saveGoalForm(){
   db.goal.name=document.getElementById('goalName')?.value.trim()||db.goal.name;
   db.goal.target=+(document.getElementById('goalTarget')?.value||db.goal.target);
   db.goal.start=newStart; db.goal.end=document.getElementById('goalEnd')?.value||db.goal.end;
+  db.goal.trackers=normalizeTrackers(db.goal,false);
+  if(newStart!==oldStart){
+    for(const id of TRACKER_IDS){ if(db.goal.trackers[id].activeFrom===oldStart) db.goal.trackers[id].activeFrom=newStart; }
+  }
   const entered=document.getElementById('goalStartWeight')?.value;
   if(entered!==undefined&&entered!=='') { db.goal.startWeight=+entered; day(newStart).weight=+entered; }
   saveInputsFromDOM();
@@ -766,8 +1097,8 @@ function archiveGoal(){
     if(fs.enough&&fs.score>=.8) planDays++;
     strengthMinutes+=(+rec.move.strength||0); cardioMinutes+=(+rec.move.cardio||0); eventCount+=rec.events.length;
   }
-  const snapshot={...db.goal,id:db.goal.id||newGoalId(),review:blankReview(),reviews:normalizeReviews(db.goal),planSnapshot:{...db.plan},startWeight:startSnapshot,ended:today(),endWeight:end,resultStatus:status,planDays,strengthMinutes,cardioMinutes,eventCount,snapshot:true,schemaVersion:SCHEMA_VERSION}; db.goals.push(snapshot);
-  db.goal={id:newGoalId(),name:'New goal',start:today(),end:addDays(today(),30),startWeight:end??db.goal.target,target:Math.max(35,(end??db.goal.target)-2),status:'active',review:blankReview(),reviews:[]};
+  const snapshot={...db.goal,id:db.goal.id||newGoalId(),trackers:normalizeTrackers(db.goal,false),review:blankReview(),reviews:normalizeReviews(db.goal),planSnapshot:{...db.plan},startWeight:startSnapshot,ended:today(),endWeight:end,resultStatus:status,planDays,strengthMinutes,cardioMinutes,eventCount,snapshot:true,schemaVersion:SCHEMA_VERSION}; db.goals.push(snapshot);
+  db.goal={id:newGoalId(),name:'New goal',start:today(),end:addDays(today(),30),startWeight:end??db.goal.target,target:Math.max(35,(end??db.goal.target)-2),status:'active',focus:'both',trackers:defaultTrackersForFocus('both',today()),review:blankReview(),reviews:[]};
   view='goals'; save(db.language==='zh'?'当前目标已归档。':'Goal archived.');
 }
 function exportData(){
@@ -821,6 +1152,9 @@ function bind(){
   document.querySelectorAll('[data-set-food]').forEach(b=>b.addEventListener('click',()=>setFood(b.dataset.setFood,+b.dataset.value)));
   document.querySelectorAll('[data-toggle-food]').forEach(b=>b.addEventListener('click',()=>toggleFood(b.dataset.toggleFood)));
   document.querySelectorAll('[data-toggle-move]').forEach(b=>b.addEventListener('click',()=>toggleMove(b.dataset.toggleMove)));
+  document.querySelectorAll('[data-toggle-skip]').forEach(b=>b.addEventListener('click',()=>toggleSkip(b.dataset.toggleSkip)));
+  document.querySelectorAll('[data-goal-focus]').forEach(b=>b.addEventListener('click',()=>setGoalFocus(b.dataset.goalFocus)));
+  document.querySelectorAll('[data-tracker-role]').forEach(b=>b.addEventListener('click',()=>setTrackerRole(b.dataset.trackerRole,b.dataset.role)));
   document.querySelectorAll('[data-toggle-custom]').forEach(b=>b.addEventListener('click',()=>toggleCustom(b.dataset.toggleCustom)));
   document.querySelectorAll('[data-toggle-planned-move]').forEach(b=>b.addEventListener('click',()=>togglePlannedMove(b.dataset.togglePlannedMove)));
   document.querySelectorAll('[data-date]').forEach(b=>b.addEventListener('click',()=>{selected=b.dataset.date;render();}));
