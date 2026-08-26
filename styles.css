@@ -564,3 +564,24 @@ input:focus,select:focus,textarea:focus{border-color:var(--lab-mid);box-shadow:0
 @media(max-width:370px){
   .goal-record-row{gap:7px}.goal-record-row b{font-size:10.5px}.edit-goal-actions{grid-template-columns:.9fr 1.1fr}
 }
+
+/* V8.3 — quiet End Goal anchor + Daily Thought; same Tide visual language */
+.end-goal-entry{width:100%;border:1px solid var(--lab-border);background:transparent;border-radius:14px;padding:10px 12px;margin:2px 0 8px;text-align:left;color:var(--lab-text);box-shadow:none}
+.end-goal-entry-top{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:10px;font-weight:780;letter-spacing:.075em;text-transform:uppercase;color:var(--lab-deep)}
+.end-goal-arrow{font-size:16px;font-weight:500;line-height:1;color:var(--lab-muted)}
+.end-goal-entry-copy{font-size:12.5px;line-height:1.35;margin-top:4px;color:var(--lab-muted);font-weight:560;letter-spacing:.01em}
+.daily-thought{padding:11px 2px 12px;margin:0 0 9px;border-bottom:1px solid rgba(36,76,62,.10)}
+.daily-thought-label{font-size:9.5px;line-height:1;text-transform:uppercase;letter-spacing:.09em;font-weight:780;color:var(--lab-mid);margin-bottom:6px}
+.daily-thought-copy{font-size:13.5px;line-height:1.48;color:var(--lab-text);font-weight:480}
+.end-goal-date{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--lab-muted);margin-top:-4px}
+.end-goal-question{font-size:15px;line-height:1.45;font-weight:620;color:var(--lab-text);margin:13px 0 24px;max-width:320px}
+.end-goal-list{border-top:1px solid var(--lab-border)}
+.end-goal-area{border-bottom:1px solid var(--lab-border);padding:0;margin:0}
+.end-goal-area summary{list-style:none;cursor:pointer;padding:17px 0 16px;display:block}
+.end-goal-area summary::-webkit-details-marker{display:none}
+.end-goal-area-name{display:block;font-size:9.5px;line-height:1;text-transform:uppercase;letter-spacing:.10em;font-weight:800;color:var(--lab-mid);margin-bottom:6px}
+.end-goal-area-short{display:block;font-size:15px;line-height:1.4;font-weight:650;color:var(--lab-text);padding-right:18px;position:relative}
+.end-goal-area-short:after{content:'+';position:absolute;right:1px;top:-1px;font-size:17px;line-height:1;font-weight:400;color:var(--lab-muted)}
+.end-goal-area[open] .end-goal-area-short:after{content:'–'}
+.end-goal-area p{margin:-3px 0 18px;font-size:13px;line-height:1.58;color:var(--lab-muted);max-width:390px}
+.end-goal-footer{font-size:11.5px;line-height:1.45;color:var(--lab-muted);margin:25px 0 8px}

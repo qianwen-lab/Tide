@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'tide.v1';
-const VERSION = '8.2.0';
+const VERSION = '8.3.0';
 const SCHEMA_VERSION = 11;
 
 const COLORS = { sage:'#5E836F', sageDeep:'#244C3E', pink:'#C98994', pinkSoft:'#EBCFD4', blue:'#8C918D', ink:'#1F2823' };
@@ -46,6 +46,167 @@ function normalizeReviews(g={}){
 function latestReview(g){ const rows=normalizeReviews(g); return rows.length?rows[rows.length-1]:null; }
 const stableGoalId = (g={}, suffix='') => g.id || `goal-${g.start||'na'}-${g.end||'na'}-${String(g.name||'goal').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')}${suffix}`;
 const newGoalId = () => `goal-${today()}-${Date.now().toString(36)}`;
+
+
+// V8.3 — quiet End Goal anchor + local Daily Thought bank.
+// The thoughts are bundled with the app so they work fully offline. They are
+// intentionally original Tide copy: no attribution risk and no feed behavior.
+const THOUGHT_HISTORY_KEY = 'tide.dailyThought.v1';
+const THOUGHT_BANK = {
+  Body:[
+    "A plan that works on ordinary days matters more than a perfect plan that only works when life is quiet. Keep the approach simple enough to repeat.",
+    "Daily weight is noisy; the direction over several days is the useful part. One number does not deserve the power to rewrite the whole plan.",
+    "Reaching a lower weight is only half the job. The better end state is a weight you can maintain without spending all day thinking about food.",
+    "Strength does not need to compete with weight loss right now. It can become the next emphasis once the basic weight trend is where you want it.",
+    "Sleep is part of body progress, not an unrelated side project. A body that is tired makes every other choice feel harder than it needs to.",
+    "You do not need to make today stricter because yesterday was imperfect. Returning to the normal plan is usually more useful than compensating.",
+    "The most useful diet rule is one that reduces decisions. If a rule creates constant negotiation, it may be adding more mental work than value.",
+    "A flat day on the scale can still be a successful day. Behavior is the input; weight is an outcome that often arrives with a delay.",
+    "Being lighter is not the same as feeling good in your body. The end goal includes energy, sleep, strength, and being able to live normally at that weight.",
+    "There is no prize for making weight loss maximally difficult. A repeatable calorie deficit beats a dramatic plan that creates rebound eating.",
+    "When the plan is working, boredom is not a problem. Repetition is often what allows the result to become predictable.",
+    "A meal outside the usual routine is information, not a moral event. The useful question is whether you returned to your normal pattern afterward.",
+    "If hunger keeps becoming the main event of the day, that is useful feedback. The goal is not to prove how much discomfort you can tolerate.",
+    "The best maintenance plan will probably look less intense than the weight-loss phase. That is a feature, not a loss of discipline.",
+    "Muscle is a long-term investment in how your body feels and functions. It does not need to be rushed into the same phase as every other body goal.",
+    "A few consistent weeks tell you more than one unusually good or bad day. Give a plan enough time to produce a pattern before judging it.",
+    "Do not confuse urgency with effectiveness. Faster is only better if the approach is still sustainable enough to finish and maintain.",
+    "Your body does not need a new intervention every time the scale pauses. Sometimes the correct response is simply to keep collecting data.",
+    "Exercise is useful even when it does not immediately change the scale. Strength, mood, sleep, and fitness are real outcomes too.",
+    "The goal is not to win against hunger. The goal is to build an eating pattern that creates progress without making food dominate your attention.",
+    "One simple day can be enough: eat according to the plan, move if it helps, sleep, and let the trend do its work.",
+    "A comfortable body weight should eventually feel ordinary. If maintaining it requires constant emergency-level effort, the system still needs work.",
+    "You can be serious about the goal without monitoring every variable. Track the few inputs that actually help you make better decisions.",
+    "The scale can confirm progress, but it cannot create it. Most of today's useful work happens before tomorrow morning's number exists.",
+    "A good body goal should leave room for the rest of your life. Health is not improved if the process consumes all of your attention.",
+    "When weight loss is mostly finished, the question changes from 'How do I get smaller?' to 'How do I feel strong and stay here comfortably?'",
+    "Sleep, food, and exercise interact, but they do not need to be optimized all at once. Fix the biggest friction first and let the rest stay simple.",
+    "A slower week is not automatically a problem. Look for a real multi-day pattern before deciding that anything needs to change.",
+    "Consistency is easier when the plan has fewer exceptions to negotiate. Simple boundaries can be more freeing than constant optimization.",
+    "The body end goal is not just a number. It is reaching a place where the number, your habits, and how you feel can coexist comfortably."
+  ],
+  Mind:[
+    "Not every thought deserves a decision. Sometimes calm comes from noticing a concern and allowing it to remain unresolved for a while.",
+    "A fuller life is not created only by removing anxiety. It is also created by adding people, books, ideas, and projects that are genuinely yours.",
+    "If a small issue keeps taking up a large amount of mental space, the useful goal may be less analysis rather than a better analysis.",
+    "Connection usually grows from repeated ordinary contact, not from finding the perfect friendship immediately. Make room for people you simply enjoy.",
+    "Reading something because you are curious is productive enough. Not every interest needs to become a credential, project, or measurable outcome.",
+    "Calm does not require every loose end to be solved. It often requires confidence that you can handle things when they actually need handling.",
+    "Your own life deserves protected space even when family logistics are busy. A small amount of regular time can matter more than waiting for a completely free season.",
+    "There is a difference between useful thinking and repetitive thinking. If the same question has produced no new information, more thinking may not help.",
+    "You do not need to optimize every hour for it to be worthwhile. Time spent reading, wandering through an idea, or doing nothing urgent can still belong to a good life.",
+    "Anxiety often asks for certainty before allowing you to move on. Real life rarely provides that much certainty, so 'good enough to proceed' is an important skill.",
+    "A decision can be reasonable without being provably best. Leaving some alternatives unexplored is part of actually living the choice you made.",
+    "Friendship does not need to be maximally deep to be valuable. A person you enjoy seeing regularly can make life noticeably better.",
+    "Curiosity is easier to hear when every open space is not immediately filled with errands, optimization, or scrolling. Leave a little room unassigned.",
+    "You can care about something without revisiting it every day. Attention is a resource, and not every concern deserves a permanent subscription.",
+    "The goal is not to eliminate all worry. It is to make worry smaller than the life happening around it.",
+    "Sometimes the most meaningful personal project is simply the one you keep returning to because you like it. It does not need a strategic justification.",
+    "If you already made a thoughtful decision, repeatedly reopening it can create the feeling of control while actually increasing uncertainty.",
+    "A calmer mind often comes from fewer active questions. Decide which questions truly need an answer this week and let the others wait.",
+    "Being connected means having people in your life before you urgently need them. Small invitations and casual plans are part of building that fabric.",
+    "Learning for pleasure is still learning. The absence of a practical payoff can be exactly what makes an interest feel like your own.",
+    "The point of reducing anxiety is not to become endlessly efficient. It is to have more attention available for things that are interesting, warm, and alive.",
+    "You do not need to turn every insight into a system. Sometimes noticing a pattern once is enough to make a different choice next time.",
+    "A quiet afternoon is not empty space waiting to be optimized. It can be the part of life where your own preferences become visible again.",
+    "If a problem is small but emotionally sticky, ask whether solving it will meaningfully change your life. If not, letting it be imperfect may be the better skill.",
+    "More information is not always more reassuring. At some point, another search or comparison can make a decision feel less settled rather than more informed.",
+    "Your mind needs experiences that are not about fixing yourself. Friendship, humor, stories, and curiosity can do work that self-analysis cannot.",
+    "It is possible to be thoughtful without being continuously vigilant. Good judgment can include knowing when to stop monitoring.",
+    "A personal life grows through repetition too: the book you keep reading, the friend you keep seeing, the subject you keep returning to.",
+    "You do not need a grand new identity. More of your own life can start with one small recurring thing that is chosen because you want it.",
+    "The end state is not a perfectly controlled mind. It is a mind with enough room that small worries no longer crowd out everything else."
+  ],
+  Family:[
+    "Not every concern needs a new class, therapist, or intervention. Sometimes the best sign that something is working is that you can stop thinking about it for a while.",
+    "Family life can be going well without every child-related decision being optimized. Good enough choices made with confidence often create more calm than endless refinement.",
+    "The children do not need every possible advantage at the same time. A few well-chosen supports plus room to grow can be a stronger system.",
+    "Connection is not another item to schedule perfectly. Ordinary meals, rides, jokes, and unhurried time often do more than a carefully designed family activity.",
+    "A good education plan should eventually reduce parental mental load. If the plan requires constant re-evaluation, simplification may be part of the solution.",
+    "You can notice a weakness without immediately turning it into a project. Children are allowed to develop unevenly and improve over time.",
+    "The question is not whether every activity is beneficial. The question is whether the whole family system still has enough time, energy, and ease.",
+    "Confidence in parenting does not come from always knowing the best answer. It grows from making reasonable choices and allowing enough time to see what happens.",
+    "Sometimes supporting a child means adding something; sometimes it means protecting space from one more thing. Both are active choices.",
+    "A child can be on the right track without looking optimized in every domain. Direction matters more than a perfectly polished schedule.",
+    "Not every difficult week is evidence that a program is wrong. Look for recurring patterns before rebuilding the plan around a temporary problem.",
+    "Family closeness is easier when not every conversation becomes evaluation. There should be plenty of interactions where nobody is being improved.",
+    "It is useful to ask whether an intervention is solving a meaningful problem or simply reducing parental uncertainty. Those are not always the same thing.",
+    "A schedule that looks impressive from the outside can still be too expensive in family energy. The hidden cost of logistics counts.",
+    "Children benefit from adults who can tolerate some uncertainty about how everything will turn out. Not knowing yet is often a normal stage, not an emergency.",
+    "The goal is not to make childhood maximally productive. It is to help the kids grow while keeping enough room for friendship, play, family, and ordinary life.",
+    "When something is working reasonably well, stability has value. Changing less can sometimes be the more thoughtful parenting decision.",
+    "You do not have to solve a child's entire future from this semester's schedule. Choose what matters now and let later decisions remain later.",
+    "Family systems improve when the adults are not exhausted by maintaining them. Ease is a legitimate design criterion.",
+    "A supportive parent notices problems, but does not need to become the full-time manager of every developing skill. Children also learn by carrying some of the work themselves.",
+    "If you keep revisiting the same activity decision, ask what new information would actually change your mind. Without new information, repetition may just be anxiety in planning form.",
+    "The right track is usually a direction, not a perfectly mapped route. You need enough evidence to continue, not certainty about every future turn.",
+    "Shared family time does not need to be educational or memorable to count. Familiar ordinary time is part of what makes a family feel close.",
+    "A child having one area that is hard does not mean the whole support system is failing. Keep the problem proportional to its actual impact.",
+    "More support is not automatically better support. The best intervention is often the smallest one that meaningfully helps.",
+    "You can care deeply about education while refusing to let education planning dominate family life. Those two positions are compatible.",
+    "The aim is eventually to trust the system you built: school, a few supports, the child's own development, and your ability to adjust when real evidence appears.",
+    "Second-guessing can make even good decisions feel unstable. Sometimes the next family improvement is not a new choice, but allowing the current choice to settle.",
+    "A family's success is not visible in a list of lessons and achievements. It is also visible in whether people like being together and have enough room to breathe.",
+    "By the end of the year, the best sign may be that fewer child-related questions feel urgent. A good system should create more trust, not more monitoring."
+  ],
+  Money:[
+    "Complexity has a cost even when the numbers look fine. A financial system is better when you understand it, trust it, and rarely need to think about it.",
+    "A loose end is expensive partly because it keeps reopening in your mind. Closing one annoying tax or admin item can be worth more than another round of optimization.",
+    "The best portfolio is not necessarily the one with the most clever components. Simplicity can improve the odds that you understand what you own and leave it alone.",
+    "Money is doing its job when it supports the life you want without demanding constant attention. More monitoring is not the same as better management.",
+    "An intentional purchase can be enjoyable. The exhausting part is often the repeated browsing, comparing, and thinking that happens before and after it.",
+    "Not every available tax optimization deserves implementation. The benefit has to be large enough to justify the complexity it adds.",
+    "A financial decision can be good because it is clear and maintainable, even if another option might be marginally more efficient on paper.",
+    "The goal is not to stop caring about money. It is to move money from a daily mental preoccupation into a system you can review deliberately and then leave alone.",
+    "When you understand why an investment is in the portfolio, short-term noise becomes easier to ignore. Clarity reduces the urge to keep rearranging things.",
+    "Administrative tasks become mentally larger the longer they stay open. A short boring session that closes one item can create disproportionate relief.",
+    "Spending intentionally does not mean spending as little as possible. It means knowing which purchases genuinely improve your life and which mainly create another cycle of wanting.",
+    "Optimization has diminishing returns. Once the important decisions are right, the next tiny improvement may not deserve another hour of attention.",
+    "A clean financial system has fewer things you need to remember. Automate, consolidate, document, or close what repeatedly depends on your memory.",
+    "It is easier to trust an investment plan when every holding has a clear role. If you cannot explain why something is there, that is useful information.",
+    "Money can buy convenience, time, beauty, and experiences. It does not need to turn every purchase into a referendum on whether you are being perfectly rational.",
+    "A decision does not have to maximize expected return to be financially intelligent. Liquidity, simplicity, taxes, and peace of mind are real inputs too.",
+    "The most useful financial review may end with fewer decisions than it started with. Clarity often looks like removing options from active consideration.",
+    "If a purchase keeps occupying your attention after you decided not to buy it, the real cost may be attention rather than money. Closing the loop matters.",
+    "There is value in having a short list of financial questions that actually matter this year. Everything else can wait until it earns a place on that list.",
+    "Good systems make routine money boring. Boring is helpful when it means taxes, cash, investments, and bills are handled without repeated emergencies.",
+    "A complicated strategy needs to earn back its complexity. Compare the real after-tax benefit with the time, fees, restrictions, and attention it consumes.",
+    "Spending can be generous and intentional at the same time. The useful boundary is not 'never buy'; it is 'buy for a reason you still respect tomorrow.'",
+    "Financial confidence comes partly from knowing what you have decided not to optimize. Explicitly choosing simplicity is different from neglecting something.",
+    "One completed admin task is often more valuable than ten tabs of research about future possibilities. Closure creates usable attention.",
+    "If money decisions keep returning to the same unresolved question, write down the rule once. A clear policy can replace dozens of future micro-decisions.",
+    "A portfolio does not need to express every interesting market view. Its job is to serve your actual financial life, not demonstrate sophistication.",
+    "The purpose of wealth is not to create an endless management hobby unless you genuinely enjoy that hobby. It is allowed to become infrastructure.",
+    "A simpler financial life can still be highly deliberate. Simplicity is often the result of making the important decisions clearly, not avoiding them.",
+    "Before optimizing another small number, ask what larger loose end is still open. Closing the important unfinished thing may have the higher return on attention.",
+    "The end goal is not a perfect spreadsheet. It is confidence that the important money decisions are handled, the loose ends are closed, and your attention is free for something else."
+  ]
+};
+function thoughtPool(){
+  const out=[];
+  Object.entries(THOUGHT_BANK).forEach(([category,rows])=>rows.forEach((text,i)=>out.push({id:`${category.toLowerCase()}-${i}`,category,text})));
+  return out;
+}
+function chooseDailyThought(){
+  const all=thoughtPool();
+  let state={recent:[],lastCategory:''};
+  try{ state={...state,...JSON.parse(localStorage.getItem(THOUGHT_HISTORY_KEY)||'{}')}; }catch{}
+  let eligible=all.filter(x=>!state.recent.includes(x.id));
+  const differentCategory=eligible.filter(x=>x.category!==state.lastCategory);
+  if(differentCategory.length>=20) eligible=differentCategory;
+  if(!eligible.length) eligible=all;
+  const item=eligible[Math.floor(Math.random()*eligible.length)]||all[0];
+  state.recent=[item.id,...state.recent.filter(id=>id!==item.id)].slice(0,12);
+  state.lastCategory=item.category;
+  try{ localStorage.setItem(THOUGHT_HISTORY_KEY,JSON.stringify(state)); }catch{}
+  return item;
+}
+const END_GOAL_AREAS = [
+  {name:'BODY',short:'Healthy. ~48 kg. Stronger. Sleeping well.',detail:'Reach around 48 kg and be able to maintain around that weight comfortably. Once weight loss is mostly done, gradually shift toward strength and building muscle. Sleep better and, overall, feel healthy and good in my body.'},
+  {name:'MIND',short:'Calmer. More connected. More of my own life.',detail:'Have more friends and people I genuinely enjoy spending time with. Feel less anxious and spend less mental energy obsessing over small things. Keep space for reading, curiosity, learning, or projects that belong to me.'},
+  {name:'FAMILY',short:'Close. Kids on the right track. Less second-guessing.',detail:'Feel more connected as a family. Feel that the kids’ education and support are on the right track and more confident about our decisions. Spend less time constantly re-optimizing classes, therapy, activities, and schedules.'},
+  {name:'MONEY',short:'Clean. Intentional. Simple. Loose ends closed.',detail:'Close important tax, finance, and admin loose ends. Simplify things that are unnecessarily complicated, feel confident about where money is invested and why, and spend intentionally instead of constantly thinking about buying or optimizing.'}
+];
 
 
 const TRACKER_DEFS = {
@@ -122,6 +283,8 @@ let reviewGoalId = null;
 let reviewDraft = null;
 let reviewComposerOpen = false;
 let archiveConfirmOpen = false;
+let dailyThought = chooseDailyThought();
+let thoughtHiddenAt = 0;
 
 function fresh(){ return JSON.parse(JSON.stringify(defaults)); }
 function mergeDay(x={}){
@@ -358,6 +521,22 @@ function todayGoalLearning(){
   return `<section class="today-learning-card"><div class="row between"><div class="today-learning-label">Goal review</div><div class="small">${fmtShortDate(r.date)}${r.day?` · Day ${r.day}`:''}</div></div><div class="today-learning-copy">${escapeHtml(summary)}</div><button class="review-inline-link" data-review-goal="${escapeHtml(db.goal.id)}">Review history →</button></section>`;
 }
 
+
+function endGoalTodayEntry(){
+  return `<button class="end-goal-entry" data-action="openEndGoal"><div class="end-goal-entry-top"><span>End Goal · 2026</span><span class="end-goal-arrow">›</span></div><div class="end-goal-entry-copy">Healthy · Calmer · Connected · Simple</div></button>`;
+}
+function dailyThoughtBlock(){
+  const t=dailyThought||chooseDailyThought();
+  return `<section class="daily-thought"><div class="daily-thought-label">${escapeHtml(t.category.toUpperCase())} · Daily thought</div><div class="daily-thought-copy">${escapeHtml(t.text)}</div></section>`;
+}
+function endGoalPage(){
+  return `${topbar('End Goal','',`<button class="btn ghost" data-action="backToday">Done</button>`)}
+    <div class="end-goal-date">December 31, 2026</div>
+    <div class="end-goal-question">What do I want to be true by the end of the year?</div>
+    <div class="end-goal-list">${END_GOAL_AREAS.map(a=>`<details class="end-goal-area"><summary><span class="end-goal-area-name">${a.name}</span><span class="end-goal-area-short">${escapeHtml(a.short)}</span></summary><p>${escapeHtml(a.detail)}</p></details>`).join('')}</div>
+    <div class="end-goal-footer">These are the things that actually matter this year.</div>`;
+}
+
 function todayPage(){
   const d=day(today()), lw=latestWeight(today());
   const startW=activeGoalStartWeight(), current=lw?.weight??startW, progress=goalProgress(current), dayNum=dayIndexInGoal(today()), total=goalDuration();
@@ -368,6 +547,8 @@ function todayPage(){
   const lifeDone=events>0;
   return `${topbar(`Today · ${fmtDate(today(),'en')}`)}
   ${flashHtml()}
+  ${endGoalTodayEntry()}
+  ${dailyThoughtBlock()}
   <section class="today-goal-card">
     <div class="row between"><div><div class="eyebrow">Current goal</div><div class="today-goal-name">${escapeHtml(db.goal.name)}</div></div><span class="status active">Active</span></div>
     <div class="today-goal-line"><i style="width:${progress}%"></i></div>
@@ -1189,6 +1370,8 @@ function bind(){
     const a=b.dataset.action;
     if(a==='saveToday'||a==='saveTodayBottom'){saveInputsFromDOM();save(tr('saved'));}
     if(a==='editToday'){selected=today();view='day';render();}
+    if(a==='openEndGoal'){view='endGoal';render();}
+    if(a==='backToday'){view='today';render();}
     if(a==='quickWeight'){quickWeightOpen=true;render();setTimeout(()=>document.getElementById('quickWeightInput')?.focus(),30);}
     if(a==='closeQuickWeight'){quickWeightOpen=false;render();}
     if(a==='saveQuickWeight'){const el=document.getElementById('quickWeightInput');const v=el?.value===''?null:+el.value;if(v!=null&&Number.isFinite(v)){day(today()).weight=v;persist();quickWeightOpen=false;flash='Morning weight saved.';render();}}
@@ -1243,6 +1426,7 @@ function render(){
   else if(view==='goalEdit')content=goalEditPage();
   else if(view==='goalReview')content=goalReviewPage();
   else if(view==='settings')content=settingsPage();
+  else if(view==='endGoal')content=endGoalPage();
   else if(view==='planEdit')content=planEditPage();
   document.getElementById('app').innerHTML=`<main class="shell">${content}${['today','calendar','change','goals','settings'].includes(view)?nav():''}</main>${quickWeightModal()}${archiveGoalModal()}`;
   bind();
@@ -1251,6 +1435,10 @@ function render(){
   const q=document.getElementById('quickWeightInput'); if(q) q.addEventListener('keydown',e=>{if(e.key==='Enter')document.querySelector('[data-action=\"saveQuickWeight\"]')?.click();});
 }
 
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='hidden'){ thoughtHiddenAt=Date.now(); return; }
+  if(thoughtHiddenAt && Date.now()-thoughtHiddenAt>=10*60*1000){ dailyThought=chooseDailyThought(); thoughtHiddenAt=0; if(view==='today') render(); }
+});
 document.addEventListener('gesturestart',e=>e.preventDefault());
 document.addEventListener('dblclick',e=>e.preventDefault(),{passive:false});
 if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').then(r=>r.update()).catch(()=>{}); }

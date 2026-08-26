@@ -1,10 +1,11 @@
-# Tide PWA V8.2
+# Tide PWA V8.3
 
-Goal/Progress structure polish without redesigning Tide.
+Small, additive update: End Goal + Daily Thought.
 
-- Weekly 1×7 behavior grids now live in **Progress**, directly under the Weight/forecast area.
-- Goals shows a compact **goal-to-date Tracking record** instead of the weekly grid.
-- Goal tracker role changes preserve existing tracker data and activation dates; Focus no longer resets or suggests roles in Edit Goal.
-- Edit Goal ends with two explicit actions: a subdued **End & Archive** on the left and primary **Save** on the right. Archiving requires a second in-app confirmation.
-- Progress x-axis uses one fixed calendar-day tick interval so date labels and pixel spacing are truly even, while remaining inside chart bounds.
-- Existing `tide.v1` data and schema remain compatible.
+- Today remains the default landing page and all existing Tide navigation/tracking stays unchanged.
+- Adds a subtle **End Goal · 2026** entry near the top of Today.
+- Adds one quiet **Daily Thought** at a time; 120 original offline thoughts (30 each for Body, Mind, Family, Money).
+- Recently shown thoughts are excluded locally to reduce repetition; a long app resume can refresh the thought.
+- Adds a simple **End Goal** page for December 31, 2026 with four concise areas and optional tap-to-expand detail.
+- End Goal has no scores, percentages, streaks, milestones, or tracking.
+- Existing `tide.v1` data structure and tracking behavior are unchanged.
