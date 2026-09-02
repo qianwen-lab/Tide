@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'tide.v1';
-const VERSION = '8.3.0';
+const VERSION = '8.4.0';
 const SCHEMA_VERSION = 11;
 
 const COLORS = { sage:'#5E836F', sageDeep:'#244C3E', pink:'#C98994', pinkSoft:'#EBCFD4', blue:'#8C918D', ink:'#1F2823' };
@@ -290,6 +290,7 @@ function fresh(){ return JSON.parse(JSON.stringify(defaults)); }
 function mergeDay(x={}){
   return {
     date:x.date||today(), weight:x.weight??null, sleep:x.sleep??null,
+    alcohol:x.alcohol??null, bowelMovement:x.bowelMovement??null,
     events:Array.isArray(x.events)?x.events.filter(e=>!String(e).toLowerCase().includes('period')).map(e=>({'Dinner out':'eating_out','Eating out':'eating_out','dinner':'eating_out','Travel':'travel','Party':'party','Long flight':'flight','Vacation':'vacation','Poor sleep':'poor_sleep','Sick':'sick'}[e]||e)).filter(e=>e!=='flight'):[],
     planMode:x.planMode||'default', plannedSleep:x.plannedSleep??null,
     customPlan:{
@@ -599,6 +600,16 @@ function movementControls(d){
   </div>`;
 }
 
+function contextControls(d){
+  const alcohol=d.alcohol;
+  const bm=d.bowelMovement;
+  return `<section class="card context-log-card"><div class="actual-label">Context</div>
+    <div class="context-log-row"><span>Alcohol</span><div class="context-segment">${[[0,'None'],[1,'1'],[2,'2+']].map(([v,l])=>`<button class="${alcohol!==null&&+alcohol===v?'on':''}" data-set-alcohol="${v}">${l}</button>`).join('')}</div></div>
+    <div class="context-log-row"><span>Bowel movement</span><div class="context-segment two-option"><button class="${bm===true?'on':''}" data-set-bm="yes">Yes</button><button class="${bm===false?'on':''}" data-set-bm="no">No</button></div></div>
+    <div class="small context-helper">Context only — not part of Goal adherence.</div>
+  </section>`;
+}
+
 function calendarPage(){
   const base=parseDate(calendarMonth), y=base.getFullYear(), m=base.getMonth();
   const title=db.language==='zh'?`${y}年${m+1}月`:`${T.en.month[m]} ${y}`;
@@ -657,6 +668,7 @@ function dayPage(){
     <section class="card"><div class="actual-label">Life events</div><div class="life-events">${EVENTS.map(e=>`<button class="event-chip ${d.events.includes(e.id)?'on':''}" data-event="${e.id}">${e.en}</button>`).join('')}</div><label>Custom event</label><div class="row"><input id="customEvent" placeholder="e.g. Eating out with friends"><button class="btn secondary" data-action="addEvent">Add</button></div></section>
     ${d.planMode==='custom'&&!future?`<section class="card"><div class="actual-label">Custom goals for this day</div>${customPlanControls(d)}</section>`:''}
     ${main}
+    ${future?'':contextControls(d)}
     <section class="card"><label>Notes</label><textarea data-day-field="note" rows="3" placeholder="Optional">${escapeHtml(d.note)}</textarea></section>
     <button class="btn sky full" data-action="saveDayBottom">Done</button>`;
 }
@@ -777,9 +789,67 @@ function smoothSvgPath(points){
   }
   return d;
 }
+function readDay(s){ return mergeDay({...((db.days||{})[s]||{}),date:s}); }
+function bowelNoStreak(endDate){
+  let streak=0;
+  for(let s=endDate,guard=0;guard<30;guard++,s=addDays(s,-1)){
+    const rec=(db.days||{})[s];
+    if(!rec || rec.bowelMovement==null) break;
+    if(rec.bowelMovement===true) break;
+    if(rec.bowelMovement===false) streak++; else break;
+  }
+  return streak;
+}
+function weightPointContext(weightDate){
+  const prevDate=addDays(weightDate,-1);
+  const prev=readDay(prevDate), same=readDay(weightDate);
+  const eatingOut=prev.events.map(eventId).includes('eating_out');
+  const alcohol=prev.alcohol==null?null:+prev.alcohol;
+  const hunger=prev.food.bedtimeHunger==null?null:+prev.food.bedtimeHunger;
+  const steps=prev.move.steps==null?null:+prev.move.steps;
+  const cardio=prev.move.cardio==null?null:+prev.move.cardio;
+  const strength=prev.move.strength==null?null:+prev.move.strength;
+  const exerciseNotable=(steps!=null&&steps>=10000)||(cardio!=null&&cardio>0)||(strength!=null&&strength>0);
+  const sleep=same.sleep==null?null:+same.sleep; // sleep immediately before this morning's weigh-in
+  const bmStreak=bowelNoStreak(prevDate);
+  const foodNotable=eatingOut||(alcohol!=null&&alcohol>0);
+  const hungerNotable=hunger!=null&&hunger>=4;
+  const sleepNotable=sleep!=null&&sleep<=6.5;
+  const details=[];
+  if(eatingOut) details.push('Eating out');
+  if(alcohol!=null&&alcohol>0) details.push(`Alcohol ${alcohol>=2?'2+':alcohol}`);
+  if(hunger!=null) details.push(`Hunger ${hunger}/5`);
+  const exercise=[];
+  if(steps!=null) exercise.push(`${steps>=1000?(steps/1000).toFixed(1).replace('.0','')+'k':Math.round(steps)} steps`);
+  if(cardio!=null&&cardio>0) exercise.push(`Cardio ${Math.round(cardio)}m`);
+  if(strength!=null&&strength>0) exercise.push(`Strength ${Math.round(strength)}m`);
+  if(exercise.length) details.push(exercise.join(' · '));
+  if(sleep!=null) details.push(`Sleep ${sleep.toFixed(1).replace('.0','')}h`);
+  if(bmStreak>=3) details.push(`BM ${bmStreak}d`);
+  return {prevDate,eatingOut,alcohol,hunger,steps,cardio,strength,sleep,bmStreak,foodNotable,hungerNotable,exerciseNotable,sleepNotable,details};
+}
+function contextMarkersSvg(d,x,baseY){
+  const c=weightPointContext(d.date), markers=[];
+  if(c.foodNotable) markers.push({type:'food'});
+  if(c.hungerNotable) markers.push({type:'hunger'});
+  if(c.exerciseNotable) markers.push({type:'exercise'});
+  if(c.sleepNotable) markers.push({type:'sleep'});
+  if(c.bmStreak>=3) markers.push({type:'bm',label:String(Math.min(c.bmStreak,9))});
+  if(!markers.length) return '';
+  const gap=7, start=x-(markers.length-1)*gap/2;
+  return markers.map((m,i)=>{
+    const xx=start+i*gap;
+    if(m.type==='bm') return `<g class="ctx-marker bm"><circle cx="${xx.toFixed(1)}" cy="${baseY}" r="4.2"></circle><text x="${xx.toFixed(1)}" y="${baseY+2.0}" text-anchor="middle">${m.label}</text></g>`;
+    return `<circle class="ctx-marker ${m.type}" cx="${xx.toFixed(1)}" cy="${baseY}" r="2.7"></circle>`;
+  }).join('');
+}
+function contextLegendHtml(){
+  return `<div class="context-legend"><span><i class="ctx-dot food"></i>Food</span><span><i class="ctx-dot hunger"></i>Hunger</span><span><i class="ctx-dot exercise"></i>Exercise</span><span><i class="ctx-dot sleep"></i>Sleep</span><span><i class="ctx-bm">3</i>BM</span></div>`;
+}
+
 function renderChart(data,forecast){
   if(data.length<2) return `<div class="empty">Log at least two weights to see the chart.</div>`;
-  const W=340,H=238,L=48,R=12,Tp=25,B=37;
+  const W=340,H=256,L=48,R=12,Tp=25,B=55;
   const last=data[data.length-1], lastDate=last.date;
   const vals=data.map(d=>d.weight).filter(v=>v!=null); vals.push(+db.goal.target);
   if(forecast?.ready){
@@ -807,6 +877,8 @@ function renderChart(data,forecast){
   const actualPath=data.map((d,i)=>`${i?'L':'M'} ${xDate(d.date).toFixed(1)} ${y(d.weight).toFixed(1)}`).join(' ');
   const goalY=y(+db.goal.target);
   const points=data.map((d,i)=>`<circle class="point" data-chart-index="${i}" cx="${xDate(d.date)}" cy="${y(d.weight)}" r="2"></circle>`).join('');
+  const contextY=H-B+15;
+  const contextMarks=data.map(d=>contextMarkersSvg(d,xDate(d.date),contextY)).join('');
 
   // One pink trajectory from goal start through today and on to goal end.
   // Historical section uses the internal smoothed trend; future section uses the damped projection.
@@ -827,11 +899,13 @@ function renderChart(data,forecast){
     projectionPath=`<path class="forecast" d="${smoothSvgPath(pts)}"/>`;
   }
   const guideX=xDate(lastDate);
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Current goal weight chart"><text x="4" y="13" class="axis-unit">kg</text>${grid}<line class="axis" x1="${L}" y1="${Tp}" x2="${L}" y2="${H-B}"/><line class="axis" x1="${L}" y1="${H-B}" x2="${W-R}" y2="${H-B}"/><line class="goal" x1="${L}" y1="${goalY}" x2="${W-R}" y2="${goalY}"/><line id="chartGuide" class="guide" x1="${guideX}" y1="${Tp}" x2="${guideX}" y2="${H-B}"/>${projectionPath}<path class="actual" d="${actualPath}"/>${points}${xLabels}</svg><div id="chartTip" class="tooltip">${chartTipHtml(last)}</div>`;
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Current goal weight chart"><text x="4" y="13" class="axis-unit">kg</text>${grid}<line class="axis" x1="${L}" y1="${Tp}" x2="${L}" y2="${H-B}"/><line class="axis" x1="${L}" y1="${H-B}" x2="${W-R}" y2="${H-B}"/><line class="goal" x1="${L}" y1="${goalY}" x2="${W-R}" y2="${goalY}"/><line id="chartGuide" class="guide" x1="${guideX}" y1="${Tp}" x2="${guideX}" y2="${H-B}"/>${projectionPath}<path class="actual" d="${actualPath}"/>${points}${contextMarks}${xLabels}</svg>${contextLegendHtml()}<div id="chartTip" class="tooltip">${chartTipHtml(last)}</div>`;
 }
 function chartTipHtml(d){
   if(!d) return '';
-  return `<b>${fmtShortDate(d.date)}</b><span>${fmt(d.weight)} kg</span>`;
+  const c=weightPointContext(d.date);
+  const context=c.details.length?`<div class="tip-context"><span class="tip-context-date">${fmtShortDate(c.prevDate)} context</span> · ${escapeHtml(c.details.join(' · '))}</div>`:'';
+  return `<b>${fmtShortDate(d.date)}</b><span>${fmt(d.weight)} kg</span>${context}`;
 }
 function weeklyTargetFor(g,id){
   const p=planForGoal(g);
@@ -1135,9 +1209,9 @@ function goalReviewPack(g){
     const rec=day(s);
     const foodValues=Object.values(rec.food||{}).some(v=>v!==null&&v!==false&&v!=='');
     const exerciseValues=Object.values(rec.move||{}).some(v=>v!==null&&v!==false&&v!=='');
-    const hasData=rec.weight!=null || rec.sleep!=null || foodValues || exerciseValues || Object.values(rec.skips||{}).some(Boolean) || rec.events.length || rec.note;
+    const hasData=rec.weight!=null || rec.sleep!=null || rec.alcohol!=null || rec.bowelMovement!=null || foodValues || exerciseValues || Object.values(rec.skips||{}).some(Boolean) || rec.events.length || rec.note;
     if(!hasData) continue;
-    records.push({date:s,weight:rec.weight,sevenDayAverage:goalAverageFor(g,s),sleepHours:rec.sleep,food:{veg:rec.food.veg,protein:rec.food.protein,fruit:rec.food.fruit,noSnack:rec.food.noSnack,noFoodAfterCutoff:rec.food.stop6,waterLiters:rec.food.water,bedtimeHunger:rec.food.bedtimeHunger},exercise:{...rec.move},skipOrNA:{...rec.skips},lifeEvents:rec.events.map(eventLabel),note:rec.note||''});
+    records.push({date:s,weight:rec.weight,sevenDayAverage:goalAverageFor(g,s),sleepHours:rec.sleep,alcoholDrinks:rec.alcohol,bowelMovement:rec.bowelMovement,food:{veg:rec.food.veg,protein:rec.food.protein,fruit:rec.food.fruit,noSnack:rec.food.noSnack,noFoodAfterCutoff:rec.food.stop6,waterLiters:rec.food.water,bedtimeHunger:rec.food.bedtimeHunger},exercise:{...rec.move},skipOrNA:{...rec.skips},lifeEvents:rec.events.map(eventLabel),note:rec.note||''});
   }
   const endWeight=active ? latestWeight(through)?.weight??null : g.endWeight??null;
   const startWeight=active ? activeGoalStartWeight() : +g.startWeight;
@@ -1302,6 +1376,8 @@ function toggleSkip(id){ const d=day(view==='day'?selected:today()); d.skips[id]
 function toggleCustom(key){ const d=day(selected); if(key==='allowSnack') d.customPlan.noSnack=d.customPlan.noSnack===false?true:false; else d.customPlan[key]=d.customPlan[key]===true?false:true; save(); }
 function togglePlannedMove(key){ const d=day(selected); d.plannedMove[key]=d.plannedMove[key]===true?false:true; save(); }
 function toggleEvent(e){ const d=day(selected); d.events=d.events.includes(e)?d.events.filter(x=>x!==e):[...d.events,e]; save(); }
+function setAlcohol(v){ const d=day(selected); d.alcohol=+v; save(); }
+function setBowelMovement(v){ const d=day(selected); d.bowelMovement=v==='yes'; save(); }
 function shiftMonth(n){ const d=parseDate(calendarMonth); d.setMonth(d.getMonth()+n); calendarMonth=iso(new Date(d.getFullYear(),d.getMonth(),1,12)); selected=calendarMonth; render(); }
 function saveGoalForm(){
   const oldStart=db.goal.start;
@@ -1404,6 +1480,8 @@ function bind(){
   document.querySelectorAll('[data-date]').forEach(b=>b.addEventListener('click',()=>{selected=b.dataset.date;render();}));
   document.querySelectorAll('[data-month]').forEach(b=>b.addEventListener('click',()=>shiftMonth(+b.dataset.month)));
   document.querySelectorAll('[data-event]').forEach(b=>b.addEventListener('click',()=>toggleEvent(b.dataset.event)));
+  document.querySelectorAll('[data-set-alcohol]').forEach(b=>b.addEventListener('click',()=>setAlcohol(b.dataset.setAlcohol)));
+  document.querySelectorAll('[data-set-bm]').forEach(b=>b.addEventListener('click',()=>setBowelMovement(b.dataset.setBm)));
   document.querySelectorAll('[data-plan-mode]').forEach(b=>b.addEventListener('click',()=>{day(selected).planMode=b.dataset.planMode;save();}));
   document.querySelectorAll('[data-range]').forEach(b=>b.addEventListener('click',()=>{range=b.dataset.range;render();}));
   document.querySelectorAll('[data-day-field]').forEach(el=>el.addEventListener('change',()=>{saveInputsFromDOM();persist();}));
