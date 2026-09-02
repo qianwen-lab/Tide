@@ -603,10 +603,10 @@ function movementControls(d){
 function contextControls(d){
   const alcohol=d.alcohol;
   const bm=d.bowelMovement;
-  return `<section class="card context-log-card"><div class="actual-label">Context</div>
+  return `<section class="card context-log-card"><div class="actual-label">Previous-day context</div>
     <div class="context-log-row"><span>Alcohol</span><div class="context-segment">${[[0,'None'],[1,'1'],[2,'2+']].map(([v,l])=>`<button class="${alcohol!==null&&+alcohol===v?'on':''}" data-set-alcohol="${v}">${l}</button>`).join('')}</div></div>
     <div class="context-log-row"><span>Bowel movement</span><div class="context-segment two-option"><button class="${bm===true?'on':''}" data-set-bm="yes">Yes</button><button class="${bm===false?'on':''}" data-set-bm="no">No</button></div></div>
-    <div class="small context-helper">Context only — not part of Goal adherence.</div>
+    <div class="small context-helper">For understanding next morning's weight — not part of Goal adherence.</div>
   </section>`;
 }
 
@@ -661,14 +661,13 @@ function dayPage(){
   if(future){
     main=`<section class="card"><div class="actual-label">Day plan</div>${futurePlanSummary(d)}${d.planMode==='custom'?'':`<hr class="sep"><div class="actual-label">Exercise plan (optional)</div>${plannedMoveControls(d)}`}</section>`;
   }else{
-    main=`<section class="card blue-soft"><div class="actual-label">Morning log</div><div class="two"><label>Weight · kg<input data-day-field="weight" type="number" step="0.1" inputmode="decimal" value="${d.weight??''}"></label><label>Last night's sleep · hours<input data-day-field="sleep" type="number" step="0.1" inputmode="decimal" value="${d.sleep??''}"></label></div></section><section class="card"><div class="actual-label">Actual</div>${actualFoodControls(d)}${plannedMoveStatus(d).planned?`<div class="planned-reference">Planned: ${escapeHtml(plannedMoveStatus(d).label)}</div>`:''}<hr class="sep"><div class="actual-label">Exercise</div>${movementControls(d)}</section>`;
+    main=`<section class="card blue-soft"><div class="actual-label">Morning log</div><div class="two"><label>Weight · kg<input data-day-field="weight" type="number" step="0.1" inputmode="decimal" value="${d.weight??''}"></label><label>Last night's sleep · hours<input data-day-field="sleep" type="number" step="0.1" inputmode="decimal" value="${d.sleep??''}"></label></div></section>${contextControls(d)}<section class="card"><div class="actual-label">Actual</div>${actualFoodControls(d)}${plannedMoveStatus(d).planned?`<div class="planned-reference">Planned: ${escapeHtml(plannedMoveStatus(d).label)}</div>`:''}<hr class="sep"><div class="actual-label">Exercise</div>${movementControls(d)}</section>`;
   }
   return `${topbar(title,sub,`<button class="btn sky save-top" data-action="saveDay">Save</button>`)}
     <section class="card soft"><div class="actual-label">Plan type</div><div class="plan-mode">${[['default','Default'],['flexible','Flexible'],['custom','Custom']].map(([k,l])=>`<button class="${d.planMode===k?'on':''}" data-plan-mode="${k}">${l}</button>`).join('')}</div></section>
     <section class="card"><div class="actual-label">Life events</div><div class="life-events">${EVENTS.map(e=>`<button class="event-chip ${d.events.includes(e.id)?'on':''}" data-event="${e.id}">${e.en}</button>`).join('')}</div><label>Custom event</label><div class="row"><input id="customEvent" placeholder="e.g. Eating out with friends"><button class="btn secondary" data-action="addEvent">Add</button></div></section>
     ${d.planMode==='custom'&&!future?`<section class="card"><div class="actual-label">Custom goals for this day</div>${customPlanControls(d)}</section>`:''}
     ${main}
-    ${future?'':contextControls(d)}
     <section class="card"><label>Notes</label><textarea data-day-field="note" rows="3" placeholder="Optional">${escapeHtml(d.note)}</textarea></section>
     <button class="btn sky full" data-action="saveDayBottom">Done</button>`;
 }
@@ -817,7 +816,7 @@ function weightPointContext(weightDate){
   const sleepNotable=sleep!=null&&sleep<=6.5;
   const details=[];
   if(eatingOut) details.push('Eating out');
-  if(alcohol!=null&&alcohol>0) details.push(`Alcohol ${alcohol>=2?'2+':alcohol}`);
+  if(alcohol!=null&&alcohol>0) details.push(`Alcohol ${alcohol>=2?'2+':alcohol} drink${alcohol===1?'':'s'}`);
   if(hunger!=null) details.push(`Hunger ${hunger}/5`);
   const exercise=[];
   if(steps!=null) exercise.push(`${steps>=1000?(steps/1000).toFixed(1).replace('.0','')+'k':Math.round(steps)} steps`);
@@ -825,31 +824,36 @@ function weightPointContext(weightDate){
   if(strength!=null&&strength>0) exercise.push(`Strength ${Math.round(strength)}m`);
   if(exercise.length) details.push(exercise.join(' · '));
   if(sleep!=null) details.push(`Sleep ${sleep.toFixed(1).replace('.0','')}h`);
-  if(bmStreak>=3) details.push(`BM ${bmStreak}d`);
+  if(bmStreak>=3) details.push(`Bowel movement ${bmStreak}d`);
   return {prevDate,eatingOut,alcohol,hunger,steps,cardio,strength,sleep,bmStreak,foodNotable,hungerNotable,exerciseNotable,sleepNotable,details};
 }
-function contextMarkersSvg(d,x,baseY){
+function contextMarkersSvg(d,x,markerTop,markerBottom){
   const c=weightPointContext(d.date), markers=[];
-  if(c.foodNotable) markers.push({type:'food'});
+  if(c.eatingOut) markers.push({type:'food'});
+  if(c.alcohol!=null&&c.alcohol>0) markers.push({type:'alcohol'});
   if(c.hungerNotable) markers.push({type:'hunger'});
   if(c.exerciseNotable) markers.push({type:'exercise'});
   if(c.sleepNotable) markers.push({type:'sleep'});
   if(c.bmStreak>=3) markers.push({type:'bm',label:String(Math.min(c.bmStreak,9))});
   if(!markers.length) return '';
-  const gap=7, start=x-(markers.length-1)*gap/2;
-  return markers.map((m,i)=>{
-    const xx=start+i*gap;
-    if(m.type==='bm') return `<g class="ctx-marker bm"><circle cx="${xx.toFixed(1)}" cy="${baseY}" r="4.2"></circle><text x="${xx.toFixed(1)}" y="${baseY+2.0}" text-anchor="middle">${m.label}</text></g>`;
-    return `<circle class="ctx-marker ${m.type}" cx="${xx.toFixed(1)}" cy="${baseY}" r="2.7"></circle>`;
+  const maxDots=Math.max(1,Math.floor((markerBottom-markerTop)/10)+1);
+  return markers.slice(0,maxDots).map((m,i)=>{
+    const yy=markerTop+i*10;
+    if(m.type==='bm') return `<g class="ctx-marker bm"><circle cx="${x.toFixed(1)}" cy="${yy}" r="4.3"></circle><text x="${x.toFixed(1)}" y="${yy+2.05}" text-anchor="middle">${m.label}</text></g>`;
+    return `<circle class="ctx-marker ${m.type}" cx="${x.toFixed(1)}" cy="${yy}" r="2.8"></circle>`;
   }).join('');
 }
 function contextLegendHtml(){
-  return `<div class="context-legend"><span><i class="ctx-dot food"></i>Food</span><span><i class="ctx-dot hunger"></i>Hunger</span><span><i class="ctx-dot exercise"></i>Exercise</span><span><i class="ctx-dot sleep"></i>Sleep</span><span><i class="ctx-bm">3</i>BM</span></div>`;
+  return `<div class="context-legend"><span><i class="ctx-dot food"></i>Eating out</span><span><i class="ctx-dot alcohol"></i>Alcohol</span><span><i class="ctx-dot hunger"></i>Bedtime</span><span><i class="ctx-dot exercise"></i>Exercise</span><span><i class="ctx-dot sleep"></i>Sleep</span><span><i class="ctx-bm">3</i>BM</span></div>`;
 }
 
 function renderChart(data,forecast){
   if(data.length<2) return `<div class="empty">Log at least two weights to see the chart.</div>`;
-  const W=340,H=256,L=48,R=12,Tp=25,B=55;
+  const W=340,H=274,L=48,R=12,Tp=24,labelBand=28,axisGap=14,markerBand=32;
+  const axisY=H-labelBand-axisGap;
+  const markerTop=axisY-markerBand+4;
+  const markerBottom=axisY-8;
+  const plotBottom=markerTop-12;
   const last=data[data.length-1], lastDate=last.date;
   const vals=data.map(d=>d.weight).filter(v=>v!=null); vals.push(+db.goal.target);
   if(forecast?.ready){
@@ -861,7 +865,7 @@ function renderChart(data,forecast){
   const span=max-min, tickStep=span<=6?1:2;
   const startD=parseDate(db.goal.start), endD=parseDate(db.goal.end), totalDays=Math.max(1,(endD-startD)/86400000);
   const xDate=date=>L+clamp((parseDate(date)-startD)/86400000/totalDays,0,1)*(W-L-R);
-  const y=v=>Tp+(max-v)/(max-min)*(H-Tp-B);
+  const y=v=>Tp+(max-v)/(max-min)*(plotBottom-Tp);
   let grid='';
   for(let v=Math.ceil(min/tickStep)*tickStep;v<=max+.001;v+=tickStep){const yy=y(v);grid+=`<line class="grid" x1="${L}" y1="${yy}" x2="${W-R}" y2="${yy}"/><line class="tick" x1="${L-4}" y1="${yy}" x2="${L}" y2="${yy}"/><text class="y-label" x="${L-9}" y="${yy+3}" text-anchor="end">${v}</text>`;}
   // X-axis labels use one fixed calendar-day interval, so both the dates and their pixel spacing are truly even.
@@ -871,14 +875,22 @@ function renderChart(data,forecast){
   for(let off=0;off<=totalDays;off+=xTickStep) xDates.push(addDays(db.goal.start,off));
   const xLabels=xDates.map((s,i)=>{
     const xx=xDate(s);
-    const anchor=i===0?'start':(xx>W-R-16?'end':'middle');
-    return `<text x="${xx.toFixed(1)}" y="${H-9}" text-anchor="${anchor}">${fmtShortDate(s)}</text>`;
+    const anchor=i===0?'start':(i===xDates.length-1?'end':'middle');
+    return `<text x="${xx.toFixed(1)}" y="${H-10}" text-anchor="${anchor}">${fmtShortDate(s)}</text>`;
   }).join('');
   const actualPath=data.map((d,i)=>`${i?'L':'M'} ${xDate(d.date).toFixed(1)} ${y(d.weight).toFixed(1)}`).join(' ');
   const goalY=y(+db.goal.target);
-  const points=data.map((d,i)=>`<circle class="point" data-chart-index="${i}" cx="${xDate(d.date)}" cy="${y(d.weight)}" r="2"></circle>`).join('');
-  const contextY=H-B+15;
-  const contextMarks=data.map(d=>contextMarkersSvg(d,xDate(d.date),contextY)).join('');
+  const pointCoords=data.map(d=>({x:xDate(d.date),y:y(d.weight)}));
+  const points=data.map((d,i)=>`<circle class="point" cx="${pointCoords[i].x}" cy="${pointCoords[i].y}" r="2"></circle>`).join('');
+  const hitBands=data.map((d,i)=>{
+    const x=pointCoords[i].x;
+    const left=i===0?Math.max(L,x-14):(pointCoords[i-1].x+x)/2;
+    const right=i===pointCoords.length-1?Math.min(W-R,x+14):(x+pointCoords[i+1].x)/2;
+    const width=Math.max(24,right-left);
+    const xx=Math.max(L, Math.min(W-R-width, (left+right-width)/2));
+    return `<rect class="point-hit" data-chart-index="${i}" x="${xx.toFixed(1)}" y="${Tp}" width="${width.toFixed(1)}" height="${(axisY-Tp+8).toFixed(1)}"></rect>`;
+  }).join('');
+  const contextMarks=data.map((d,i)=>contextMarkersSvg(d,pointCoords[i].x,markerTop,markerBottom)).join('');
 
   // One pink trajectory from goal start through today and on to goal end.
   // Historical section uses the internal smoothed trend; future section uses the damped projection.
@@ -899,7 +911,7 @@ function renderChart(data,forecast){
     projectionPath=`<path class="forecast" d="${smoothSvgPath(pts)}"/>`;
   }
   const guideX=xDate(lastDate);
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Current goal weight chart"><text x="4" y="13" class="axis-unit">kg</text>${grid}<line class="axis" x1="${L}" y1="${Tp}" x2="${L}" y2="${H-B}"/><line class="axis" x1="${L}" y1="${H-B}" x2="${W-R}" y2="${H-B}"/><line class="goal" x1="${L}" y1="${goalY}" x2="${W-R}" y2="${goalY}"/><line id="chartGuide" class="guide" x1="${guideX}" y1="${Tp}" x2="${guideX}" y2="${H-B}"/>${projectionPath}<path class="actual" d="${actualPath}"/>${points}${contextMarks}${xLabels}</svg>${contextLegendHtml()}<div id="chartTip" class="tooltip">${chartTipHtml(last)}</div>`;
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Current goal weight chart"><text x="4" y="13" class="axis-unit">kg</text>${grid}<line class="axis" x1="${L}" y1="${Tp}" x2="${L}" y2="${axisY}"/><line class="axis" x1="${L}" y1="${axisY}" x2="${W-R}" y2="${axisY}"/><line class="goal" x1="${L}" y1="${goalY}" x2="${W-R}" y2="${goalY}"/><line id="chartGuide" class="guide" x1="${guideX}" y1="${Tp}" x2="${guideX}" y2="${axisY}"/>${projectionPath}<path class="actual" d="${actualPath}"/>${contextMarks}${points}${hitBands}${xLabels}</svg>${contextLegendHtml()}<div id="chartTip" class="tooltip">${chartTipHtml(last)}</div>`;
 }
 function chartTipHtml(d){
   if(!d) return '';
@@ -1489,7 +1501,15 @@ function bind(){
   const f=document.getElementById('importFile'); if(f) f.addEventListener('change',()=>importData(f.files[0]));
   document.querySelectorAll('[data-review-goal]').forEach(b=>b.addEventListener('click',()=>{reviewGoalId=b.dataset.reviewGoal;reviewDraft=null;reviewComposerOpen=false;view='goalReview';render();}));
   document.querySelectorAll('[data-chart-index]').forEach(p=>{
-    const update=()=>{const data=chartData(),i=+p.dataset.chartIndex,d=data[i],tip=document.getElementById('chartTip'),guide=document.getElementById('chartGuide');if(tip&&d)tip.innerHTML=chartTipHtml(d);if(guide){const x=p.getAttribute('cx');guide.setAttribute('x1',x);guide.setAttribute('x2',x);}};
+    const update=()=>{
+      const data=chartData(),i=+p.dataset.chartIndex,d=data[i],tip=document.getElementById('chartTip'),guide=document.getElementById('chartGuide');
+      if(tip&&d) tip.innerHTML=chartTipHtml(d);
+      if(guide){
+        const cx=p.getAttribute('cx');
+        const x=cx!=null?cx:(+p.getAttribute('x') + (+p.getAttribute('width')||0)/2);
+        guide.setAttribute('x1',x); guide.setAttribute('x2',x);
+      }
+    };
     p.addEventListener('click',update); p.addEventListener('mouseenter',update); p.addEventListener('touchstart',update,{passive:true});
   });
 }

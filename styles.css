@@ -587,7 +587,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--lab-mid);box-shadow:0
 .end-goal-footer{font-size:11.5px;line-height:1.45;color:var(--lab-muted);margin:25px 0 8px}
 
 /* V8.4 — lightweight previous-day context on Progress */
-.context-log-card{padding-top:13px;padding-bottom:12px}
+.context-log-card{padding-top:13px;padding-bottom:12px;margin-top:10px}
 .context-log-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 0;border-top:1px solid rgba(36,76,62,.08)}
 .context-log-row:first-of-type{border-top:0}
 .context-log-row>span{font-size:12px;font-weight:650;color:var(--lab-text)}
@@ -598,16 +598,19 @@ input:focus,select:focus,textarea:focus{border-color:var(--lab-mid);box-shadow:0
 .context-helper{margin-top:7px;font-size:9.5px}
 
 .chart .ctx-marker{pointer-events:none;stroke:none}
-.chart .ctx-marker.food{fill:var(--lab-pink)}
+.chart .point-hit{fill:transparent;stroke:transparent;cursor:pointer}
+.chart .point{pointer-events:none}
+.chart .ctx-marker.food{fill:#D98F9B}
+.chart .ctx-marker.alcohol{fill:#A16C8A}
 .chart .ctx-marker.hunger{fill:#B99255}
 .chart .ctx-marker.exercise{fill:var(--lab-mid)}
 .chart .ctx-marker.sleep{fill:#8295A0}
 .chart .ctx-marker.bm circle{fill:#9A9183;stroke:var(--lab-surface);stroke-width:.7}
 .chart .ctx-marker.bm text{fill:#fff;font-size:5.8px;font-weight:800;pointer-events:none}
-.context-legend{display:flex;align-items:center;justify-content:flex-start;gap:7px 11px;flex-wrap:wrap;margin:1px 2px 7px;color:var(--lab-muted);font-size:9px;line-height:1}
+.context-legend{display:flex;align-items:center;justify-content:flex-start;gap:7px 10px;flex-wrap:wrap;margin:3px 2px 8px;color:var(--lab-muted);font-size:9px;line-height:1.1}
 .context-legend span{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
 .ctx-dot{width:6px;height:6px;border-radius:50%;display:inline-block}
-.ctx-dot.food{background:var(--lab-pink)}.ctx-dot.hunger{background:#B99255}.ctx-dot.exercise{background:var(--lab-mid)}.ctx-dot.sleep{background:#8295A0}
+.ctx-dot.food{background:#D98F9B}.ctx-dot.alcohol{background:#A16C8A}.ctx-dot.hunger{background:#B99255}.ctx-dot.exercise{background:var(--lab-mid)}.ctx-dot.sleep{background:#8295A0}
 .ctx-bm{width:12px;height:12px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:#9A9183;color:#fff;font-style:normal;font-size:7px;font-weight:800}
 .tooltip .tip-context{flex-basis:100%;font-size:10.5px;line-height:1.45;color:var(--lab-muted);white-space:normal!important;padding-top:1px}
 .tooltip .tip-context-date{font-weight:720;color:#59635D}
