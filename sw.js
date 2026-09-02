@@ -1,5 +1,5 @@
-const CACHE='tide-pwa-v8-5-20260902';
-const ASSETS=['./','./index.html','./styles.css?v=8.5.0','./app.js?v=8.5.0','./manifest.json','./icon-192.png','./icon-512.png'];
+const CACHE='tide-pwa-v8-6-20260902';
+const ASSETS=['./','./index.html','./styles.css?v=8.6.0','./app.js?v=8.6.0','./manifest.json','./icon-192.png','./icon-512.png'];
 self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)))});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()))});
 self.addEventListener('fetch',e=>{
