@@ -1,4 +1,4 @@
-# Tide PWA V8.6
+# Tide PWA V8.7
 
 Small Progress-context experiment; existing Tide structure stays intact.
 

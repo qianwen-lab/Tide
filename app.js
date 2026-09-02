@@ -603,10 +603,10 @@ function movementControls(d){
 function sameDayContextRows(d){
   const alcohol=d.alcohol;
   const bm=d.bowelMovement;
-  return `<div class="same-day-context">
+  return `<div class="same-day-context compact-context">
+    <div class="small context-mini-label">Eating out / alcohol / BM</div>
     <div class="context-log-row"><span>Alcohol</span><div class="context-segment">${[[0,'None'],[1,'1'],[2,'2+']].map(([v,l])=>`<button class="${alcohol!==null&&+alcohol===v?'on':''}" data-set-alcohol="${v}">${l}</button>`).join('')}</div></div>
     <div class="context-log-row"><span>Bowel movement</span><div class="context-segment two-option"><button class="${bm===true?'on':''}" data-set-bm="yes">Yes</button><button class="${bm===false?'on':''}" data-set-bm="no">No</button></div></div>
-    <div class="small context-helper">Recorded on this day. Context only — not part of Goal adherence.</div>
   </div>`;
 }
 
@@ -659,22 +659,19 @@ function dayPage(){
   const title=fmtDate(selected,'en'), sub=future?'Future plan':selected===today()?'Today':'Edit past day';
   let main='';
   if(future){
-    main=`<section class="card"><div class="actual-label">Day plan</div>${futurePlanSummary(d)}${d.planMode==='custom'?'':`<hr class="sep"><div class="actual-label">Exercise plan (optional)</div>${plannedMoveControls(d)}`}</section>`;
+    main=`<section class="card"><div class="actual-label">Day plan</div>${futurePlanSummary(d)}<hr class="sep"><div class="actual-label">Exercise plan (optional)</div>${plannedMoveControls(d)}</section>`;
   }else{
     main=`<section class="card blue-soft"><div class="actual-label">Morning log</div><div class="two"><label>Weight · kg<input data-day-field="weight" type="number" step="0.1" inputmode="decimal" value="${d.weight??''}"></label><label>Last night's sleep · hours<input data-day-field="sleep" type="number" step="0.1" inputmode="decimal" value="${d.sleep??''}"></label></div></section><section class="card"><div class="actual-label">Actual</div>${actualFoodControls(d)}${plannedMoveStatus(d).planned?`<div class="planned-reference">Planned: ${escapeHtml(plannedMoveStatus(d).label)}</div>`:''}<hr class="sep"><div class="actual-label">Exercise</div>${movementControls(d)}</section>`;
   }
   return `${topbar(title,sub,`<button class="btn sky save-top" data-action="saveDay">Save</button>`)}
-    <section class="card soft"><div class="actual-label">Plan type</div><div class="plan-mode">${[['default','Default'],['flexible','Flexible'],['custom','Custom']].map(([k,l])=>`<button class="${d.planMode===k?'on':''}" data-plan-mode="${k}">${l}</button>`).join('')}</div></section>
     <section class="card"><div class="actual-label">Life events</div><div class="life-events">${EVENTS.map(e=>`<button class="event-chip ${d.events.includes(e.id)?'on':''}" data-event="${e.id}">${e.en}</button>`).join('')}</div>${future?'':sameDayContextRows(d)}<label>Custom event</label><div class="row"><input id="customEvent" placeholder="e.g. Eating out with friends"><button class="btn secondary" data-action="addEvent">Add</button></div></section>
-    ${d.planMode==='custom'&&!future?`<section class="card"><div class="actual-label">Custom goals for this day</div>${customPlanControls(d)}</section>`:''}
     ${main}
     <section class="card"><label>Notes</label><textarea data-day-field="note" rows="3" placeholder="Optional">${escapeHtml(d.note)}</textarea></section>
     <button class="btn sky full" data-action="saveDayBottom">Done</button>`;
 }
 function futurePlanSummary(d){
-  if(d.planMode==='custom') return customPlanControls(d);
   const ids=TRACKER_IDS.filter(id=>TRACKER_DEFS[id].cadence==='daily'&&trackerRole(db.goal,id)==='goal'&&trackerActiveOn(db.goal,id,d.date));
-  return `<div class="rule-grid">${ids.map(id=>`<div class="rule">${escapeHtml(trackerRuleLabel(db.goal,id,d))}</div>`).join('')}</div>${d.planMode==='flexible'?`<div class="insight" style="margin-top:12px">Flexible day: the exception is part of the plan, not a failed day.</div>`:''}`;
+  return `<div class="rule-grid">${ids.map(id=>`<div class="rule">${escapeHtml(trackerRuleLabel(db.goal,id,d))}</div>`).join('')}</div>`;
 }
 function customPlanControls(d){const p=d.customPlan||{};return `<div class="custom-plan"><div class="actual-label">Custom food goals</div><div class="two"><label>Vegetables ≥<input data-day-field="customPlan.veg" type="number" value="${p.veg??db.plan.veg}"></label><label>Fruit ≤<input data-day-field="customPlan.fruit" type="number" value="${p.fruit??db.plan.fruit}"></label><label>Water ≥ L<input data-day-field="customPlan.water" type="number" step="0.1" value="${p.water??db.plan.water}"></label><label>Stop eating time<input data-day-field="customPlan.stop" type="time" value="${p.stop??db.plan.stop}"></label></div><div class="switch-row actual-row"><span>Allow snacks</span><button class="toggle ${p.noSnack===false?'on':''}" data-toggle-custom="allowSnack"></button></div><div class="small plan-helper">Protein is yes/no. Bedtime hunger is observation only and has no custom target.</div><hr class="sep"><div class="actual-label">Custom exercise</div><div class="two"><label>Steps<input data-day-field="customPlan.steps" type="number" value="${p.steps??''}" placeholder="10000"></label><label>Cardio · min<input data-day-field="customPlan.cardio" type="number" value="${p.cardio??''}"></label><label>Strength · min<input data-day-field="customPlan.strength" type="number" value="${p.strength??''}"></label><div style="padding-top:26px"><div class="switch-row"><span>Stretch</span><button class="toggle ${p.stretch===true?'on':''}" data-toggle-custom="stretch"></button></div></div></div></div>`; }
 
@@ -808,59 +805,52 @@ function weightPointContext(weightDate){
   const steps=prev.move.steps==null?null:+prev.move.steps;
   const cardio=prev.move.cardio==null?null:+prev.move.cardio;
   const strength=prev.move.strength==null?null:+prev.move.strength;
-  const exerciseNotable=(steps!=null&&steps>=10000)||(cardio!=null&&cardio>0)||(strength!=null&&strength>0);
-  // Sleep is stored on the morning-weight date because the input is explicitly "Last night's sleep".
-  // Example: the 9/2 record means sleep during the night of 9/1 -> 9/2.
-  const sleep=same.sleep==null?null:+same.sleep;
+  const sleep=same.sleep==null?null:+same.sleep; // same-day morning log = last night's sleep
   const bmStreak=bowelNoStreak(prevDate);
   const hungerNotable=hunger!=null&&hunger>=4;
-  const sleepNotable=sleep!=null&&sleep<=6.5;
+  const sleepNotable=sleep!=null&&sleep<6;
+  const exerciseNotable=(steps!=null&&steps>=10000)||(cardio!=null&&cardio>0)||(strength!=null&&strength>0);
   const prevDetails=[];
   if(eatingOut) prevDetails.push('Eating out');
-  if(alcohol!=null&&alcohol>0) prevDetails.push(`Alcohol ${alcohol>=2?'2+':alcohol} drink${alcohol===1?'':'s'}`);
+  if(alcohol!=null&&alcohol>0) prevDetails.push(`Alcohol ${alcohol>=2?'2+':alcohol}`);
   if(hunger!=null) prevDetails.push(`Hunger ${hunger}/5`);
-  const exercise=[];
-  if(steps!=null) exercise.push(`${steps>=1000?(steps/1000).toFixed(1).replace('.0','')+'k':Math.round(steps)} steps`);
-  if(cardio!=null&&cardio>0) exercise.push(`Cardio ${Math.round(cardio)}m`);
-  if(strength!=null&&strength>0) exercise.push(`Strength ${Math.round(strength)}m`);
-  if(exercise.length) prevDetails.push(exercise.join(' · '));
+  if(exerciseNotable){
+    const exercise=[];
+    if(steps!=null&&steps>=10000) exercise.push(`${steps>=1000?(steps/1000).toFixed(1).replace('.0','')+'k':Math.round(steps)} steps`);
+    if(cardio!=null&&cardio>0) exercise.push(`Cardio ${Math.round(cardio)}m`);
+    if(strength!=null&&strength>0) exercise.push(`Strength ${Math.round(strength)}m`);
+    if(exercise.length) prevDetails.push(exercise.join(' · '));
+  }
   if(bmStreak>=3) prevDetails.push(`BM ${bmStreak}d`);
-  const sleepDetail=sleep!=null?`Sleep ${sleep.toFixed(1).replace('.0','')}h`:'';
-  return {prevDate,eatingOut,alcohol,hunger,steps,cardio,strength,sleep,bmStreak,hungerNotable,exerciseNotable,sleepNotable,prevDetails,sleepDetail};
+  if(sleepNotable) prevDetails.push(`Sleep ${sleep.toFixed(1).replace('.0','')}h`);
+  return {prevDate,eatingOut,alcohol,hunger,steps,cardio,strength,sleep,bmStreak,hungerNotable,exerciseNotable,sleepNotable,prevDetails};
 }
 function contextMarkersSvg(d,x,markerTop,rowGap){
   const c=weightPointContext(d.date);
   const yFood=markerTop;
   const yHunger=markerTop+rowGap;
-  const yExercise=markerTop+rowGap*2;
-  const ySleep=markerTop+rowGap*3;
-  const yBm=markerTop+rowGap*4;
   let out='';
-  // Food/alcohol always share the first row. If both occurred, show two small dots side-by-side.
   if(c.eatingOut && c.alcohol!=null && c.alcohol>0){
-    out+=`<circle class="ctx-marker food" cx="${(x-2.4).toFixed(1)}" cy="${yFood}" r="2.6"></circle>`;
-    out+=`<circle class="ctx-marker alcohol" cx="${(x+2.4).toFixed(1)}" cy="${yFood}" r="2.6"></circle>`;
+    out+=`<circle class="ctx-marker food" cx="${(x-2.4).toFixed(1)}" cy="${yFood}" r="2.5"></circle>`;
+    out+=`<circle class="ctx-marker alcohol" cx="${(x+2.4).toFixed(1)}" cy="${yFood}" r="2.5"></circle>`;
   }else if(c.eatingOut){
-    out+=`<circle class="ctx-marker food" cx="${x.toFixed(1)}" cy="${yFood}" r="2.8"></circle>`;
+    out+=`<circle class="ctx-marker food" cx="${x.toFixed(1)}" cy="${yFood}" r="2.7"></circle>`;
   }else if(c.alcohol!=null&&c.alcohol>0){
-    out+=`<circle class="ctx-marker alcohol" cx="${x.toFixed(1)}" cy="${yFood}" r="2.8"></circle>`;
+    out+=`<circle class="ctx-marker alcohol" cx="${x.toFixed(1)}" cy="${yFood}" r="2.7"></circle>`;
   }
-  if(c.hungerNotable) out+=`<circle class="ctx-marker hunger" cx="${x.toFixed(1)}" cy="${yHunger}" r="2.8"></circle>`;
-  if(c.exerciseNotable) out+=`<circle class="ctx-marker exercise" cx="${x.toFixed(1)}" cy="${yExercise}" r="2.8"></circle>`;
-  if(c.sleepNotable) out+=`<circle class="ctx-marker sleep" cx="${x.toFixed(1)}" cy="${ySleep}" r="2.8"></circle>`;
-  if(c.bmStreak>=3) out+=`<g class="ctx-marker bm"><circle cx="${x.toFixed(1)}" cy="${yBm}" r="4.3"></circle><text x="${x.toFixed(1)}" y="${yBm+2.05}" text-anchor="middle">${Math.min(c.bmStreak,9)}</text></g>`;
+  if(c.hungerNotable) out+=`<circle class="ctx-marker hunger" cx="${x.toFixed(1)}" cy="${yHunger}" r="2.7"></circle>`;
   return out;
 }
 function contextLegendHtml(){
-  return `<div class="context-legend"><span class="legend-combo"><i class="ctx-dot food"></i><i class="ctx-dot alcohol"></i>Eating out / alcohol</span><span><i class="ctx-dot hunger"></i>Bedtime hunger</span><span><i class="ctx-dot exercise"></i>Exercise</span><span><i class="ctx-dot sleep"></i>Short sleep</span><span><i class="ctx-bm">3</i>BM</span></div>`;
+  return `<div class="context-legend"><span class="legend-combo"><i class="ctx-dot food"></i><i class="ctx-dot alcohol"></i>Eating out / alcohol</span><span><i class="ctx-dot hunger"></i>Bedtime hunger</span></div>`;
 }
 
 function renderChart(data,forecast){
   if(data.length<2) return `<div class="empty">Log at least two weights to see the chart.</div>`;
-  const W=340,H=294,L=48,R=12,Tp=24,labelBand=28,axisGap=14,markerRows=5,markerRowGap=9,markerBand=markerRows*markerRowGap;
+  const W=340,H=278,L=48,R=12,Tp=24,labelBand=28,axisGap=12,markerRows=2,markerRowGap=10,markerBand=markerRows*markerRowGap;
   const axisY=H-labelBand-axisGap;
-  const markerTop=axisY-markerBand+2;
-  const plotBottom=markerTop-13;
+  const markerTop=axisY-markerBand+3;
+  const plotBottom=markerTop-8;
   const last=data[data.length-1], lastDate=last.date;
   const vals=data.map(d=>d.weight).filter(v=>v!=null); vals.push(+db.goal.target);
   if(forecast?.ready){
@@ -924,8 +914,7 @@ function chartTipHtml(d){
   if(!d) return '';
   const c=weightPointContext(d.date);
   const prev=c.prevDetails.length?`<div class="tip-context"><span class="tip-context-date">${fmtShortDate(c.prevDate)}</span> · ${escapeHtml(c.prevDetails.join(' · '))}</div>`:'';
-  const sleep=c.sleepDetail?`<div class="tip-context tip-sleep"><span class="tip-context-date">Last night</span> · ${escapeHtml(c.sleepDetail)}</div>`:'';
-  return `<b>${fmtShortDate(d.date)}</b><span>${fmt(d.weight)} kg</span>${prev}${sleep}`;
+  return `<b>${fmtShortDate(d.date)}</b><span>${fmt(d.weight)} kg</span>${prev}`;
 }
 function weeklyTargetFor(g,id){
   const p=planForGoal(g);
@@ -1502,7 +1491,6 @@ function bind(){
   document.querySelectorAll('[data-event]').forEach(b=>b.addEventListener('click',()=>toggleEvent(b.dataset.event)));
   document.querySelectorAll('[data-set-alcohol]').forEach(b=>b.addEventListener('click',()=>setAlcohol(b.dataset.setAlcohol)));
   document.querySelectorAll('[data-set-bm]').forEach(b=>b.addEventListener('click',()=>setBowelMovement(b.dataset.setBm)));
-  document.querySelectorAll('[data-plan-mode]').forEach(b=>b.addEventListener('click',()=>{day(selected).planMode=b.dataset.planMode;save();}));
   document.querySelectorAll('[data-range]').forEach(b=>b.addEventListener('click',()=>{range=b.dataset.range;render();}));
   document.querySelectorAll('[data-day-field]').forEach(el=>el.addEventListener('change',()=>{saveInputsFromDOM();persist();}));
   document.querySelectorAll('[data-plan]').forEach(el=>el.addEventListener('change',()=>{saveInputsFromDOM();persist();}));
