@@ -600,6 +600,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--lab-mid);box-shadow:0
 .chart .ctx-marker{pointer-events:none;stroke:none}
 .chart .point-hit{fill:transparent;stroke:transparent;cursor:pointer}
 .chart .point{pointer-events:none}
+.chart .ctx-marker.social{fill:#C98591}
 .chart .ctx-marker.food{fill:#D98F9B}
 .chart .ctx-marker.alcohol{fill:#A16C8A}
 .chart .ctx-marker.hunger{fill:#B99255}
@@ -610,7 +611,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--lab-mid);box-shadow:0
 .context-legend{display:flex;align-items:center;justify-content:flex-start;gap:8px 12px;flex-wrap:wrap;margin:4px 2px 8px;color:var(--lab-muted);font-size:9px;line-height:1.1}
 .context-legend span{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
 .ctx-dot{width:6px;height:6px;border-radius:50%;display:inline-block}
-.ctx-dot.food{background:#D98F9B}.ctx-dot.alcohol{background:#A16C8A}.ctx-dot.hunger{background:#B99255}.ctx-dot.exercise{background:var(--lab-mid)}.ctx-dot.sleep{background:#8295A0}
+.ctx-dot.social{background:#C98591}.ctx-dot.food{background:#D98F9B}.ctx-dot.alcohol{background:#A16C8A}.ctx-dot.hunger{background:#B99255}.ctx-dot.exercise{background:var(--lab-mid)}.ctx-dot.sleep{background:#8295A0}
 .ctx-bm{width:12px;height:12px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:#9A9183;color:#fff;font-style:normal;font-size:7px;font-weight:800}
 .tooltip .tip-context{flex-basis:100%;font-size:10.5px;line-height:1.4;color:var(--lab-muted);white-space:normal!important;padding-top:1px}
 .tooltip .tip-context-date{font-weight:720;color:#59635D}
@@ -623,3 +624,9 @@ input:focus,select:focus,textarea:focus{border-color:var(--lab-mid);box-shadow:0
 .tip-sleep{padding-top:0!important}
 
 .compact-context{margin-top:10px}.context-mini-label{margin:0 0 8px;color:var(--lab-muted)}
+
+/* V8.8 compact context + unified life-event tags */
+.tooltip{display:flex;align-items:baseline;justify-content:flex-start;gap:6px 8px;flex-wrap:wrap}
+.tooltip .tip-context-inline{color:var(--lab-muted);font-size:10.5px;line-height:1.35;white-space:normal}
+.event-chip.context-chip-no{background:#E9E5DD;border-color:#D7D1C6;color:#6B675F}
+.life-events .event-chip{white-space:nowrap}

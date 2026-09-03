@@ -291,7 +291,7 @@ function mergeDay(x={}){
   return {
     date:x.date||today(), weight:x.weight??null, sleep:x.sleep??null,
     alcohol:x.alcohol??null, bowelMovement:x.bowelMovement??null,
-    events:Array.isArray(x.events)?x.events.filter(e=>!String(e).toLowerCase().includes('period')).map(e=>({'Dinner out':'eating_out','Eating out':'eating_out','dinner':'eating_out','Travel':'travel','Party':'party','Long flight':'flight','Vacation':'vacation','Poor sleep':'poor_sleep','Sick':'sick'}[e]||e)).filter(e=>e!=='flight'):[],
+    events:Array.isArray(x.events)?x.events.map(e=>({'Dinner out':'eating_out','Eating out':'eating_out','dinner':'eating_out','Travel':'travel','Party':'party','Long flight':'flight','Vacation':'vacation','Poor sleep':'poor_sleep','Period':'period','Sick':'sick'}[e]||e)).filter(e=>e!=='flight'):[],
     planMode:x.planMode||'default', plannedSleep:x.plannedSleep??null,
     customPlan:{
       veg:x.customPlan?.veg??null, fruit:x.customPlan?.fruit??null, noSnack:x.customPlan?.noSnack??null,
@@ -600,14 +600,17 @@ function movementControls(d){
   </div>`;
 }
 
-function sameDayContextRows(d){
-  const alcohol=d.alcohol;
-  const bm=d.bowelMovement;
-  return `<div class="same-day-context compact-context">
-    <div class="small context-mini-label">Eating out / alcohol / BM</div>
-    <div class="context-log-row"><span>Alcohol</span><div class="context-segment">${[[0,'None'],[1,'1'],[2,'2+']].map(([v,l])=>`<button class="${alcohol!==null&&+alcohol===v?'on':''}" data-set-alcohol="${v}">${l}</button>`).join('')}</div></div>
-    <div class="context-log-row"><span>Bowel movement</span><div class="context-segment two-option"><button class="${bm===true?'on':''}" data-set-bm="yes">Yes</button><button class="${bm===false?'on':''}" data-set-bm="no">No</button></div></div>
-  </div>`;
+function lifeEventTagsHtml(d,future=false){
+  let html=EVENTS.map(e=>`<button class="event-chip ${d.events.includes(e.id)?'on':''}" data-event="${e.id}">${e.en}</button>`).join('');
+  if(!future){
+    const alcohol=d.alcohol==null?null:+d.alcohol;
+    const alcoholLabel=alcohol>=2?'Alcohol · 2+':alcohol===1?'Alcohol · 1':'Alcohol';
+    html+=`<button class="event-chip ${alcohol>0?'on':''}" data-cycle-alcohol>${alcoholLabel}</button>`;
+    const bm=d.bowelMovement;
+    const bmLabel=bm===true?'BM ✓':bm===false?'No BM':'BM';
+    html+=`<button class="event-chip ${bm===true?'on':bm===false?'context-chip-no':''}" data-cycle-bm>${bmLabel}</button>`;
+  }
+  return html;
 }
 
 function calendarPage(){
@@ -647,10 +650,11 @@ const EVENTS=[
   {id:'party',zh:'Party',en:'Party'},
   {id:'vacation',zh:'Vacation',en:'Vacation'},
   {id:'poor_sleep',zh:'Poor sleep',en:'Poor sleep'},
+  {id:'period',zh:'Period',en:'Period'},
   {id:'sick',zh:'Sick',en:'Sick'}
 ];
 const LEGACY_EVENT_TO_ID={
-  'Dinner out':'eating_out','Eating out':'eating_out','dinner':'eating_out','Travel':'travel','Party':'party','Long flight':'flight','Vacation':'vacation','Poor sleep':'poor_sleep','Sick':'sick'
+  'Dinner out':'eating_out','Eating out':'eating_out','dinner':'eating_out','Travel':'travel','Party':'party','Long flight':'flight','Vacation':'vacation','Poor sleep':'poor_sleep','Period':'period','Sick':'sick'
 };
 function eventId(v){return LEGACY_EVENT_TO_ID[v]||v;}
 function eventLabel(v){const id=eventId(v);const e=EVENTS.find(x=>x.id===id);return e?(db.language==='zh'?e.zh:e.en):v;}
@@ -664,7 +668,7 @@ function dayPage(){
     main=`<section class="card blue-soft"><div class="actual-label">Morning log</div><div class="two"><label>Weight · kg<input data-day-field="weight" type="number" step="0.1" inputmode="decimal" value="${d.weight??''}"></label><label>Last night's sleep · hours<input data-day-field="sleep" type="number" step="0.1" inputmode="decimal" value="${d.sleep??''}"></label></div></section><section class="card"><div class="actual-label">Actual</div>${actualFoodControls(d)}${plannedMoveStatus(d).planned?`<div class="planned-reference">Planned: ${escapeHtml(plannedMoveStatus(d).label)}</div>`:''}<hr class="sep"><div class="actual-label">Exercise</div>${movementControls(d)}</section>`;
   }
   return `${topbar(title,sub,`<button class="btn sky save-top" data-action="saveDay">Save</button>`)}
-    <section class="card"><div class="actual-label">Life events</div><div class="life-events">${EVENTS.map(e=>`<button class="event-chip ${d.events.includes(e.id)?'on':''}" data-event="${e.id}">${e.en}</button>`).join('')}</div>${future?'':sameDayContextRows(d)}<label>Custom event</label><div class="row"><input id="customEvent" placeholder="e.g. Eating out with friends"><button class="btn secondary" data-action="addEvent">Add</button></div></section>
+    <section class="card"><div class="actual-label">Life events</div><div class="life-events">${lifeEventTagsHtml(d,future)}</div><label>Custom event</label><div class="row"><input id="customEvent" placeholder="e.g. Eating out with friends"><button class="btn secondary" data-action="addEvent">Add</button></div></section>
     ${main}
     <section class="card"><label>Notes</label><textarea data-day-field="note" rows="3" placeholder="Optional">${escapeHtml(d.note)}</textarea></section>
     <button class="btn sky full" data-action="saveDayBottom">Done</button>`;
@@ -827,30 +831,21 @@ function weightPointContext(weightDate){
 }
 function contextMarkersSvg(d,x,markerTop,rowGap){
   const c=weightPointContext(d.date);
-  const yFood=markerTop;
-  const yHunger=markerTop+rowGap;
   let out='';
-  if(c.eatingOut && c.alcohol!=null && c.alcohol>0){
-    out+=`<circle class="ctx-marker food" cx="${(x-2.4).toFixed(1)}" cy="${yFood}" r="2.5"></circle>`;
-    out+=`<circle class="ctx-marker alcohol" cx="${(x+2.4).toFixed(1)}" cy="${yFood}" r="2.5"></circle>`;
-  }else if(c.eatingOut){
-    out+=`<circle class="ctx-marker food" cx="${x.toFixed(1)}" cy="${yFood}" r="2.7"></circle>`;
-  }else if(c.alcohol!=null&&c.alcohol>0){
-    out+=`<circle class="ctx-marker alcohol" cx="${x.toFixed(1)}" cy="${yFood}" r="2.7"></circle>`;
-  }
-  if(c.hungerNotable) out+=`<circle class="ctx-marker hunger" cx="${x.toFixed(1)}" cy="${yHunger}" r="2.7"></circle>`;
+  if(c.eatingOut || (c.alcohol!=null&&c.alcohol>0)) out+=`<circle class="ctx-marker social" cx="${x.toFixed(1)}" cy="${markerTop}" r="2.7"></circle>`;
+  if(c.hungerNotable) out+=`<circle class="ctx-marker hunger" cx="${x.toFixed(1)}" cy="${markerTop+rowGap}" r="2.7"></circle>`;
   return out;
 }
 function contextLegendHtml(){
-  return `<div class="context-legend"><span class="legend-combo"><i class="ctx-dot food"></i><i class="ctx-dot alcohol"></i>Eating out / alcohol</span><span><i class="ctx-dot hunger"></i>Bedtime hunger</span></div>`;
+  return `<div class="context-legend"><span><i class="ctx-dot social"></i>Eating out / alcohol</span><span><i class="ctx-dot hunger"></i>Bedtime hunger</span></div>`;
 }
 
 function renderChart(data,forecast){
   if(data.length<2) return `<div class="empty">Log at least two weights to see the chart.</div>`;
-  const W=340,H=278,L=48,R=12,Tp=24,labelBand=28,axisGap=12,markerRows=2,markerRowGap=10,markerBand=markerRows*markerRowGap;
+  const W=340,H=264,L=48,R=12,Tp=24,labelBand=26,axisGap=10,markerRows=2,markerRowGap=9,markerBand=markerRows*markerRowGap;
   const axisY=H-labelBand-axisGap;
-  const markerTop=axisY-markerBand+3;
-  const plotBottom=markerTop-8;
+  const markerTop=axisY-markerBand+2;
+  const plotBottom=markerTop-6;
   const last=data[data.length-1], lastDate=last.date;
   const vals=data.map(d=>d.weight).filter(v=>v!=null); vals.push(+db.goal.target);
   if(forecast?.ready){
@@ -913,8 +908,8 @@ function renderChart(data,forecast){
 function chartTipHtml(d){
   if(!d) return '';
   const c=weightPointContext(d.date);
-  const prev=c.prevDetails.length?`<div class="tip-context"><span class="tip-context-date">${fmtShortDate(c.prevDate)}</span> · ${escapeHtml(c.prevDetails.join(' · '))}</div>`:'';
-  return `<b>${fmtShortDate(d.date)}</b><span>${fmt(d.weight)} kg</span>${prev}`;
+  const context=c.prevDetails.length?`<span class="tip-context-inline">· ${fmtShortDate(c.prevDate)} · ${escapeHtml(c.prevDetails.join(' · '))}</span>`:'';
+  return `<b>${fmtShortDate(d.date)}</b><span>${fmt(d.weight)} kg</span>${context}`;
 }
 function weeklyTargetFor(g,id){
   const p=planForGoal(g);
@@ -1220,14 +1215,14 @@ function goalReviewPack(g){
     const exerciseValues=Object.values(rec.move||{}).some(v=>v!==null&&v!==false&&v!=='');
     const hasData=rec.weight!=null || rec.sleep!=null || rec.alcohol!=null || rec.bowelMovement!=null || foodValues || exerciseValues || Object.values(rec.skips||{}).some(Boolean) || rec.events.length || rec.note;
     if(!hasData) continue;
-    records.push({date:s,weight:rec.weight,sevenDayAverage:goalAverageFor(g,s),sleepHours:rec.sleep,alcoholDrinks:rec.alcohol,bowelMovement:rec.bowelMovement,food:{veg:rec.food.veg,protein:rec.food.protein,fruit:rec.food.fruit,noSnack:rec.food.noSnack,noFoodAfterCutoff:rec.food.stop6,waterLiters:rec.food.water,bedtimeHunger:rec.food.bedtimeHunger},exercise:{...rec.move},skipOrNA:{...rec.skips},lifeEvents:rec.events.map(eventLabel),note:rec.note||''});
+    records.push({date:s,weight:rec.weight,sevenDayAverage:goalAverageFor(g,s),lastNightSleepHours:rec.sleep,alcohol:rec.alcohol==null?null:(+rec.alcohol>=2?'2+':+rec.alcohol===1?'1':'none'),bowelMovement:rec.bowelMovement===true?'yes':rec.bowelMovement===false?'no':null,food:{veg:rec.food.veg,protein:rec.food.protein,fruit:rec.food.fruit,noSnack:rec.food.noSnack,noFoodAfterCutoff:rec.food.stop6,waterLiters:rec.food.water,bedtimeHunger:rec.food.bedtimeHunger},exercise:{...rec.move},skipOrNA:{...rec.skips},lifeEvents:rec.events.map(eventLabel),note:rec.note||''});
   }
   const endWeight=active ? latestWeight(through)?.weight??null : g.endWeight??null;
   const startWeight=active ? activeGoalStartWeight() : +g.startWeight;
   const trackers=normalizeTrackers(g,!active);
   const trackerConfig=TRACKER_IDS.map(id=>({id,label:TRACKER_DEFS[id].label,group:TRACKER_DEFS[id].group,cadence:TRACKER_DEFS[id].cadence,role:trackers[id].role,activeFrom:trackers[id].activeFrom,target:trackerRuleLabel(g,id,day(through))}));
   return {
-    tideGoalReviewVersion:4,
+    tideGoalReviewVersion:5,
     goalId:g.id,
     exportedAt:new Date().toISOString(),
     goal:{name:g.name,start:g.start,end:g.end,startWeight,targetWeight:+g.target,currentOrEndWeight:endWeight,status:active?'active':goalStatus(g,endWeight),focus:g.focus||'both'},
@@ -1236,16 +1231,31 @@ function goalReviewPack(g){
     planWasFrozenAtArchive:!!g.planSnapshot,
     summary:{daysCovered:records.length,weightChange:endWeight==null?null:+(endWeight-startWeight).toFixed(2),targetChange:+(+g.target-startWeight).toFixed(2)},
     reviewHistory:normalizeReviews(g),
+    fieldGuide:{
+      bedtimeHunger:{scale:'1-5',meaning:'1 = low hunger; 5 = very hungry',use:'Track-only context. Higher hunger is NOT success; use it to judge whether the diet may be too aggressive or hard to sustain.'},
+      lastNightSleepHours:{meaning:'Sleep during the night immediately before the morning weight recorded on the same date.'},
+      alcohol:{values:'none / 1 / 2+',meaning:'Alcohol consumed on that calendar day.'},
+      bowelMovement:{values:'yes / no / null',meaning:'Whether a bowel movement was explicitly recorded that day; null means not recorded.'},
+      sevenDayAverage:{meaning:'Calendar-based 7-day weight average used for trend context, not adherence.'},
+      period:{meaning:'Period is a life-event context tag, not an adherence metric.'}
+    },
+    timingGuide:{
+      morningWeight:'Weight is recorded in the morning.',
+      previousDayContext:'When looking for possible short-term context for a morning weight on date D, consider eating out, alcohol, bedtime hunger, exercise, and bowel movement from D-1.',
+      sleepAlignment:'lastNightSleepHours on date D refers to the sleep during D-1 → D, immediately before that morning weight.',
+      interpretation:'Context may help explain patterns but is not proof of causation. Prefer repeated or multi-day patterns over one-day explanations.'
+    },
     daily:records,
     reviewInstructions:[
       'Review Goal-role behaviors first: these are the only adherence metrics and the only items that may be called execution gaps.',
       'Bonus items may only be mentioned as positive additions; not doing a Bonus is never a gap or failure.',
       'Track only items and Weight are context for patterns, not adherence scores.',
+      'Bedtime hunger uses a 1-5 scale: 1 = low hunger and 5 = very hungry. Do not treat high hunger as success; use it as context for sustainability and whether the diet may be too aggressive.',
       'Look for multi-day or lagged patterns. Do not attribute a morning weight to an event logged later on that same day.',
       'Analyze weight seriously using the 7-day average and trend; do not call the plan failed because of one flat or higher weigh-in.',
       'Keep the review concise and practical.'
     ],
-    recommendedPrompt:'Analyze this Tide goal using the reviewInstructions in the file. Be concise and practical. Return exactly ONE JSON code block and nothing else. Use EXACTLY these top-level fields: goalId, preview, review. Inside review use EXACTLY: summary, learnings, next. No extra fields are allowed. preview must be a 1-2 sentence synthesis of the whole review. summary must be a concise overall assessment. learnings must contain 1-3 short items. next must contain 1-3 specific actions.',
+    recommendedPrompt:'Analyze this Tide goal using the fieldGuide, timingGuide, and reviewInstructions in the file. Be concise and practical. Return exactly ONE JSON code block and nothing else. Use EXACTLY these top-level fields: goalId, preview, review. Inside review use EXACTLY: summary, learnings, next. No extra fields are allowed. preview must be a 1-2 sentence synthesis of the whole review. summary must be a concise overall assessment. learnings must contain 1-3 short items. next must contain 1-3 specific actions.',
     chatgptReturnExample:{goalId:g.id,preview:'1-2 sentence synthesis of the whole review',review:{summary:'brief overall assessment',learnings:['short learning 1','short learning 2'],next:['specific next action 1','specific next action 2']}}
   };
 }
@@ -1385,8 +1395,8 @@ function toggleSkip(id){ const d=day(view==='day'?selected:today()); d.skips[id]
 function toggleCustom(key){ const d=day(selected); if(key==='allowSnack') d.customPlan.noSnack=d.customPlan.noSnack===false?true:false; else d.customPlan[key]=d.customPlan[key]===true?false:true; save(); }
 function togglePlannedMove(key){ const d=day(selected); d.plannedMove[key]=d.plannedMove[key]===true?false:true; save(); }
 function toggleEvent(e){ const d=day(selected); d.events=d.events.includes(e)?d.events.filter(x=>x!==e):[...d.events,e]; save(); }
-function setAlcohol(v){ const d=day(selected); d.alcohol=+v; save(); }
-function setBowelMovement(v){ const d=day(selected); d.bowelMovement=v==='yes'; save(); }
+function cycleAlcohol(){ const d=day(selected),v=d.alcohol==null?0:+d.alcohol; d.alcohol=v<=0?1:v===1?2:null; save(); }
+function cycleBowelMovement(){ const d=day(selected); d.bowelMovement=d.bowelMovement==null?true:d.bowelMovement===true?false:null; save(); }
 function shiftMonth(n){ const d=parseDate(calendarMonth); d.setMonth(d.getMonth()+n); calendarMonth=iso(new Date(d.getFullYear(),d.getMonth(),1,12)); selected=calendarMonth; render(); }
 function saveGoalForm(){
   const oldStart=db.goal.start;
@@ -1489,8 +1499,8 @@ function bind(){
   document.querySelectorAll('[data-date]').forEach(b=>b.addEventListener('click',()=>{selected=b.dataset.date;render();}));
   document.querySelectorAll('[data-month]').forEach(b=>b.addEventListener('click',()=>shiftMonth(+b.dataset.month)));
   document.querySelectorAll('[data-event]').forEach(b=>b.addEventListener('click',()=>toggleEvent(b.dataset.event)));
-  document.querySelectorAll('[data-set-alcohol]').forEach(b=>b.addEventListener('click',()=>setAlcohol(b.dataset.setAlcohol)));
-  document.querySelectorAll('[data-set-bm]').forEach(b=>b.addEventListener('click',()=>setBowelMovement(b.dataset.setBm)));
+  document.querySelectorAll('[data-cycle-alcohol]').forEach(b=>b.addEventListener('click',cycleAlcohol));
+  document.querySelectorAll('[data-cycle-bm]').forEach(b=>b.addEventListener('click',cycleBowelMovement));
   document.querySelectorAll('[data-range]').forEach(b=>b.addEventListener('click',()=>{range=b.dataset.range;render();}));
   document.querySelectorAll('[data-day-field]').forEach(el=>el.addEventListener('change',()=>{saveInputsFromDOM();persist();}));
   document.querySelectorAll('[data-plan]').forEach(el=>el.addEventListener('change',()=>{saveInputsFromDOM();persist();}));

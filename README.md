@@ -1,11 +1,16 @@
-# Tide PWA V8.7
+# Tide PWA V8.8
 
-Small Progress-context experiment; existing Tide structure stays intact.
+Small context + Goal Review cleanup; existing Tide structure and `tide.v1` data remain intact.
 
-- Adds lightweight daily context inputs for **Alcohol** (`None / 1 / 2+`) and **Bowel movement** (`Yes / No`).
-- Progress weight points can show tiny previous-day context markers for notable food/alcohol, high bedtime hunger, significant exercise, short sleep, and 3+ consecutive explicitly logged days without a bowel movement.
-- Bowel movement appears on-chart only as a quiet numbered marker (`3`, `4`, `5`...) after 3 days; it is context only, never adherence.
-- Tapping a weight point shows one compact context line with concrete previous-day details.
-- Sleep is aligned to the sleep immediately before that morning weigh-in; food, alcohol, bedtime hunger, exercise, and bowel-movement streak come from the prior calendar day.
-- Goal review exports now include alcohol and bowel-movement context.
-- Existing `tide.v1` data, navigation, Goal logic, End Goal, and Daily Thought remain compatible.
+- Alcohol and bowel movement are now single **Life event-style tags**, not separate rows.
+  - Alcohol cycles: `Alcohol` → `Alcohol · 1` → `Alcohol · 2+` → off.
+  - BM cycles: `BM` → `BM ✓` → `No BM` → unrecorded.
+- Adds a **Period** Life event tag.
+- Progress uses one combined marker for **Eating out / alcohol**, plus a separate high **Bedtime hunger** marker. Exercise, sleep, and BM are not plotted as markers.
+- Progress detail is one compact, naturally wrapping line; sleep only appears when under 6 hours, and BM only when there are 3+ explicitly recorded no-BM days.
+- Goal Review export is analysis-oriented:
+  - Bedtime hunger is explicitly defined as a 1–5 scale where 5 = very hungry.
+  - Sleep is exported as `lastNightSleepHours`.
+  - Alcohol uses `none / 1 / 2+`; bowel movement uses `yes / no / null`.
+  - A `fieldGuide` and `timingGuide` explain lag/alignment and caution against one-day causal attribution.
+- Existing Goal, review history, Progress forecast, End Goal, Daily Thought, navigation, and stored data stay compatible.
