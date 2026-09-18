@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'tide.v1';
-const VERSION = '9.2.0';
+const VERSION = '9.3.0';
 const SCHEMA_VERSION = 13; // No user-record schema change; only chart preference ID is migrated.
 
 const COLORS = { sage:'#5E836F', sageDeep:'#244C3E', pink:'#C98994', pinkSoft:'#EBCFD4', blue:'#8C918D', ink:'#1F2823' };
@@ -936,19 +936,34 @@ function renderChart(data,forecast){
   }).join('');
   const contextMarks=data.map((d,i)=>contextMarkersSvg(d,pointCoords[i].x,markerTop,markerRowGap)).join('');
 
-  // Forecast is future-only and begins at the LAST ACTUAL dot. Historical
-  // model backcasts are not presented as though they were future predictions.
+  // V9.3: restore the V9.1 visual language: one continuous pink trend from
+  // goal start, through observed dates, and then toward the visible horizon.
+  // Past fit and future projection share a curve but are not actual measurements.
+  // The robust estimator and date/result cards are unchanged.
   let projectionPath='';
-  if(forecast?.ready && futureDays>0){
-    const trajectory=[{date:lastDate,value:last.weight}];
-    const step=Math.max(1,Math.floor(futureDays/18));
-    for(let d=step;d<=futureDays;d+=step) trajectory.push({date:addDays(lastDate,d),value:forecast.forecastValue(d)});
-    if(trajectory.at(-1)?.date!==chartEnd) trajectory.push({date:chartEnd,value:forecast.forecastValue(futureDays)});
-    projectionPath=`<path class="forecast" d="${smoothSvgPath(trajectory.map(p=>[xDate(p.date),y(p.value)]))}"/>`;
+  if(forecast?.ready){
+    const trajectory=[];
+    const pastCount=Math.min(20,Math.max(6,forecast.elapsed+1));
+    for(let i=0;i<pastCount;i++){
+      const d=Math.round(forecast.elapsed*i/(pastCount-1));
+      trajectory.push({date:addDays(db.goal.start,d),value:forecast.backcastValue(d)});
+    }
+    const horizon=Math.max(0,Math.round((parseDate(chartEnd)-parseDate(forecast.lastDate))/86400000));
+    const step=Math.max(1,Math.round(horizon/14));
+    for(let d=step;d<=horizon;d+=step) trajectory.push({date:addDays(forecast.lastDate,d),value:forecast.forecastValue(d)});
+    if(horizon>0 && trajectory.at(-1)?.date!==chartEnd) trajectory.push({date:chartEnd,value:forecast.forecastValue(horizon)});
+    const pts=trajectory.filter((p,i,a)=>i===0||p.date!==a[i-1].date).map(p=>[xDate(p.date),y(p.value)]);
+    projectionPath=`<path class="forecast" d="${smoothSvgPath(pts)}"/>`;
   }
-  const guideX=xDate(lastDate);
-  const info=`<div class="chart-context-row">${contextLegendHtml()}<details class="chart-info-wrap"><summary aria-label="About chart markers" title="About chart markers">ⓘ</summary><div class="chart-info-popover"><b>About the dots</b><br>Dots show selected logs from the day before each morning weigh-in, not proven causes.<br>Sleep refers to the night before that weigh-in.</div></details></div>`;
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Weight chart. Tap any actual weigh-in to view its date and logs"><text x="4" y="13" class="axis-unit">kg</text>${grid}<line class="axis" x1="${L}" y1="${Tp}" x2="${L}" y2="${axisY}"/><line class="axis" x1="${L}" y1="${axisY}" x2="${W-R}" y2="${axisY}"/><line class="goal" x1="${L}" y1="${goalY}" x2="${W-R}" y2="${goalY}"/><line id="chartGuide" class="guide" x1="${guideX}" y1="${Tp}" x2="${guideX}" y2="${axisY}"/>${projectionPath}<path class="actual" d="${actualPath}"/>${contextMarks}${points}${hitBands}${xLabels}</svg>${info}<div id="chartTip" class="tooltip" aria-live="polite">${chartTipHtml(last)}</div>`;
+  const guideX=xDate(lastDate), goalDateX=xDate(db.goal.end);
+  const goalDateLabel=goalDateX>W-R-67?goalDateX-5:goalDateX+5;
+  const goalDateAnchor=goalDateX>W-R-67?'end':'start';
+  const goalDateMark=`<line class="goal-date-marker" x1="${goalDateX}" y1="${Tp}" x2="${goalDateX}" y2="${axisY}"/><path class="goal-date-flag" d="M ${goalDateX} ${Tp} l 0 -6 l 7 3 z"/><text class="goal-date-label" x="${goalDateLabel}" y="${Tp-9}" text-anchor="${goalDateAnchor}">Goal · ${fmtShortDate(db.goal.end)}</text>`;
+  // Mention sleep only when the user has actually enabled short sleep in Other.
+  const showSleepNote=db.chartSettings.categories.includes('other')&&db.chartSettings.other.includes('short_sleep');
+  const sleepNote=showSleepNote?'<br>Short sleep uses the sleep logged on the same morning.':'';
+  const info=`<div class="chart-context-row">${contextLegendHtml()}<details class="chart-info-wrap"><summary aria-label="About chart markers" title="About chart markers">ⓘ</summary><div class="chart-info-popover"><b>About the dots</b><br>Dots show selected logs from the previous day. They are context, not proven causes.${sleepNote}</div></details></div>`;
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Weight chart. Pink dashed line is a trend estimate. Vertical Goal marker indicates the goal end date. Tap an actual weigh-in for its logs"><text x="4" y="13" class="axis-unit">kg</text>${grid}<line class="axis" x1="${L}" y1="${Tp}" x2="${L}" y2="${axisY}"/><line class="axis" x1="${L}" y1="${axisY}" x2="${W-R}" y2="${axisY}"/><line class="goal" x1="${L}" y1="${goalY}" x2="${W-R}" y2="${goalY}"/><line id="chartGuide" class="guide" x1="${guideX}" y1="${Tp}" x2="${guideX}" y2="${axisY}"/>${projectionPath}${goalDateMark}<path class="actual" d="${actualPath}"/>${contextMarks}${points}${hitBands}${xLabels}</svg>${info}<div id="chartTip" class="tooltip" aria-live="polite">${chartTipHtml(last)}</div>`;
 }
 function chartTipHtml(d){
   if(!d) return '';
@@ -1268,7 +1283,30 @@ function goalReviewPack(g){
   const trackers=normalizeTrackers(g,!active);
   const trackerConfig=TRACKER_IDS.map(id=>({id,label:TRACKER_DEFS[id].label,group:TRACKER_DEFS[id].group,cadence:TRACKER_DEFS[id].cadence,role:trackers[id].role,activeFrom:trackers[id].activeFrom,target:trackerRuleLabel(g,id,day(through))}));
   return {
-    tideGoalReviewVersion:5,
+    READ_THIS_FIRST_FOR_CHATGPT:{
+      task:'The user is uploading this exported Tide goal data for a Goal Review. Follow these embedded instructions without asking the user to supply an additional prompt. Produce a useful review now.',
+      output:'Return ONLY one valid UTF-8 JSON object suitable for direct import into Tide. No explanation before/after, no markdown fences, no trailing commas, no extra keys. If you can create a downloadable file, supply tide-goal-review.json containing exactly this object; otherwise print the object alone so the user can paste it into Tide.',
+      mandatorySchema:{goalId:g.id,preview:'string: 1-2 sentences synthesizing the trend, behavior and next steps',review:{summary:'string: concise overall interpretation grounded in this goal data',learnings:['string: specific supported insight (1-3 total)'],next:['string: realistic, actionable step (1-3 total)']}},
+      strictValidation:[
+        'Use exactly THREE top-level keys: goalId, preview, review. Use exactly THREE keys inside review: summary, learnings, next. All other keys cause Tide import to FAIL.',
+        `Copy goalId EXACTLY as ${JSON.stringify(g.id)}. Never invent an ID. This is required for import to the correct goal.`,
+        'preview and review.summary MUST be nonempty strings. review.learnings and review.next MUST each be arrays containing 1 to 3 nonempty strings; no nulls, numbers, objects or empty strings.',
+        'Write the string values in the language of the current conversation (Chinese if talking to the user in Chinese), but keep ALL JSON key names exactly in English.',
+        'Do not echo the source file, daily records, instructions or markdown. Output the finished import JSON only.'
+      ],
+      analysisRequirements:[
+        'Describe weight change using available readings and 7-day averages when sufficient; distinguish the dated result from any forecast. Do not invent missing weigh-ins or treat a single day as proof.',
+        'Review Goal-role trackers as adherence only if logged and eligible. Bonus is optional and must never be labeled a failure; Track-only and weight are contextual rather than adherence metrics.',
+        'Correct timing: weight on date D is a morning weigh-in. Eating out, alcohol, Snacks (food.noSnack is explicitly false), hunger, exercise, and events from D-1 are chart context for D. Never explain D with an event later on D.',
+        'No snacks=true means NO snacks, noSnack=false means Had snacks; null/unlogged/N/A are unknown or excluded, not proof of either outcome. Eating out does not automatically mean eating more.',
+        'Bedtime hunger 1=low and 5=very hungry. Do not praise high hunger, restrictive behavior or excessive exercise; prioritize sustainable practices.',
+        'If this export includes sleep data, lastNightSleepHours on D is the night immediately before morning D. If not logged or irrelevant, do not discuss sleep.',
+        'Period and other events are optional context. Note repeated associations as tentative, never claim a single event caused next-day weight change.',
+        'Make 1-3 concrete observations supported by data and 1-3 practicable next actions; state important gaps in the summary if records are sparse.'
+      ],
+      inTide:'Open Goals → Goal Review → Add new review. Use Import review JSON if you saved the generated file, or paste the generated JSON, Preview review, then Save Review. Do not import the original goal-data export as a completed review.'
+    },
+    tideGoalReviewVersion:6,
     goalId:g.id,
     exportedAt:new Date().toISOString(),
     goal:{name:g.name,start:g.start,end:g.end,startWeight,targetWeight:+g.target,currentOrEndWeight:endWeight,status:active?'active':goalStatus(g,endWeight),focus:g.focus||'both'},
@@ -1299,9 +1337,9 @@ function goalReviewPack(g){
       'Bedtime hunger uses a 1-5 scale: 1 = low hunger and 5 = very hungry. Do not treat high hunger as success; use it as context for sustainability and whether the diet may be too aggressive.',
       'Look for multi-day or lagged patterns. Do not attribute a morning weight to an event logged later on that same day.',
       'Analyze weight seriously using the 7-day average and trend; do not call the plan failed because of one flat or higher weigh-in.',
-      'Keep the review concise and practical.'
+      'Keep the review concise and practical; return the exact import JSON described in READ_THIS_FIRST_FOR_CHATGPT.'
     ],
-    recommendedPrompt:'Analyze this Tide goal using the fieldGuide, timingGuide, and reviewInstructions in the file. Be concise and practical. Return exactly ONE JSON code block and nothing else. Use EXACTLY these top-level fields: goalId, preview, review. Inside review use EXACTLY: summary, learnings, next. No extra fields are allowed. preview must be a 1-2 sentence synthesis of the whole review. summary must be a concise overall assessment. learnings must contain 1-3 short items. next must contain 1-3 specific actions.',
+    recommendedPrompt:'READ_THIS_FIRST_FOR_CHATGPT contains the full task, review standards and EXACT Tide import schema. Follow it immediately; do not request another prompt. Return ONLY the finished review JSON object.',
     chatgptReturnExample:{goalId:g.id,preview:'1-2 sentence synthesis of the whole review',review:{summary:'brief overall assessment',learnings:['short learning 1','short learning 2'],next:['specific next action 1','specific next action 2']}}
   };
 }
@@ -1335,7 +1373,7 @@ function goalReviewPage(){
     <section class="card soft review-summary"><div class="row between"><div><b>${escapeHtml(g.name)}</b><div class="small">${fmtShortDate(g.start)} → ${fmtShortDate(active?g.end:(g.ended||g.end))}</div></div><span class="status ${active?'active':goalStatus(g,end)==='reached'?'done':goalStatus(g,end)==='close'?'close':'ended'}">${status}</span></div><div class="review-metrics"><div><span>Start</span><b>${fmt(start)} kg</b></div><div><span>${active?'Current':'End'}</span><b>${fmt(end)} kg</b></div><div><span>Target</span><b>${fmt(g.target)} kg</b></div></div></section>
     ${latest?`<div class="section-title">Latest review</div><section class="card latest-review-card"><div class="row between"><div class="actual-label" style="margin:0">${fmtShortDate(latest.date)}${latest.day?` · Day ${latest.day}`:''}</div></div>${fullReviewHtml(latest)}</section>`:`<section class="card"><div class="empty">No reviews yet.</div></section>`}
     ${!composer?`<button class="btn secondary full review-add-button" data-action="openReviewComposer">Add new review</button>`:''}
-    ${composer?`<section class="card review-composer"><div class="row between"><div class="actual-label" style="margin:0">Add new review</div><button class="review-inline-link review-cancel-inline" data-action="closeReviewComposer">Cancel</button></div><p class="small review-copy"><b>1.</b> Export goal data and upload it to ChatGPT. <b>2.</b> Ask ChatGPT to follow the prompt inside the file. <b>3.</b> Copy its JSON code block and paste it here.</p><div class="review-actions"><button class="btn secondary" data-action="exportReviewGoal">Export Goal Data</button></div><label class="review-paste-label">Paste ChatGPT JSON<textarea id="reviewPaste" rows="7" placeholder='{"preview":"...","review":{"summary":"...","learnings":["..."],"next":["..."]}}'>${escapeHtml(draft?.rawText||'')}</textarea></label><button class="btn secondary full" data-action="previewGoalReview">Preview review</button></section>`:''}
+    ${composer?`<section class="card review-composer"><div class="row between"><div class="actual-label" style="margin:0">Add new review</div><button class="review-inline-link review-cancel-inline" data-action="closeReviewComposer">Cancel</button></div><p class="small review-copy"><b>1.</b> Export goal data and upload the file to ChatGPT. The file already contains the complete review instructions and Tide import format—no extra prompt needed. <b>2.</b> Import the resulting review JSON file or paste the JSON below. <b>3.</b> Preview, then Save.</p><div class="review-actions"><button class="btn secondary" data-action="exportReviewGoal">Export Goal Data + Instructions</button><label class="btn secondary file-btn">Import review JSON<input id="reviewImportFile" type="file" accept=".json,application/json" hidden></label></div><label class="review-paste-label">Or paste ChatGPT JSON<textarea id="reviewPaste" rows="7" placeholder='{"goalId":"COPY_EXACT_GOAL_ID","preview":"...","review":{"summary":"...","learnings":["..."],"next":["..."]}}'>${escapeHtml(draft?.rawText||'')}</textarea></label><button class="btn secondary full" data-action="previewGoalReview">Preview review</button></section>`:''}
     ${draft&&composer?`<section class="card review-preview"><div class="row between"><div class="actual-label" style="margin:0">Ready to save</div><span class="small">Review the result first</span></div>${draft.checkpoint.preview?`<div class="draft-preview-summary"><span>Goals preview</span><p>${escapeHtml(draft.checkpoint.preview)}</p></div>`:''}<div class="full-review-label">Full review</div>${fullReviewHtml(draft.checkpoint)}<button class="btn sky full review-save-final" data-action="saveGoalReviewDraft">Save Review</button></section>`:''}
     ${older.length?`<div class="section-title">Earlier reviews</div><section class="card review-history">${older.map(checkpointHtml).join('')}</section>`:''}
     <button class="btn ghost full" data-action="backGoals">Back to Goals</button>`;
@@ -1370,22 +1408,25 @@ function addGoalCheckpoint(g,raw){
   if(!g) throw new Error('Goal not found');
   g.reviews=normalizeReviews(g); g.reviews.push(makeCheckpoint(raw,g)); g.review=blankReview();
 }
+function loadGoalReviewDraft(text){
+  const raw=parseReviewJSON(text), g=findGoalById(reviewGoalId);
+  if(!g) throw new Error('Select a goal first.');
+  if(String(raw.goalId)!==String(g.id)) throw new Error('The review goalId does not match this goal. Export data for the selected goal and use that result.');
+  const checkpoint=makeCheckpoint(raw,g); // validates exact schema before any save
+  reviewDraft={goalId:g.id,rawText:text,raw,checkpoint};
+  reviewComposerOpen=true;
+  flash='Review loaded. Check the preview below before saving.';
+  render();
+}
 function importGoalReview(file){
-  if(!file)return; const r=new FileReader(); r.onload=()=>{try{
-    const raw=parseReviewJSON(r.result), g=findGoalById(raw.goalId); if(!g) throw new Error('Goal not found');
-    addGoalCheckpoint(g,raw); reviewGoalId=g.id; persist(); flash='Goal review added.'; render();
-  }catch(e){alert('This review could not be imported.');}}; r.readAsText(file);
+  if(!file)return;
+  const r=new FileReader();
+  r.onload=()=>{try{loadGoalReviewDraft(r.result);}catch(e){alert(`Tide could not load this review. ${e.message||'Use the exact Tide JSON schema.'}`);}};
+  r.readAsText(file);
 }
 function previewGoalReview(){
-  try{
-    const rawText=document.getElementById('reviewPaste')?.value||'';
-    const raw=parseReviewJSON(rawText),g=findGoalById(raw.goalId);if(!g)throw new Error('Goal not found');
-    reviewGoalId=g.id;
-    reviewDraft={goalId:g.id,rawText,raw,checkpoint:makeCheckpoint(raw,g)};
-    reviewComposerOpen=true;
-    flash='Review loaded. Check it below before saving.';
-    render();
-  }catch(e){alert(`Tide could not load this review. ${e.message||'Use the exact Tide JSON schema.'}`);}
+  try{loadGoalReviewDraft(document.getElementById('reviewPaste')?.value||'');}
+  catch(e){alert(`Tide could not load this review. ${e.message||'Use the exact Tide JSON schema.'}`);}
 }
 function saveGoalReviewDraft(){
   try{
@@ -1635,6 +1676,7 @@ function bind(){
   document.querySelectorAll('[data-day-field]').forEach(el=>el.addEventListener('change',()=>{saveInputsFromDOM();persist();}));
   document.querySelectorAll('[data-plan]').forEach(el=>el.addEventListener('change',()=>{saveInputsFromDOM();persist();}));
   const f=document.getElementById('importFile'); if(f) f.addEventListener('change',()=>importData(f.files[0]));
+  const reviewFile=document.getElementById('reviewImportFile'); if(reviewFile) reviewFile.addEventListener('change',()=>importGoalReview(reviewFile.files[0]));
   document.querySelectorAll('[data-review-goal]').forEach(b=>b.addEventListener('click',()=>{reviewGoalId=b.dataset.reviewGoal;reviewDraft=null;reviewComposerOpen=false;view='goalReview';render();}));
   const chart=document.querySelector('svg.chart');
   if(chart){
@@ -1673,7 +1715,12 @@ function bind(){
     });
     chart.querySelectorAll('[data-chart-index]').forEach(p=>{
       p.addEventListener('mouseenter',()=>{if(!suppressSyntheticClick)choosePoint(+p.dataset.chartIndex);});
-      p.addEventListener('focus',()=>{if(!suppressSyntheticClick)choosePoint(+p.dataset.chartIndex);});
+      p.addEventListener('focus',()=>{
+        if(!suppressSyntheticClick)choosePoint(+p.dataset.chartIndex);
+        chart.querySelectorAll('circle.point').forEach(point=>point.classList.remove('keyboard-focus'));
+        chart.querySelectorAll('circle.point')[+p.dataset.chartIndex]?.classList.add('keyboard-focus');
+      });
+      p.addEventListener('blur',()=>chart.querySelectorAll('circle.point').forEach(point=>point.classList.remove('keyboard-focus')));
       p.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();choosePoint(+p.dataset.chartIndex);}});
     });
   }

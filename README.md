@@ -1,25 +1,22 @@
-# Tide Private V9.2
+# Tide Private V9.3
 
-**Private Tide only.** Update the original `Tide` GitHub repository, **not** `Tide-Beta`. The original PWA name/icon, GitHub path, and storage key `tide.v1` are unchanged. No new daily inputs or data fields. Existing Goal, weights, review history and custom events are retained.
+**Private Tide only.** Do not upload this build to Tide-Beta. The GitHub path, storage key `tide.v1`, icons, app identity, tracker data, goal review history, and model mathematics are unchanged.
 
-## Safe upgrade
-1. In private Tide, open **Settings → Export Data** and save a dated JSON backup before replacing any files.
-2. Unzip this archive. Upload all **eight files directly to the root** of the original private `Tide` repository (not a nested folder). Replace the older versions.
-3. Wait for GitHub Pages to deploy, then fully close/reopen the installed Home Screen app if necessary. Confirm **Settings → Version 9.2.0**. If you see the old interface, reload the GitHub Pages page once to refresh the service worker.
+## Safe installation
+1. Open private Tide → Settings → Export backup and save the JSON.
+2. Unzip and upload all eight files flat into the root of the ORIGINAL `Tide` GitHub repository. Do not create a nested folder.
+3. After GitHub Pages updates, reopen the installed app; Settings should show version 9.3.0. Reload Safari once if the cached old version remains.
 
-## Changes
-- **Snacks**, not **No snacks**, is the chart source. For weigh-in date D, the Diet dot occurs ONLY when `food.noSnack === false` and `skips.noSnack` is not set on D−1. `true` (No snacks), `null` (Not logged), or N/A never triggers that Snacks dot. Other selected Diet sources, such as Eating out and Alcohol, can independently make a Diet dot. A day with several selected Diet sources still gets only one Diet dot, with detail on tap. Daily Log stays exactly as before: `No snacks` / `Had snacks` / `Not logged`.
-- Preserve chart source selections on upgrade by converting the V9.1 `no_snacks` preference ID to `snacks`. Older records need no manual migration.
-- Four consistent chart group colors: **Diet pink** `#C58D9C`, **Bedtime hunger blue** `#709CC4`, **Exercise green** `#66947A`, **Other gray** `#92979B`. The existing two-category chart limit stays intact.
-- Replace the long below-chart note with a compact **ⓘ** beside the context legend. Hover on a desktop or tap on a phone for the previous-day alignment, sleep exception, and non-causation explanation.
-- Goal-deadline card: **future** deadline = estimate; **today with a weigh-in** = actual reading; **today without a weigh-in** = `No weigh-in yet`; **past deadline with an exact-date record** = actual; **past deadline without one** = `No weigh-in` (not a made-up estimate).
-- The pink forecast curve is future-only and starts at the latest actual weigh-in. If the deadline has passed, the chart includes newer actual weigh-ins and extends a modest distance into the future when a forecast exists.
-- Date selection uses larger non-overlapping hit areas, whole-chart nearest-date selection, and real mobile touch coordinates instead of offset synthetic clicks. The last day is selectable even at the right edge. Date detail is refreshed on selection; focus and keyboard are supported.
+## What changed
+- Restored V9.1's visual presentation of the **continuous pink dashed forecast curve**, using the current robust V9.2 estimator. Previous fixes to the Goal date actual card and Snacks D−1 semantics remain. The pink curve is a smoothed model/trend, not actual weigh-ins.
+- Removed the ugly blue rectangle from point selection, preserved large mobile tap targets and keyboard access with a discreet focus indication on the point itself.
+- Added a subtle vertical **Goal · date** marker at the actual goal end date even when the graph's x-axis extends further into the future. Horizontal target weight remains.
+- Removed the confusing sleep explanation from the chart's ⓘ unless **Other → Short sleep** is actually selected. When shown, it explains that the sleep input belongs to that same morning's date. No sleep data or log inputs changed.
+- Goal Review export now starts with `READ_THIS_FIRST_FOR_CHATGPT`: includes explicit analysis rules, the exact 3-field top-level / 3-field nested import JSON contract, goalId matching, 1–3 nonempty string requirements, no commentary/fences, and instructions to generate a JSON file if possible. Uploading the export is the entire prompt.
+- Goal Review now offers **Import review JSON** alongside Paste; file import previews and validates before saving, and rejects mismatched goalId/extra keys with specific messages. Exported original goal data cannot be mistaken for the completed review.
 
-## Compatibility and limitations
-- No changes to the mathematical trend estimator in V9.1. It is still a tentative trend estimate, not a promise or a causal explanation.
-- This update changes chart DISPLAY semantics for historical `noSnack:false` records; it does not rewrite the records themselves.
-- Tests use synthetic fixtures, not your actual private backup. Your real data is not uploaded or read. Make a backup before installation.
-- Installing private and Beta into separate GitHub repositories is essential; do not replace Beta with this package.
+## Important
+- User data are not cleared or re-keyed. No Beta files modified. These are software tests using synthetic data, not your real backup. Export your own backup before upgrading.
+- The AI-generated review is external content and should be checked in Tide's Preview before Save; the schema validator cannot verify the truth of analytical claims.
 
 Exactly eight flat files: `index.html`, `app.js`, `styles.css`, `manifest.json`, `sw.js`, `icon-192.png`, `icon-512.png`, `README.md`.
