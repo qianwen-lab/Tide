@@ -1,6 +1,6 @@
 const STORAGE_KEY = 'tide.v1';
-const VERSION = '9.0.0';
-const SCHEMA_VERSION = 12;
+const VERSION = '9.1.0';
+const SCHEMA_VERSION = 13;
 
 const COLORS = { sage:'#5E836F', sageDeep:'#244C3E', pink:'#C98994', pinkSoft:'#EBCFD4', blue:'#8C918D', ink:'#1F2823' };
 const iso = d => {
@@ -284,7 +284,7 @@ const defaults = {
   goal:{id:`goal-${today()}-active`,name:'Back to 50',start:today(),end:addDays(today(),31),startWeight:52.7,target:50,status:'active',focus:'both',trackers:defaultTrackersForFocus('both',today()),review:blankReview(),reviews:[]},
   days:{},
   customEvents:[],
-  chartSettings:{categories:['food','hunger'],food:['eating_out','alcohol','snacks'],exercise:['steps','cardio','strength'],other:['period','travel','party','vacation','poor_sleep','sick','short_sleep'],custom:[],hungerMin:4},
+  chartSettings:{categories:['food','hunger'],food:['eating_out','alcohol','no_snacks'],exercise:['steps','cardio','strength'],other:['period','travel','party','vacation','poor_sleep','sick','short_sleep'],custom:[],hungerMin:4},
   plan:{veg:3,fruit:2,noSnack:true,stop:'18:00',satiety:7,water:2,stepsTarget:10000,stepsDays:5,stretchDays:5,cardio:90,strength:60,strengthSessions:2},
   goals:[]
 };
@@ -350,7 +350,10 @@ function migrate(raw){
   const cats=['food','hunger','exercise','other'];
   const groups=opts(cs.categories,cats,defaults.chartSettings.categories).slice(0,2);
   const activeCustom=out.customEvents.filter(e=>e.active).map(e=>e.id);
-  out.chartSettings={categories:groups,food:opts(cs.food,['eating_out','alcohol','snacks'],defaults.chartSettings.food),exercise:opts(cs.exercise,['steps','cardio','strength'],defaults.chartSettings.exercise),other:opts(cs.other,['period','travel','party','vacation','poor_sleep','sick','short_sleep'],defaults.chartSettings.other),custom:opts(cs.custom,activeCustom,[]),hungerMin:[3,4,5].includes(+cs.hungerMin)?+cs.hungerMin:4};
+  // In V9.0 the old 'snacks' source meant eating snacks. V9.1 changes the chart
+  // to explicitly logged NO snacks, preserving the user's source preference.
+  const foodSources=Array.isArray(cs.food)?cs.food.map(x=>x==='snacks'?'no_snacks':x):null;
+  out.chartSettings={categories:groups,food:opts(foodSources,['eating_out','alcohol','no_snacks'],defaults.chartSettings.food),exercise:opts(cs.exercise,['steps','cardio','strength'],defaults.chartSettings.exercise),other:opts(cs.other,['period','travel','party','vacation','poor_sleep','sick','short_sleep'],defaults.chartSettings.other),custom:opts(cs.custom,activeCustom,[]),hungerMin:[3,4,5].includes(+cs.hungerMin)?+cs.hungerMin:4};
   out.schemaVersion=SCHEMA_VERSION; out.version=SCHEMA_VERSION;
   return out;
 }
@@ -621,7 +624,7 @@ function actualFoodControls(d){
   <div class="actual-row tracker-row ${d.skips?.veg?'is-skip':''}">${trackerHead('veg',d)}<div class="chip-row">${veg.map(v=>`<button class="pill ${d.food.veg!==null && +d.food.veg===v?'on':''}" data-set-food="veg" data-value="${v}">${v===4?'4+':v}</button>`).join('')}</div></div>
   <div class="actual-row tracker-row ${d.skips?.protein?'is-skip':''}">${trackerHead('protein',d)}<div class="switch-row compact-switch"><span>${d.food.protein===true?'Target met':'Mark when met'}</span><button class="toggle ${d.food.protein===true?'on':''}" data-toggle-food="protein" aria-label="Protein"></button></div></div>
   <div class="actual-row tracker-row ${d.skips?.fruit?'is-skip':''}">${trackerHead('fruit',d)}<div class="chip-row">${fruit.map(v=>`<button class="pill ${d.food.fruit!==null && +d.food.fruit===v?'on':''}" data-set-food="fruit" data-value="${v}">${v===3?'3+':v}</button>`).join('')}</div></div>
-  <div class="actual-row tracker-row ${d.skips?.noSnack?'is-skip':''}">${trackerHead('noSnack',d)}<div class="switch-row compact-switch"><span>${d.food.noSnack===true?'On plan':'Mark when met'}</span><button class="toggle ${d.food.noSnack===true?'on':''}" data-toggle-food="noSnack" aria-label="No snacks"></button></div></div>
+  <div class="actual-row tracker-row ${d.skips?.noSnack?'is-skip':''}">${trackerHead('noSnack',d)}<div class="snack-choices" role="group" aria-label="Snacks on this date">${[[true,'No snacks'],[false,'Had snacks'],[null,'Not logged']].map(([val,label])=>`<button type="button" class="snack-choice ${d.food.noSnack===val?'on':''}" data-no-snack="${val===null?'null':String(val)}" aria-pressed="${d.food.noSnack===val}">${label}</button>`).join('')}</div></div>
   <div class="actual-row tracker-row ${d.skips?.stop6?'is-skip':''}">${trackerHead('stop6',d)}<div class="switch-row compact-switch"><span>${d.food.stop6===true?'On plan':'Mark when met'}</span><button class="toggle ${d.food.stop6===true?'on':''}" data-toggle-food="stop6" aria-label="No food after cutoff"></button></div></div>
   <div class="actual-row tracker-row ${d.skips?.water?'is-skip':''}">${trackerHead('water',d)}<div class="chip-row">${[1,1.5,2,2.5,3].map(v=>`<button class="pill ${d.food.water!==null && +d.food.water===v?'on':''}" data-set-food="water" data-value="${v}">${v}L</button>`).join('')}</div></div>
   <div class="actual-row tracker-row ${d.skips?.bedtimeHunger?'is-skip':''}">${trackerHead('bedtimeHunger',d)}<div class="hunger-scale"><span class="small">Low</span><div class="chip-row">${hunger.map(v=>`<button class="pill ${d.food.bedtimeHunger!==null && +d.food.bedtimeHunger===v?'on':''}" data-set-food="bedtimeHunger" data-value="${v}">${v}</button>`).join('')}</div><span class="small">High</span></div></div>`;
@@ -693,7 +696,7 @@ function dayPage(){
   }
   return `${topbar(title,sub,`<button class="btn sky save-top" data-action="saveDay">Save</button>`)}
     ${flashHtml()}
-    <section class="card"><div class="row between"><div class="actual-label">Life events</div><button class="quiet-link" data-action="manageCustom">Manage custom ›</button></div><div class="life-events">${lifeEventTagsHtml(d,future)}</div><label>New custom event</label><div class="row"><input id="customEvent" maxlength="40" placeholder="e.g. Hot pot" aria-label="New custom event"><button class="btn secondary" data-action="addEvent">Add</button></div><div class="custom-category-line"><span>Group</span><select id="customEventCategory" aria-label="New event category"><option value="other">Other context</option><option value="food">Food context</option></select></div></section>
+    <section class="card"><div class="row between"><div class="actual-label">Life events</div><button class="quiet-link" data-action="manageCustom">Manage custom ›</button></div><div class="life-events">${lifeEventTagsHtml(d,future)}</div><label>New custom event</label><div class="row"><input id="customEvent" maxlength="40" placeholder="e.g. Hot pot" aria-label="New custom event"><button class="btn secondary" data-action="addEvent">Add</button></div><div class="small plan-helper">Added under Other. Change its chart category in Manage custom, if needed.</div></section>
     ${main}
     <section class="card"><label>Notes</label><textarea data-day-field="note" rows="3" placeholder="Optional">${escapeHtml(d.note)}</textarea></section>
     <button class="btn sky full" data-action="saveDayBottom">Done</button>`;
@@ -795,9 +798,9 @@ function changePage(){
     <section class="card change-goal-card">
       <div class="row between"><div><b>${escapeHtml(db.goal.name)}</b><div class="small">${fmtDate(db.goal.start)} → ${fmtDate(db.goal.end)}</div></div><div class="small">${tr('goalLine')} ${fmt(db.goal.target)} kg</div></div>
       <div class="small" style="margin-top:8px">${desc}</div>
-      <div class="legend" style="justify-content:flex-start;margin-top:13px"><span><span class="legend-line actual-line"></span>${tr('actualWeight')}</span><span><span class="legend-line goal-line"></span>${tr('goalLine')}</span><span><span class="legend-line forecast-line"></span>Forecast</span></div>
-      <div class="chart-setting-bar"><span class="small">Context appears below each weight · previous day</span><button class="quiet-link" data-action="chartSettings">⚙ Customize</button></div>
+      <div class="chart-heading-row"><div class="legend"><span><span class="legend-line actual-line"></span>${tr('actualWeight')}</span><span><span class="legend-line goal-line"></span>${tr('goalLine')}</span><span><span class="legend-line forecast-line"></span>Forecast</span></div><button class="quiet-link chart-customize" data-action="chartSettings">⚙ Customize</button></div>
       <div class="chart-wrap">${renderChart(series,f)}</div>
+      <div class="chart-context-note">Dots below the graph reflect selected logs from the day <b>before</b> each morning weigh-in, not proven causes. Sleep refers to the night before that weigh-in.</div>
     </section>
     <section class="forecast-grid compact-forecast">
       <div class="forecast-card pink"><div class="small">By ${fmtDate(db.goal.end,'en')}</div><div class="forecast-value">${f.ready?fmt(f.projectedEnd):'—'} <span>kg</span></div></div>
@@ -830,8 +833,8 @@ function smoothSvgPath(points){
   return d;
 }
 function readDay(s){ return mergeDay({...((db.days||{})[s]||{}),date:s}); }
-const CHART_GROUPS=[{id:'food',name:'Food context',dot:'social'},{id:'hunger',name:'Bedtime hunger',dot:'hunger'},{id:'exercise',name:'Exercise',dot:'exercise'},{id:'other',name:'Other context',dot:'other'}];
-const CHART_FOOD=[['eating_out','Eating out'],['alcohol','Alcohol'],['snacks','Snacks · from No snacks']];
+const CHART_GROUPS=[{id:'food',name:'Diet',dot:'social'},{id:'hunger',name:'Bedtime hunger',dot:'hunger'},{id:'exercise',name:'Exercise',dot:'exercise'},{id:'other',name:'Other context',dot:'other'}];
+const CHART_FOOD=[['eating_out','Eating out'],['alcohol','Alcohol'],['no_snacks','No snacks · from daily log']];
 const CHART_EXERCISE=[['steps','10k steps'],['cardio','Cardio'],['strength','Strength']];
 const CHART_OTHER=[['period','Period'],['travel','Travel'],['party','Party'],['vacation','Vacation'],['poor_sleep','Poor sleep'],['sick','Sick'],['short_sleep','Short sleep · <6h']];
 function weightPointContext(weightDate){
@@ -840,7 +843,7 @@ function weightPointContext(weightDate){
   const events=prev.events.map(eventId);
   const eatingOut=events.includes('eating_out');
   const alcohol=prev.alcohol==null?null:+prev.alcohol;
-  const snacks=prev.food.noSnack===false; // No snacks: missing is UNKNOWN, never assume snacks.
+  const noSnacks=prev.food.noSnack===true && !prev.skips?.noSnack; // Explicit NO snacks on D-1 only; missing/false/N-A never match.
   const hunger=prev.food.bedtimeHunger==null?null:+prev.food.bedtimeHunger;
   const steps=prev.move.steps==null?null:+prev.move.steps;
   const cardio=prev.move.cardio==null?null:+prev.move.cardio;
@@ -850,12 +853,13 @@ function weightPointContext(weightDate){
   const exerciseNotable=Object.values(exerciseAvailable).some(Boolean);
   const sleepNotable=sleep!=null&&sleep<6;
   const custom=db.customEvents.filter(e=>e.active&&settings.custom.includes(e.id)&&events.includes(e.id));
-  const foodMatch=(eatingOut&&settings.food.includes('eating_out')) || (alcohol>0&&settings.food.includes('alcohol')) || (snacks&&settings.food.includes('snacks')) || custom.some(e=>e.category==='food');
+  const foodMatch=(eatingOut&&settings.food.includes('eating_out')) || (alcohol>0&&settings.food.includes('alcohol')) || (noSnacks&&settings.food.includes('no_snacks')) || custom.some(e=>e.category==='food');
   const otherMatch=events.some(id=>settings.other.includes(id)) || (sleepNotable&&settings.other.includes('short_sleep')) || custom.some(e=>e.category==='other');
   const exerciseMatch=settings.exercise.some(key=>exerciseAvailable[key]);
   const prevDetails=events.map(eventLabel);
   if(alcohol>0)prevDetails.push(`Alcohol ${alcohol>=2?'2+':alcohol}`);
-  if(snacks)prevDetails.push('Snacks');
+  if(noSnacks)prevDetails.push('No snacks');
+  else if(prev.food.noSnack===false&&!prev.skips?.noSnack)prevDetails.push('Had snacks');
   if(hunger!=null)prevDetails.push(`Hunger ${hunger}/5`);
   if(exerciseNotable){
     const exercise=[];
@@ -864,8 +868,8 @@ function weightPointContext(weightDate){
     if(exerciseAvailable.strength)exercise.push(`Strength ${Math.round(strength)}m`);
     if(exercise.length)prevDetails.push(exercise.join(' · '));
   }
-  if(sleepNotable)prevDetails.push(`Sleep ${sleep.toFixed(1).replace('.0','')}h (last night)`);
-  return {prevDate,eatingOut,alcohol,snacks,hunger,steps,cardio,strength,sleep,exerciseNotable,sleepNotable,prevDetails,
+  // Sleep is logged on the weigh-in morning, not on the previous calendar day.
+  return {prevDate,eatingOut,alcohol,noSnacks,hunger,steps,cardio,strength,sleep,exerciseNotable,sleepNotable,prevDetails,
     markers:{food:foodMatch,hunger:hunger!=null&&hunger>=settings.hungerMin,exercise:exerciseMatch,other:otherMatch}};
 }
 function contextMarkersSvg(d,x,markerTop,rowGap){
@@ -946,8 +950,9 @@ function renderChart(data,forecast){
 function chartTipHtml(d){
   if(!d) return '';
   const c=weightPointContext(d.date);
-  const context=c.prevDetails.length?`<span class="tip-context-inline">· Previous day ${fmtShortDate(c.prevDate)} (sleep: same morning) · ${escapeHtml(c.prevDetails.join(' · '))}</span>`:'';
-  return `<b>${fmtShortDate(d.date)}</b><span>${fmt(d.weight)} kg</span>${context}`;
+  const context=c.prevDetails.length?`<span class="tip-context-inline">· ${fmtShortDate(c.prevDate)} logs · ${escapeHtml(c.prevDetails.join(' · '))}</span>`:'';
+  const sleepContext=c.sleepNotable?`<span class="tip-context-inline">· Last night sleep ${fmt(c.sleep)}h</span>`:'';
+  return `<b>${fmtShortDate(d.date)}</b><span>${fmt(d.weight)} kg</span>${context}${sleepContext}`;
 }
 function weeklyTargetFor(g,id){
   const p=planForGoal(g);
@@ -1273,13 +1278,13 @@ function goalReviewPack(g){
       bedtimeHunger:{scale:'1-5',meaning:'1 = low hunger; 5 = very hungry',use:'Track-only context. Higher hunger is NOT success; use it to judge whether the diet may be too aggressive or hard to sustain.'},
       lastNightSleepHours:{meaning:'Sleep during the night immediately before the morning weight recorded on the same date.'},
       alcohol:{values:'none / 1 / 2+',meaning:'Alcohol consumed on that calendar day.'},
-      snacks:{source:'food.noSnack === false',meaning:'Automatically derives snacks from the existing No snacks tracker. Missing value is unknown. No separate Snacks life-event input; do not infer causation.'},
+      noSnacks:{source:'food.noSnack === true, not marked N/A',meaning:'Shows a chart marker on the next morning weight for the day explicitly logged No snacks. False or missing never creates this marker; no separate Snacks event.'},
       sevenDayAverage:{meaning:'Calendar-based 7-day weight average used for trend context, not adherence.'},
       period:{meaning:'Period is a life-event context tag, not an adherence metric.'}
     },
     timingGuide:{
       morningWeight:'Weight is recorded in the morning.',
-      previousDayContext:'When looking for possible short-term context for morning weight on date D, consider eating out, alcohol, snacks, bedtime hunger and exercise from D-1.',
+      previousDayContext:'Selected logs for eating out, alcohol, no snacks, bedtime hunger, exercise and events on D-1 appear below morning weight D. Sleep from the night D-1 to D belongs to morning D. These are context, not causes.',
       sleepAlignment:'lastNightSleepHours on date D refers to the sleep during D-1 → D, immediately before that morning weight.',
       interpretation:'Context may help explain patterns but is not proof of causation. Prefer repeated or multi-day patterns over one-day explanations.'
     },
@@ -1400,18 +1405,18 @@ function chartSettingsPage(){
     const extra=['food','other'].includes(group)?db.customEvents.filter(e=>e.active&&e.category===group):[];
     return `<div class="chart-source-panel">${choices.map(([id,label])=>chartChoice(group,id,label)).join('')}${extra.map(e=>chartChoice('custom',e.id,e.label+' · custom')).join('')}${extra.length?'<div class="setting-helper">Custom names are shared with Life events.</div>':''}${group==='hunger'?`<div class="chart-threshold">Show when hunger is ${[3,4,5].map(v=>`<button data-hunger-min="${v}" class="${db.chartSettings.hungerMin===v?'on':''}">${v}+</button>`).join('')}</div>`:''}${['food','other'].includes(group)?'<button class="quiet-link" data-action="manageCustom">Manage custom events ›</button>':''}</div>`;
   };
-  return `${topbar('Chart settings','',`<button class="btn secondary save-top" data-action="backProgress">Done</button>`)}
-    <div class="insight chart-hint">Choose up to two categories. These settings change <b>only the dots</b> on the chart, not your daily records or Goals.</div>
+  return `${topbar('Chart settings','',`<button class="btn secondary save-top" data-action="backProgress">Done</button>`)}${flashHtml()}
+    <div class="insight chart-hint">Choose up to two categories to show under each weigh-in. Selecting a third replaces the first selected category; daily logs and Goals stay unchanged.</div>
     <section class="card chart-settings-card"><div class="row between"><div class="actual-label">Context markers</div><span class="small">${selected.length}/2</span></div>
-      ${CHART_GROUPS.map(g=>`<div class="chart-group"><button data-chart-category="${g.id}" class="chart-group-row ${selected.includes(g.id)?'on':''}" aria-pressed="${selected.includes(g.id)}" ${!selected.includes(g.id)&&selected.length>=2?'disabled':''}><span class="ctx-dot ${g.dot}"></span><span>${g.name}</span><span class="chart-select-indicator">${selected.includes(g.id)?'✓':selected.length>=2?'Max 2':'○'}</span></button>${sourcePanel(g.id,g.id==='food'?CHART_FOOD:g.id==='exercise'?CHART_EXERCISE:g.id==='other'?CHART_OTHER:[])}</div>`).join('')}
-    </section><div class="small chart-footnote">Snacks uses the existing No snacks record (false = snacks; unanswered = unknown). Eating out never means “ate more.” Period is optional context, not a weight correction. Context is not proof of cause.</div>`;
+      ${CHART_GROUPS.map(g=>`<div class="chart-group"><button data-chart-category="${g.id}" class="chart-group-row ${selected.includes(g.id)?'on':''}" aria-pressed="${selected.includes(g.id)}"><span class="ctx-dot ${g.dot}"></span><span>${g.name}</span><span class="chart-select-indicator">${selected.includes(g.id)?'✓':selected.length>=2?'Replace':'○'}</span></button>${sourcePanel(g.id,g.id==='food'?CHART_FOOD:g.id==='exercise'?CHART_EXERCISE:g.id==='other'?CHART_OTHER:[])}</div>`).join('')}
+    </section><div class="small chart-footnote">No snacks dot = explicitly logged No snacks on the previous day. Had snacks, Not logged and N/A do not create it. Eating out does not mean “ate more.” Period is optional context, not a weight correction or proof of causation.</div>`;
 }
 function customEventsPage(){
   const active=db.customEvents.filter(e=>e.active),removed=db.customEvents.filter(e=>!e.active);
-  const row=e=>`<div class="custom-manage-row"><div class="custom-manage-name">${escapeHtml(e.label)}</div><select data-custom-category="${escapeHtml(e.id)}" aria-label="Group for ${escapeHtml(e.label)}"><option value="other" ${e.category==='other'?'selected':''}>Other</option><option value="food" ${e.category==='food'?'selected':''}>Food</option></select><button class="quiet-link custom-remove" data-archive-event="${escapeHtml(e.id)}" aria-label="Remove ${escapeHtml(e.label)}">Remove</button></div>`;
+  const row=e=>`<div class="custom-manage-row"><div class="custom-manage-name">${escapeHtml(e.label)}</div><select data-custom-category="${escapeHtml(e.id)}" aria-label="Chart category for ${escapeHtml(e.label)}"><option value="other" ${e.category==='other'?'selected':''}>Other</option><option value="food" ${e.category==='food'?'selected':''}>Diet</option></select><button class="quiet-link custom-remove" data-archive-event="${escapeHtml(e.id)}" aria-label="Remove ${escapeHtml(e.label)}">Remove</button></div>`;
   return `${topbar('Custom events','',`<button class="btn secondary save-top" data-action="backFromCustom">Done</button>`)}${flashHtml()}
     <section class="card"><div class="actual-label">Your custom events <span class="small">· ${active.length}</span></div>
-      <div class="small" style="margin-bottom:9px">One list shared by Life events and Chart settings. Change an event's group here to choose where its chart dot belongs.</div>
+      <div class="small" style="margin-bottom:9px">Each event starts in Other. Change its chart category to Diet here if you want. These choices do not change your past records.</div>
       ${active.length?active.map(row).join(''):'<div class="small">No custom events yet. Add one in a day’s Life events.</div>'}
     </section><div class="insight">Remove hides a name from future choices and chart settings. Past dated records stay in your history and JSON backups.</div>
     ${removed.length?`<details class="card removed-custom"><summary>Removed events · ${removed.length}</summary>${removed.map(e=>`<div class="custom-manage-row"><div class="custom-manage-name">${escapeHtml(e.label)}</div><button class="quiet-link" data-restore-event="${escapeHtml(e.id)}">Restore</button></div>`).join('')}</details>`:''}`;
@@ -1426,7 +1431,7 @@ function addCustomEvent(){
   const input=document.getElementById('customEvent');
   const label=String(input?.value||'').trim().replace(/\s+/g,' ').slice(0,40);
   if(!label)return;
-  const category=document.getElementById('customEventCategory')?.value==='food'?'food':'other';
+  const category='other'; // Single-input add: choose chart category later in Manage custom.
   const reserved=[...EVENTS.map(e=>e.en),...EVENTS.map(e=>e.id),'Alcohol','Snacks','Bedtime hunger','Exercise','Short sleep'];
   if(reserved.some(x=>x.toLowerCase()===label.toLowerCase())){flash='Already a built-in event or tracker. Use its existing control.';render();return;}
   let found=db.customEvents.find(e=>e.label.toLowerCase()===label.toLowerCase());
@@ -1447,7 +1452,14 @@ function removeCustomEvent(id){
 }
 function restoreCustomEvent(id){const e=db.customEvents.find(x=>x.id===id);if(!e)return;e.active=true;save('Custom event restored.');}
 function changeCustomCategory(id,category){const e=db.customEvents.find(x=>x.id===id&&x.active);if(!e||!['food','other'].includes(category))return;e.category=category;save();}
-function toggleChartCategory(group){if(!CHART_GROUPS.some(g=>g.id===group))return;const a=db.chartSettings.categories;db.chartSettings.categories=a.includes(group)?a.filter(x=>x!==group):a.length<2?[...a,group]:a;save();}
+function toggleChartCategory(group){
+  if(!CHART_GROUPS.some(g=>g.id===group))return;
+  const a=db.chartSettings.categories;
+  if(a.includes(group)){db.chartSettings.categories=a.filter(x=>x!==group);flash='';}
+  else if(a.length<2){db.chartSettings.categories=[...a,group];flash='';}
+  else {const replaced=a[0];db.chartSettings.categories=[a[1],group];flash=`${CHART_GROUPS.find(g=>g.id===group).name} now shown; replaced ${CHART_GROUPS.find(g=>g.id===replaced).name}.`;}
+  save();
+}
 function toggleChartSource(group,id,checked){
   const valid={food:CHART_FOOD.map(x=>x[0]),exercise:CHART_EXERCISE.map(x=>x[0]),other:CHART_OTHER.map(x=>x[0]),custom:db.customEvents.filter(e=>e.active).map(e=>e.id)};
   if(!valid[group]?.includes(id))return;
@@ -1492,6 +1504,7 @@ function saveInputsFromDOM(){
   });
 }
 function setFood(key,val){ const d=day(view==='day'?selected:today()); d.food[key]=val; d.skips[key]=false; save(); }
+function setNoSnack(value){const d=day(view==='day'?selected:today());d.food.noSnack=value==='null'?null:value==='true';d.skips.noSnack=false;save();}
 function toggleFood(key){ const d=day(view==='day'?selected:today()); d.food[key]=d.food[key]===true?false:true; d.skips[key]=false; save(); }
 function toggleMove(key){ const d=day(view==='day'?selected:today()); d.move[key]=d.move[key]===true?false:true; d.skips[key]=false; save(); }
 function toggleSkip(id){ const d=day(view==='day'?selected:today()); d.skips[id]=!d.skips[id]; save(); }
@@ -1599,6 +1612,7 @@ function bind(){
   }));
   document.querySelectorAll('[data-set-food]').forEach(b=>b.addEventListener('click',()=>setFood(b.dataset.setFood,+b.dataset.value)));
   document.querySelectorAll('[data-toggle-food]').forEach(b=>b.addEventListener('click',()=>toggleFood(b.dataset.toggleFood)));
+  document.querySelectorAll('[data-no-snack]').forEach(b=>b.addEventListener('click',()=>setNoSnack(b.dataset.noSnack)));
   document.querySelectorAll('[data-toggle-move]').forEach(b=>b.addEventListener('click',()=>toggleMove(b.dataset.toggleMove)));
   document.querySelectorAll('[data-toggle-skip]').forEach(b=>b.addEventListener('click',()=>toggleSkip(b.dataset.toggleSkip)));
   document.querySelectorAll('[data-tracker-role]').forEach(b=>b.addEventListener('click',()=>setTrackerRole(b.dataset.trackerRole,b.dataset.role)));
