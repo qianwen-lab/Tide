@@ -1,6 +1,6 @@
 const STORAGE_KEY = 'tide.v1';
-const VERSION = '9.1.0';
-const SCHEMA_VERSION = 13;
+const VERSION = '9.2.0';
+const SCHEMA_VERSION = 13; // No user-record schema change; only chart preference ID is migrated.
 
 const COLORS = { sage:'#5E836F', sageDeep:'#244C3E', pink:'#C98994', pinkSoft:'#EBCFD4', blue:'#8C918D', ink:'#1F2823' };
 const iso = d => {
@@ -284,7 +284,7 @@ const defaults = {
   goal:{id:`goal-${today()}-active`,name:'Back to 50',start:today(),end:addDays(today(),31),startWeight:52.7,target:50,status:'active',focus:'both',trackers:defaultTrackersForFocus('both',today()),review:blankReview(),reviews:[]},
   days:{},
   customEvents:[],
-  chartSettings:{categories:['food','hunger'],food:['eating_out','alcohol','no_snacks'],exercise:['steps','cardio','strength'],other:['period','travel','party','vacation','poor_sleep','sick','short_sleep'],custom:[],hungerMin:4},
+  chartSettings:{categories:['food','hunger'],food:['eating_out','alcohol','snacks'],exercise:['steps','cardio','strength'],other:['period','travel','party','vacation','poor_sleep','sick','short_sleep'],custom:[],hungerMin:4},
   plan:{veg:3,fruit:2,noSnack:true,stop:'18:00',satiety:7,water:2,stepsTarget:10000,stepsDays:5,stretchDays:5,cardio:90,strength:60,strengthSessions:2},
   goals:[]
 };
@@ -350,10 +350,10 @@ function migrate(raw){
   const cats=['food','hunger','exercise','other'];
   const groups=opts(cs.categories,cats,defaults.chartSettings.categories).slice(0,2);
   const activeCustom=out.customEvents.filter(e=>e.active).map(e=>e.id);
-  // In V9.0 the old 'snacks' source meant eating snacks. V9.1 changes the chart
-  // to explicitly logged NO snacks, preserving the user's source preference.
-  const foodSources=Array.isArray(cs.food)?cs.food.map(x=>x==='snacks'?'no_snacks':x):null;
-  out.chartSettings={categories:groups,food:opts(foodSources,['eating_out','alcohol','no_snacks'],defaults.chartSettings.food),exercise:opts(cs.exercise,['steps','cardio','strength'],defaults.chartSettings.exercise),other:opts(cs.other,['period','travel','party','vacation','poor_sleep','sick','short_sleep'],defaults.chartSettings.other),custom:opts(cs.custom,activeCustom,[]),hungerMin:[3,4,5].includes(+cs.hungerMin)?+cs.hungerMin:4};
+  // V9.2 restores the intended 'Snacks = ate snacks' source. Preserve selections
+  // made in V9.1 ('no_snacks') and older V9.0 ('snacks') without changing logs.
+  const foodSources=Array.isArray(cs.food)?cs.food.map(x=>x==='no_snacks'?'snacks':x):null;
+  out.chartSettings={categories:groups,food:opts(foodSources,['eating_out','alcohol','snacks'],defaults.chartSettings.food),exercise:opts(cs.exercise,['steps','cardio','strength'],defaults.chartSettings.exercise),other:opts(cs.other,['period','travel','party','vacation','poor_sleep','sick','short_sleep'],defaults.chartSettings.other),custom:opts(cs.custom,activeCustom,[]),hungerMin:[3,4,5].includes(+cs.hungerMin)?+cs.hungerMin:4};
   out.schemaVersion=SCHEMA_VERSION; out.version=SCHEMA_VERSION;
   return out;
 }
@@ -735,7 +735,7 @@ function robustRecentSlope(rows){
   return slopes.length>=3?median(slopes):null;
 }
 function goalForecast(){
-  const records=latestWeights(db.goal.end).filter(r=>r.date>=db.goal.start&&r.date<=today());
+  const records=latestWeights(today()).filter(r=>r.date>=db.goal.start&&r.date<=today());
   if(records.length<5) return {ready:false,reason:'Log 5 weights to see a projection.'};
   const covered=(parseDate(records[records.length-1].date)-parseDate(records[0].date))/86400000;
   if(covered<7) return {ready:false,reason:'A projection needs a week of data.'};
@@ -790,9 +790,16 @@ function forecastMessage(f){
   return 'Recent trend is too flat or rising for a date estimate.';
 }
 
+function goalDeadlineCard(f){
+  const end=db.goal.end, now=today(), recorded=readDay(end);
+  const hasActual=end<=now && recorded.weight!=null && Number.isFinite(+recorded.weight);
+  if(end<now) return {label:`${fmtDate(end,'en')} · ${hasActual?'Actual':'No weigh-in'}`, value:hasActual?`${fmt(recorded.weight)} kg`:'No weigh-in recorded'};
+  if(end===now) return {label:hasActual?'Today · Actual':'Today · No weigh-in',value:hasActual?`${fmt(recorded.weight)} kg`:'No weigh-in yet'};
+  return {label:`By ${fmtDate(end,'en')} · Forecast`, value:f.ready?`${fmt(f.projectedEnd)} kg`:'—'};
+}
 function changePage(){
   const series=chartData();
-  const lw=latestWeight(today()); const f=goalForecast();
+  const lw=latestWeight(today()); const f=goalForecast(), deadline=goalDeadlineCard(f);
   const desc=lw?`${tr('actualWeight')} ${fmt(lw.weight)} kg`:tr('noRecord');
   return `${topbar(tr('weightChange'))}
     <section class="card change-goal-card">
@@ -800,10 +807,9 @@ function changePage(){
       <div class="small" style="margin-top:8px">${desc}</div>
       <div class="chart-heading-row"><div class="legend"><span><span class="legend-line actual-line"></span>${tr('actualWeight')}</span><span><span class="legend-line goal-line"></span>${tr('goalLine')}</span><span><span class="legend-line forecast-line"></span>Forecast</span></div><button class="quiet-link chart-customize" data-action="chartSettings">⚙ Customize</button></div>
       <div class="chart-wrap">${renderChart(series,f)}</div>
-      <div class="chart-context-note">Dots below the graph reflect selected logs from the day <b>before</b> each morning weigh-in, not proven causes. Sleep refers to the night before that weigh-in.</div>
     </section>
     <section class="forecast-grid compact-forecast">
-      <div class="forecast-card pink"><div class="small">By ${fmtDate(db.goal.end,'en')}</div><div class="forecast-value">${f.ready?fmt(f.projectedEnd):'—'} <span>kg</span></div></div>
+      <div class="forecast-card pink"><div class="small">${deadline.label}</div><div class="forecast-value">${deadline.value}</div></div>
       <div class="forecast-card green"><div class="small">Reach ${fmt(db.goal.target)}</div><div class="forecast-text">${f.ready&&f.targetDate?fmtDate(f.targetDate,'en'):f.ready?(f.reachStatus==='beyond'?'> 120 days':'No date yet'):'—'}</div></div>
     </section>
     <div class="insight forecast-insight">${forecastMessage(f)}</div>
@@ -816,7 +822,7 @@ function changePage(){
 }
 function chartData(){
   // Change is a goal-centric view: existing data begins at goal start and the chart always ends at goal end.
-  return latestWeights(db.goal.end).filter(x=>x.date>=db.goal.start && x.date<=today()).map(x=>({date:x.date,weight:+x.weight,avg:goalMovingAverage(x.date)}));
+  return latestWeights(today()).filter(x=>x.date>=db.goal.start && x.date<=today()).map(x=>({date:x.date,weight:+x.weight,avg:goalMovingAverage(x.date)}));
 }
 function smoothSvgPath(points){
   if(!points.length) return '';
@@ -834,7 +840,7 @@ function smoothSvgPath(points){
 }
 function readDay(s){ return mergeDay({...((db.days||{})[s]||{}),date:s}); }
 const CHART_GROUPS=[{id:'food',name:'Diet',dot:'social'},{id:'hunger',name:'Bedtime hunger',dot:'hunger'},{id:'exercise',name:'Exercise',dot:'exercise'},{id:'other',name:'Other context',dot:'other'}];
-const CHART_FOOD=[['eating_out','Eating out'],['alcohol','Alcohol'],['no_snacks','No snacks · from daily log']];
+const CHART_FOOD=[['eating_out','Eating out'],['alcohol','Alcohol'],['snacks','Snacks · from daily log']];
 const CHART_EXERCISE=[['steps','10k steps'],['cardio','Cardio'],['strength','Strength']];
 const CHART_OTHER=[['period','Period'],['travel','Travel'],['party','Party'],['vacation','Vacation'],['poor_sleep','Poor sleep'],['sick','Sick'],['short_sleep','Short sleep · <6h']];
 function weightPointContext(weightDate){
@@ -843,7 +849,7 @@ function weightPointContext(weightDate){
   const events=prev.events.map(eventId);
   const eatingOut=events.includes('eating_out');
   const alcohol=prev.alcohol==null?null:+prev.alcohol;
-  const noSnacks=prev.food.noSnack===true && !prev.skips?.noSnack; // Explicit NO snacks on D-1 only; missing/false/N-A never match.
+  const hadSnacks=prev.food.noSnack===false && !prev.skips?.noSnack; // D-1 explicit Had snacks ONLY; true, null and N/A do not match.
   const hunger=prev.food.bedtimeHunger==null?null:+prev.food.bedtimeHunger;
   const steps=prev.move.steps==null?null:+prev.move.steps;
   const cardio=prev.move.cardio==null?null:+prev.move.cardio;
@@ -853,13 +859,13 @@ function weightPointContext(weightDate){
   const exerciseNotable=Object.values(exerciseAvailable).some(Boolean);
   const sleepNotable=sleep!=null&&sleep<6;
   const custom=db.customEvents.filter(e=>e.active&&settings.custom.includes(e.id)&&events.includes(e.id));
-  const foodMatch=(eatingOut&&settings.food.includes('eating_out')) || (alcohol>0&&settings.food.includes('alcohol')) || (noSnacks&&settings.food.includes('no_snacks')) || custom.some(e=>e.category==='food');
+  const foodMatch=(eatingOut&&settings.food.includes('eating_out')) || (alcohol>0&&settings.food.includes('alcohol')) || (hadSnacks&&settings.food.includes('snacks')) || custom.some(e=>e.category==='food');
   const otherMatch=events.some(id=>settings.other.includes(id)) || (sleepNotable&&settings.other.includes('short_sleep')) || custom.some(e=>e.category==='other');
   const exerciseMatch=settings.exercise.some(key=>exerciseAvailable[key]);
   const prevDetails=events.map(eventLabel);
   if(alcohol>0)prevDetails.push(`Alcohol ${alcohol>=2?'2+':alcohol}`);
-  if(noSnacks)prevDetails.push('No snacks');
-  else if(prev.food.noSnack===false&&!prev.skips?.noSnack)prevDetails.push('Had snacks');
+  if(hadSnacks)prevDetails.push('Snacks');
+  else if(prev.food.noSnack===true&&!prev.skips?.noSnack)prevDetails.push('No snacks');
   if(hunger!=null)prevDetails.push(`Hunger ${hunger}/5`);
   if(exerciseNotable){
     const exercise=[];
@@ -869,7 +875,7 @@ function weightPointContext(weightDate){
     if(exercise.length)prevDetails.push(exercise.join(' · '));
   }
   // Sleep is logged on the weigh-in morning, not on the previous calendar day.
-  return {prevDate,eatingOut,alcohol,noSnacks,hunger,steps,cardio,strength,sleep,exerciseNotable,sleepNotable,prevDetails,
+  return {prevDate,eatingOut,alcohol,hadSnacks,hunger,steps,cardio,strength,sleep,exerciseNotable,sleepNotable,prevDetails,
     markers:{food:foodMatch,hunger:hunger!=null&&hunger>=settings.hungerMin,exercise:exerciseMatch,other:otherMatch}};
 }
 function contextMarkersSvg(d,x,markerTop,rowGap){
@@ -884,20 +890,27 @@ function contextLegendHtml(){
 
 function renderChart(data,forecast){
   if(data.length<2) return `<div class="empty">Log at least two weights to see the chart.</div>`;
-  const W=340,H=264,L=48,R=12,Tp=24,labelBand=26,axisGap=10,markerRows=Math.max(1,db.chartSettings.categories.length),markerRowGap=9,markerBand=markerRows*markerRowGap;
+  const W=340,H=264,L=48,R=16,Tp=24,labelBand=26,axisGap=10,markerRows=Math.max(1,db.chartSettings.categories.length),markerRowGap=9,markerBand=markerRows*markerRowGap;
   const axisY=H-labelBand-axisGap;
   const markerTop=axisY-markerBand+2;
   const plotBottom=markerTop-6;
   const last=data[data.length-1], lastDate=last.date;
+  // Extend the x-axis only when the deadline is reached/passed. Future projections
+  // must appear to the right of the last real weigh-in, never inside historical dates.
+  const daysUntilTarget=forecast?.targetDate ? Math.round((parseDate(forecast.targetDate)-parseDate(lastDate))/86400000) : null;
+  const extraDays=forecast?.ready && db.goal.end<=lastDate ? Math.min(30,Math.max(14,daysUntilTarget||14)) : 0;
+  const chartEnd=[db.goal.end,lastDate,addDays(lastDate,extraDays)].sort().at(-1);
+  const futureDays=Math.max(0,Math.round((parseDate(chartEnd)-parseDate(lastDate))/86400000));
   const vals=data.map(d=>d.weight).filter(v=>v!=null); vals.push(+db.goal.target);
   if(forecast?.ready){
     vals.push(forecast.projectedEnd);
+    if(futureDays>0) vals.push(forecast.forecastValue(futureDays));
     const pastSamples=Math.min(20,Math.max(6,forecast.elapsed+1));
     for(let i=0;i<pastSamples;i++) vals.push(forecast.backcastValue(forecast.elapsed*i/(pastSamples-1)));
   }
   let min=Math.floor(Math.min(...vals)-.35), max=Math.ceil(Math.max(...vals)+.35); if(max-min<3){min-=1;max+=1;}
   const span=max-min, tickStep=span<=6?1:2;
-  const startD=parseDate(db.goal.start), endD=parseDate(db.goal.end), totalDays=Math.max(1,(endD-startD)/86400000);
+  const startD=parseDate(db.goal.start), endD=parseDate(chartEnd), totalDays=Math.max(1,(endD-startD)/86400000);
   const xDate=date=>L+clamp((parseDate(date)-startD)/86400000/totalDays,0,1)*(W-L-R);
   const y=v=>Tp+(max-v)/(max-min)*(plotBottom-Tp);
   let grid='';
@@ -917,35 +930,25 @@ function renderChart(data,forecast){
   const pointCoords=data.map(d=>({x:xDate(d.date),y:y(d.weight)}));
   const points=data.map((d,i)=>`<circle class="point" cx="${pointCoords[i].x}" cy="${pointCoords[i].y}" r="2"></circle>`).join('');
   const hitBands=data.map((d,i)=>{
-    const x=pointCoords[i].x;
-    const left=i===0?Math.max(L,x-14):(pointCoords[i-1].x+x)/2;
-    const right=i===pointCoords.length-1?Math.min(W-R,x+14):(x+pointCoords[i+1].x)/2;
-    const width=Math.max(24,right-left);
-    const xx=Math.max(L, Math.min(W-R-width, (left+right-width)/2));
-    return `<rect class="point-hit" data-chart-index="${i}" x="${xx.toFixed(1)}" y="${Tp}" width="${width.toFixed(1)}" height="${(axisY-Tp+8).toFixed(1)}"></rect>`;
+    const left=i===0?L:(pointCoords[i-1].x+pointCoords[i].x)/2;
+    const right=i===pointCoords.length-1?W-R:(pointCoords[i].x+pointCoords[i+1].x)/2;
+    return `<rect class="point-hit" data-chart-index="${i}" x="${left.toFixed(1)}" y="${Tp}" width="${Math.max(0,right-left).toFixed(1)}" height="${(axisY-Tp+8).toFixed(1)}" tabindex="0" role="button" aria-label="Show weight for ${fmtDate(d.date)}"></rect>`;
   }).join('');
   const contextMarks=data.map((d,i)=>contextMarkersSvg(d,pointCoords[i].x,markerTop,markerRowGap)).join('');
 
-  // One pink trajectory from goal start through today and on to goal end.
-  // Historical section uses the internal smoothed trend; future section uses the damped projection.
+  // Forecast is future-only and begins at the LAST ACTUAL dot. Historical
+  // model backcasts are not presented as though they were future predictions.
   let projectionPath='';
-  if(forecast?.ready){
-    const trajectory=[];
-    const anchorDate=forecast.lastDate;
-    const pastCount=Math.min(20,Math.max(6,forecast.elapsed+1));
-    for(let i=0;i<pastCount;i++){
-      const d=Math.round(forecast.elapsed*i/(pastCount-1));
-      trajectory.push({date:addDays(db.goal.start,d),value:forecast.backcastValue(d)});
-    }
-    const horizon=Math.max(0,Math.round((parseDate(db.goal.end)-parseDate(anchorDate))/86400000));
-    const step=Math.max(1,Math.round(horizon/14));
-    for(let d=step;d<=horizon;d+=step) trajectory.push({date:addDays(anchorDate,d),value:forecast.forecastValue(d)});
-    if(horizon>0 && trajectory[trajectory.length-1]?.date!==db.goal.end) trajectory.push({date:db.goal.end,value:forecast.projectedEnd});
-    const pts=trajectory.filter((p,i,a)=>i===0||p.date!==a[i-1].date).map(p=>[xDate(p.date),y(p.value)]);
-    projectionPath=`<path class="forecast" d="${smoothSvgPath(pts)}"/>`;
+  if(forecast?.ready && futureDays>0){
+    const trajectory=[{date:lastDate,value:last.weight}];
+    const step=Math.max(1,Math.floor(futureDays/18));
+    for(let d=step;d<=futureDays;d+=step) trajectory.push({date:addDays(lastDate,d),value:forecast.forecastValue(d)});
+    if(trajectory.at(-1)?.date!==chartEnd) trajectory.push({date:chartEnd,value:forecast.forecastValue(futureDays)});
+    projectionPath=`<path class="forecast" d="${smoothSvgPath(trajectory.map(p=>[xDate(p.date),y(p.value)]))}"/>`;
   }
   const guideX=xDate(lastDate);
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Current goal weight chart"><text x="4" y="13" class="axis-unit">kg</text>${grid}<line class="axis" x1="${L}" y1="${Tp}" x2="${L}" y2="${axisY}"/><line class="axis" x1="${L}" y1="${axisY}" x2="${W-R}" y2="${axisY}"/><line class="goal" x1="${L}" y1="${goalY}" x2="${W-R}" y2="${goalY}"/><line id="chartGuide" class="guide" x1="${guideX}" y1="${Tp}" x2="${guideX}" y2="${axisY}"/>${projectionPath}<path class="actual" d="${actualPath}"/>${contextMarks}${points}${hitBands}${xLabels}</svg>${contextLegendHtml()}<div id="chartTip" class="tooltip">${chartTipHtml(last)}</div>`;
+  const info=`<div class="chart-context-row">${contextLegendHtml()}<details class="chart-info-wrap"><summary aria-label="About chart markers" title="About chart markers">ⓘ</summary><div class="chart-info-popover"><b>About the dots</b><br>Dots show selected logs from the day before each morning weigh-in, not proven causes.<br>Sleep refers to the night before that weigh-in.</div></details></div>`;
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Weight chart. Tap any actual weigh-in to view its date and logs"><text x="4" y="13" class="axis-unit">kg</text>${grid}<line class="axis" x1="${L}" y1="${Tp}" x2="${L}" y2="${axisY}"/><line class="axis" x1="${L}" y1="${axisY}" x2="${W-R}" y2="${axisY}"/><line class="goal" x1="${L}" y1="${goalY}" x2="${W-R}" y2="${goalY}"/><line id="chartGuide" class="guide" x1="${guideX}" y1="${Tp}" x2="${guideX}" y2="${axisY}"/>${projectionPath}<path class="actual" d="${actualPath}"/>${contextMarks}${points}${hitBands}${xLabels}</svg>${info}<div id="chartTip" class="tooltip" aria-live="polite">${chartTipHtml(last)}</div>`;
 }
 function chartTipHtml(d){
   if(!d) return '';
@@ -1278,13 +1281,13 @@ function goalReviewPack(g){
       bedtimeHunger:{scale:'1-5',meaning:'1 = low hunger; 5 = very hungry',use:'Track-only context. Higher hunger is NOT success; use it to judge whether the diet may be too aggressive or hard to sustain.'},
       lastNightSleepHours:{meaning:'Sleep during the night immediately before the morning weight recorded on the same date.'},
       alcohol:{values:'none / 1 / 2+',meaning:'Alcohol consumed on that calendar day.'},
-      noSnacks:{source:'food.noSnack === true, not marked N/A',meaning:'Shows a chart marker on the next morning weight for the day explicitly logged No snacks. False or missing never creates this marker; no separate Snacks event.'},
+      snacks:{source:'food.noSnack === false, not marked N/A',meaning:'Shows a Diet marker on the next morning weigh-in after an explicitly logged Had snacks day. True, N/A, or missing never creates a Snacks marker. No duplicate event.'},
       sevenDayAverage:{meaning:'Calendar-based 7-day weight average used for trend context, not adherence.'},
       period:{meaning:'Period is a life-event context tag, not an adherence metric.'}
     },
     timingGuide:{
       morningWeight:'Weight is recorded in the morning.',
-      previousDayContext:'Selected logs for eating out, alcohol, no snacks, bedtime hunger, exercise and events on D-1 appear below morning weight D. Sleep from the night D-1 to D belongs to morning D. These are context, not causes.',
+      previousDayContext:'Selected logs for eating out, alcohol, snacks (Had snacks), bedtime hunger, exercise and events on D-1 appear below morning weight D. Sleep from the night D-1 to D belongs to morning D. These are context, not causes.',
       sleepAlignment:'lastNightSleepHours on date D refers to the sleep during D-1 → D, immediately before that morning weight.',
       interpretation:'Context may help explain patterns but is not proof of causation. Prefer repeated or multi-day patterns over one-day explanations.'
     },
@@ -1409,7 +1412,7 @@ function chartSettingsPage(){
     <div class="insight chart-hint">Choose up to two categories to show under each weigh-in. Selecting a third replaces the first selected category; daily logs and Goals stay unchanged.</div>
     <section class="card chart-settings-card"><div class="row between"><div class="actual-label">Context markers</div><span class="small">${selected.length}/2</span></div>
       ${CHART_GROUPS.map(g=>`<div class="chart-group"><button data-chart-category="${g.id}" class="chart-group-row ${selected.includes(g.id)?'on':''}" aria-pressed="${selected.includes(g.id)}"><span class="ctx-dot ${g.dot}"></span><span>${g.name}</span><span class="chart-select-indicator">${selected.includes(g.id)?'✓':selected.length>=2?'Replace':'○'}</span></button>${sourcePanel(g.id,g.id==='food'?CHART_FOOD:g.id==='exercise'?CHART_EXERCISE:g.id==='other'?CHART_OTHER:[])}</div>`).join('')}
-    </section><div class="small chart-footnote">No snacks dot = explicitly logged No snacks on the previous day. Had snacks, Not logged and N/A do not create it. Eating out does not mean “ate more.” Period is optional context, not a weight correction or proof of causation.</div>`;
+    </section><div class="small chart-footnote">Snacks dot = Had snacks explicitly recorded the previous day. No snacks, Not logged and N/A do not trigger it. Eating out does not mean “ate more.” Period is optional context, not a weight correction or proof of causation.</div>`;
 }
 function customEventsPage(){
   const active=db.customEvents.filter(e=>e.active),removed=db.customEvents.filter(e=>!e.active);
@@ -1633,18 +1636,47 @@ function bind(){
   document.querySelectorAll('[data-plan]').forEach(el=>el.addEventListener('change',()=>{saveInputsFromDOM();persist();}));
   const f=document.getElementById('importFile'); if(f) f.addEventListener('change',()=>importData(f.files[0]));
   document.querySelectorAll('[data-review-goal]').forEach(b=>b.addEventListener('click',()=>{reviewGoalId=b.dataset.reviewGoal;reviewDraft=null;reviewComposerOpen=false;view='goalReview';render();}));
-  document.querySelectorAll('[data-chart-index]').forEach(p=>{
-    const update=()=>{
-      const data=chartData(),i=+p.dataset.chartIndex,d=data[i],tip=document.getElementById('chartTip'),guide=document.getElementById('chartGuide');
-      if(tip&&d) tip.innerHTML=chartTipHtml(d);
-      if(guide){
-        const cx=p.getAttribute('cx');
-        const x=cx!=null?cx:(+p.getAttribute('x') + (+p.getAttribute('width')||0)/2);
-        guide.setAttribute('x1',x); guide.setAttribute('x2',x);
+  const chart=document.querySelector('svg.chart');
+  if(chart){
+    const choosePoint=i=>{
+      const d=chartData()[i],tip=document.getElementById('chartTip'),guide=document.getElementById('chartGuide');
+      const point=chart.querySelectorAll('circle.point')[i];
+      if(d&&tip&&point){
+        tip.innerHTML=chartTipHtml(d);
+        if(guide){guide.setAttribute('x1',point.getAttribute('cx'));guide.setAttribute('x2',point.getAttribute('cx'));}
       }
     };
-    p.addEventListener('click',update); p.addEventListener('mouseenter',update); p.addEventListener('touchstart',update,{passive:true});
-  });
+    // Mobile Safari may synthesize its final click several pixels away from the
+    // actual finger position. Select on the real pointer/touch coordinates, and
+    // ignore the later synthetic mouseenter/click (which can select D-1 instead).
+    const chooseNearest=clientX=>{
+      const box=chart.getBoundingClientRect();
+      if(!box.width)return;
+      const x=(clientX-box.left)*340/box.width;
+      const points=[...chart.querySelectorAll('circle.point')];
+      if(x<36||x>336||!points.length)return;
+      const nearest=points.reduce((best,point,i)=>Math.abs(+point.getAttribute('cx')-x)<best.distance?{index:i,distance:Math.abs(+point.getAttribute('cx')-x)}:best,{index:0,distance:Infinity});
+      choosePoint(nearest.index);
+    };
+    let suppressSyntheticClick=false;
+    chart.addEventListener('pointerdown',e=>{
+      if(e.pointerType==='touch'||e.pointerType==='pen'){
+        suppressSyntheticClick=true;chooseNearest(e.clientX);
+      }
+    });
+    chart.addEventListener('touchstart',e=>{
+      if(e.touches.length){suppressSyntheticClick=true;chooseNearest(e.touches[0].clientX);}
+    },{passive:true});
+    chart.addEventListener('click',e=>{
+      if(suppressSyntheticClick){suppressSyntheticClick=false;return;}
+      chooseNearest(e.clientX);
+    });
+    chart.querySelectorAll('[data-chart-index]').forEach(p=>{
+      p.addEventListener('mouseenter',()=>{if(!suppressSyntheticClick)choosePoint(+p.dataset.chartIndex);});
+      p.addEventListener('focus',()=>{if(!suppressSyntheticClick)choosePoint(+p.dataset.chartIndex);});
+      p.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();choosePoint(+p.dataset.chartIndex);}});
+    });
+  }
 }
 
 function render(){
