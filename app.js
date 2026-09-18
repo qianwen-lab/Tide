@@ -1,6 +1,6 @@
 const STORAGE_KEY = 'tide.v1';
-const VERSION = '8.4.0';
-const SCHEMA_VERSION = 11;
+const VERSION = '9.0.0';
+const SCHEMA_VERSION = 12;
 
 const COLORS = { sage:'#5E836F', sageDeep:'#244C3E', pink:'#C98994', pinkSoft:'#EBCFD4', blue:'#8C918D', ink:'#1F2823' };
 const iso = d => {
@@ -262,12 +262,29 @@ function trackerConfig(g,id){ return normalizeTrackers(g,!!g.snapshot)[id]||{rol
 function trackerRole(g,id){ return trackerConfig(g,id).role; }
 function trackerActiveOn(g,id,date){ const c=trackerConfig(g,id); return date>=String(c.activeFrom||g.start||date).slice(0,10) && date>=g.start && date<=(g.ended||g.end); }
 
+const EVENTS=[
+  {id:'eating_out',zh:'Eating out',en:'Eating out'},
+  {id:'travel',zh:'Travel',en:'Travel'},
+  {id:'party',zh:'Party',en:'Party'},
+  {id:'vacation',zh:'Vacation',en:'Vacation'},
+  {id:'poor_sleep',zh:'Poor sleep',en:'Poor sleep'},
+  {id:'period',zh:'Period',en:'Period'},
+  {id:'sick',zh:'Sick',en:'Sick'}
+];
+const LEGACY_EVENT_TO_ID={
+  'Dinner out':'eating_out','Eating out':'eating_out','dinner':'eating_out','Travel':'travel','Party':'party','Long flight':'flight','Vacation':'vacation','Poor sleep':'poor_sleep','Period':'period','Sick':'sick'
+};
+function eventId(v){return LEGACY_EVENT_TO_ID[v]||v;}
+function eventLabel(v){const id=eventId(v);const e=EVENTS.find(x=>x.id===id);if(e)return db.language==='zh'?e.zh:e.en;const custom=db.customEvents?.find(x=>x.id===id);return custom?custom.label:String(v);}
+
 const defaults = {
   schemaVersion:SCHEMA_VERSION,
   version:SCHEMA_VERSION,
   language:'en',
   goal:{id:`goal-${today()}-active`,name:'Back to 50',start:today(),end:addDays(today(),31),startWeight:52.7,target:50,status:'active',focus:'both',trackers:defaultTrackersForFocus('both',today()),review:blankReview(),reviews:[]},
   days:{},
+  customEvents:[],
+  chartSettings:{categories:['food','hunger'],food:['eating_out','alcohol','snacks'],exercise:['steps','cardio','strength'],other:['period','travel','party','vacation','poor_sleep','sick','short_sleep'],custom:[],hungerMin:4},
   plan:{veg:3,fruit:2,noSnack:true,stop:'18:00',satiety:7,water:2,stepsTarget:10000,stepsDays:5,stretchDays:5,cardio:90,strength:60,strengthSessions:2},
   goals:[]
 };
@@ -283,6 +300,8 @@ let reviewGoalId = null;
 let reviewDraft = null;
 let reviewComposerOpen = false;
 let archiveConfirmOpen = false;
+let removeCustomId = null;
+let customReturnView = 'day';
 let dailyThought = chooseDailyThought();
 let thoughtHiddenAt = 0;
 
@@ -316,6 +335,22 @@ function migrate(raw){
   out.goals=Array.isArray(raw.goals)?raw.goals.map((g,i)=>{const x={...g,id:stableGoalId(g,`-${i}`),focus:['diet','exercise','both','other'].includes(g.focus)?g.focus:'both',review:normalizeReview(g.review),planSnapshot:g.planSnapshot?{...g.planSnapshot}:null,snapshot:true};x.trackers=normalizeTrackers(x,true);x.reviews=normalizeReviews(x);return x;}):[];
   out.days={};
   Object.entries(raw.days||{}).forEach(([k,v])=>out.days[k]=mergeDay({...v,date:k}));
+  // Historical free-text events become reusable options without rewriting day records.
+  // Archived IDs stay registered so a removed option is never regenerated from history.
+  const seen=new Set();
+  out.customEvents=(Array.isArray(raw.customEvents)?raw.customEvents:[]).filter(e=>e&&typeof e.id==='string'&&typeof e.label==='string').map(e=>({id:e.id,label:e.label.slice(0,40),category:e.category==='food'?'food':'other',active:e.active!==false})).filter(e=>{if(seen.has(e.id))return false;seen.add(e.id);return true;});
+  for(const rec of Object.values(out.days))for(const value of rec.events){
+    const id=String(value);
+    if(!EVENTS.some(e=>e.id===eventId(id)) && !seen.has(id)){
+      out.customEvents.push({id,label:id.slice(0,40),category:'other',active:true});seen.add(id);
+    }
+  }
+  const cs=raw.chartSettings||{};
+  const opts=(value,allow,fallback)=>Array.isArray(value)?[...new Set(value.filter(x=>allow.includes(x)))]:[...fallback];
+  const cats=['food','hunger','exercise','other'];
+  const groups=opts(cs.categories,cats,defaults.chartSettings.categories).slice(0,2);
+  const activeCustom=out.customEvents.filter(e=>e.active).map(e=>e.id);
+  out.chartSettings={categories:groups,food:opts(cs.food,['eating_out','alcohol','snacks'],defaults.chartSettings.food),exercise:opts(cs.exercise,['steps','cardio','strength'],defaults.chartSettings.exercise),other:opts(cs.other,['period','travel','party','vacation','poor_sleep','sick','short_sleep'],defaults.chartSettings.other),custom:opts(cs.custom,activeCustom,[]),hungerMin:[3,4,5].includes(+cs.hungerMin)?+cs.hungerMin:4};
   out.schemaVersion=SCHEMA_VERSION; out.version=SCHEMA_VERSION;
   return out;
 }
@@ -606,10 +641,13 @@ function lifeEventTagsHtml(d,future=false){
     const alcohol=d.alcohol==null?null:+d.alcohol;
     const alcoholLabel=alcohol>=2?'Alcohol · 2+':alcohol===1?'Alcohol · 1':'Alcohol';
     html+=`<button class="event-chip ${alcohol>0?'on':''}" data-cycle-alcohol>${alcoholLabel}</button>`;
-    const bm=d.bowelMovement;
-    const bmLabel=bm===true?'BM ✓':bm===false?'No BM':'BM';
-    html+=`<button class="event-chip ${bm===true?'on':bm===false?'context-chip-no':''}" data-cycle-bm>${bmLabel}</button>`;
   }
+  // One shared list: the same custom event is used in the day and Chart Settings.
+  const shown=db.customEvents.filter(e=>e.active||d.events.includes(e.id));
+  // Archived names stay visible on historical days, but cannot be accidentally unticked.
+  html+=shown.map(e=>e.active
+    ? `<button class="event-chip ${d.events.includes(e.id)?'on':''}" data-event="${escapeHtml(e.id)}" title="Custom · ${e.category==='food'?'Food':'Other'}">${escapeHtml(e.label)}</button>`
+    : `<span class="event-chip archived-event" title="Historical event · restore in Manage custom events to edit">${escapeHtml(e.label)} · archived</span>`).join('');
   return html;
 }
 
@@ -644,20 +682,6 @@ function calendarPage(){
     </section>`;
 }
 
-const EVENTS=[
-  {id:'eating_out',zh:'Eating out',en:'Eating out'},
-  {id:'travel',zh:'Travel',en:'Travel'},
-  {id:'party',zh:'Party',en:'Party'},
-  {id:'vacation',zh:'Vacation',en:'Vacation'},
-  {id:'poor_sleep',zh:'Poor sleep',en:'Poor sleep'},
-  {id:'period',zh:'Period',en:'Period'},
-  {id:'sick',zh:'Sick',en:'Sick'}
-];
-const LEGACY_EVENT_TO_ID={
-  'Dinner out':'eating_out','Eating out':'eating_out','dinner':'eating_out','Travel':'travel','Party':'party','Long flight':'flight','Vacation':'vacation','Poor sleep':'poor_sleep','Period':'period','Sick':'sick'
-};
-function eventId(v){return LEGACY_EVENT_TO_ID[v]||v;}
-function eventLabel(v){const id=eventId(v);const e=EVENTS.find(x=>x.id===id);return e?(db.language==='zh'?e.zh:e.en):v;}
 function dayPage(){
   const d=day(selected), future=selected>today();
   const title=fmtDate(selected,'en'), sub=future?'Future plan':selected===today()?'Today':'Edit past day';
@@ -668,7 +692,8 @@ function dayPage(){
     main=`<section class="card blue-soft"><div class="actual-label">Morning log</div><div class="two"><label>Weight · kg<input data-day-field="weight" type="number" step="0.1" inputmode="decimal" value="${d.weight??''}"></label><label>Last night's sleep · hours<input data-day-field="sleep" type="number" step="0.1" inputmode="decimal" value="${d.sleep??''}"></label></div></section><section class="card"><div class="actual-label">Actual</div>${actualFoodControls(d)}${plannedMoveStatus(d).planned?`<div class="planned-reference">Planned: ${escapeHtml(plannedMoveStatus(d).label)}</div>`:''}<hr class="sep"><div class="actual-label">Exercise</div>${movementControls(d)}</section>`;
   }
   return `${topbar(title,sub,`<button class="btn sky save-top" data-action="saveDay">Save</button>`)}
-    <section class="card"><div class="actual-label">Life events</div><div class="life-events">${lifeEventTagsHtml(d,future)}</div><label>Custom event</label><div class="row"><input id="customEvent" placeholder="e.g. Eating out with friends"><button class="btn secondary" data-action="addEvent">Add</button></div></section>
+    ${flashHtml()}
+    <section class="card"><div class="row between"><div class="actual-label">Life events</div><button class="quiet-link" data-action="manageCustom">Manage custom ›</button></div><div class="life-events">${lifeEventTagsHtml(d,future)}</div><label>New custom event</label><div class="row"><input id="customEvent" maxlength="40" placeholder="e.g. Hot pot" aria-label="New custom event"><button class="btn secondary" data-action="addEvent">Add</button></div><div class="custom-category-line"><span>Group</span><select id="customEventCategory" aria-label="New event category"><option value="other">Other context</option><option value="food">Food context</option></select></div></section>
     ${main}
     <section class="card"><label>Notes</label><textarea data-day-field="note" rows="3" placeholder="Optional">${escapeHtml(d.note)}</textarea></section>
     <button class="btn sky full" data-action="saveDayBottom">Done</button>`;
@@ -679,73 +704,87 @@ function futurePlanSummary(d){
 }
 function customPlanControls(d){const p=d.customPlan||{};return `<div class="custom-plan"><div class="actual-label">Custom food goals</div><div class="two"><label>Vegetables ≥<input data-day-field="customPlan.veg" type="number" value="${p.veg??db.plan.veg}"></label><label>Fruit ≤<input data-day-field="customPlan.fruit" type="number" value="${p.fruit??db.plan.fruit}"></label><label>Water ≥ L<input data-day-field="customPlan.water" type="number" step="0.1" value="${p.water??db.plan.water}"></label><label>Stop eating time<input data-day-field="customPlan.stop" type="time" value="${p.stop??db.plan.stop}"></label></div><div class="switch-row actual-row"><span>Allow snacks</span><button class="toggle ${p.noSnack===false?'on':''}" data-toggle-custom="allowSnack"></button></div><div class="small plan-helper">Protein is yes/no. Bedtime hunger is observation only and has no custom target.</div><hr class="sep"><div class="actual-label">Custom exercise</div><div class="two"><label>Steps<input data-day-field="customPlan.steps" type="number" value="${p.steps??''}" placeholder="10000"></label><label>Cardio · min<input data-day-field="customPlan.cardio" type="number" value="${p.cardio??''}"></label><label>Strength · min<input data-day-field="customPlan.strength" type="number" value="${p.strength??''}"></label><div style="padding-top:26px"><div class="switch-row"><span>Stretch</span><button class="toggle ${p.stretch===true?'on':''}" data-toggle-custom="stretch"></button></div></div></div></div>`; }
 
-function goalForecast(){
-  const records=latestWeights(db.goal.end).filter(x=>x.date>=db.goal.start && x.date<=today());
-  if(records.length<4) return {ready:false,reason:'Log at least 4 weights before forecasting begins.'};
-
-  // INTERNAL smoothing only: use a calendar-based 7-day mean so one noisy weigh-in does not drive the projection.
-  // It is no longer shown as a separate chart line.
-  let trend=records.map(r=>({date:r.date,value:goalMovingAverage(r.date)??+r.weight}));
-  if(trend[0].date>db.goal.start){
-    trend.unshift({date:db.goal.start,value:activeGoalStartWeight()});
-  } else if(trend[0].date===db.goal.start){
-    trend[0].value=activeGoalStartWeight();
+function median(values){
+  const sorted=values.filter(Number.isFinite).slice().sort((a,b)=>a-b);
+  if(!sorted.length) return null;
+  const mid=Math.floor(sorted.length/2);
+  return sorted.length%2 ? sorted[mid] : (sorted[mid-1]+sorted[mid])/2;
+}
+function robustSevenDayMean(date,records){
+  // Calendar-based 7-day mean; down-weight a single unusually distant reading
+  // for the MODEL only. Actual plotted weights and backups are never changed.
+  const first=addDays(date,-6);
+  const values=records.filter(r=>r.date>=first&&r.date<=date).map(r=>+r.weight).filter(Number.isFinite);
+  if(!values.length) return null;
+  if(values.length<5) return avg(values);
+  const center=median(values), mad=median(values.map(v=>Math.abs(v-center)));
+  const limit=Math.max(.65,3*1.4826*mad);
+  const kept=values.filter(v=>Math.abs(v-center)<=limit);
+  return kept.length>=3?avg(kept):median(values);
+}
+function robustRecentSlope(rows){
+  // Theil-Sen median pairwise slope, spaced to reduce overlapping-window noise.
+  const slopes=[];
+  for(let i=0;i<rows.length;i++) for(let j=i+1;j<rows.length;j++){
+    const gap=(parseDate(rows[j].date)-parseDate(rows[i].date))/86400000;
+    if(gap>=3) slopes.push((rows[j].value-rows[i].value)/gap);
   }
+  return slopes.length>=3?median(slopes):null;
+}
+function goalForecast(){
+  const records=latestWeights(db.goal.end).filter(r=>r.date>=db.goal.start&&r.date<=today());
+  if(records.length<5) return {ready:false,reason:'Log 5 weights to see a projection.'};
+  const covered=(parseDate(records[records.length-1].date)-parseDate(records[0].date))/86400000;
+  if(covered<7) return {ready:false,reason:'A projection needs a week of data.'};
+
+  const trend=records.map(r=>({date:r.date,value:robustSevenDayMean(r.date,records)}));
   const last=trend[trend.length-1];
-
-  // Estimate the CURRENT pace from the recent smoothed trajectory, not raw daily weight.
-  const recentStart=addDays(last.date,-14);
-  let usable=trend.filter(r=>r.date>=recentStart);
-  if(usable.length<4) usable=trend.slice(-8);
-  if(usable.length<4) return {ready:false,reason:'The data window is still too short. Keep logging for a few more days.'};
-  const x0=parseDate(usable[0].date);
-  const xs=usable.map(r=>(parseDate(r.date)-x0)/86400000);
-  const ys=usable.map(r=>+r.value);
-  const mx=avg(xs), my=avg(ys), denom=xs.reduce((a,x)=>a+(x-mx)**2,0);
-  if(!denom) return {ready:false,reason:'The data window is still too short. Keep logging for a few more days.'};
-  let slope=xs.reduce((a,x,i)=>a+(x-mx)*(ys[i]-my),0)/denom;
-  slope=clamp(slope,-0.18,0.10);
-
-  // Future projection is anchored to today's smoothed trajectory and lets the current pace fade over time.
-  // This prevents an unrealistically straight, indefinitely fast weight-loss line.
-  const current=+last.value;
-  const startValue=activeGoalStartWeight();
+  let usable=trend.filter(r=>r.date>=addDays(last.date,-14));
+  if(usable.length<5 || (parseDate(usable[usable.length-1].date)-parseDate(usable[0].date))/86400000<6)
+    usable=trend.filter(r=>r.date>=addDays(last.date,-21));
+  if(usable.length<5) return {ready:false,reason:'Not enough recent weights for a trend.'};
+  const estimate=robustRecentSlope(usable);
+  if(estimate==null) return {ready:false,reason:'More spaced weigh-ins are needed.'};
+  const slope=clamp(estimate,-.12,.08);
+  const current=+last.value, startValue=activeGoalStartWeight();
   const elapsed=Math.max(1,Math.round((parseDate(last.date)-parseDate(db.goal.start))/86400000));
   const overallSlope=(current-startValue)/elapsed;
   const daysToEnd=Math.max(0,Math.round((parseDate(db.goal.end)-parseDate(last.date))/86400000));
-  const damping=0.035;
-  const forecastValue=(days)=>current + slope*(1-Math.exp(-damping*Math.max(0,days)))/damping;
-  const projectedEnd=forecastValue(daysToEnd);
-
-  // Back-trace for the DISPLAYED pink trajectory: a cubic Hermite curve anchored to the
-  // actual goal-start weight and today's smoothed state, with today's recent slope as the end tangent.
-  // This makes the past and future one continuous arc without exposing the 7-day-average line itself.
-  const backcastValue=(daysFromStart)=>{
-    const u=clamp(daysFromStart/elapsed,0,1), u2=u*u, u3=u2*u;
-    const h00=2*u3-3*u2+1, h10=u3-2*u2+u, h01=-2*u3+3*u2, h11=u3-u2;
-    return h00*startValue + h10*elapsed*overallSlope + h01*current + h11*elapsed*slope;
+  // A smooth early slowdown with a modest long-term pace. Unlike pure
+  // exponential damping, the curve does not stop at an artificial asymptote.
+  // Long extrapolations are intentionally NOT given a precise date.
+  const damping=.035, retainedPace=.35, maxEstimateDays=120;
+  const forecastValue=days=>{
+    const d=Math.max(0,days);
+    return current+slope*(retainedPace*d+(1-retainedPace)*(1-Math.exp(-damping*d))/damping);
   };
-
-  let targetDate=null, deltaDays=null;
+  const projectedEnd=forecastValue(daysToEnd);
+  const backcastValue=daysFromStart=>{
+    const u=clamp(daysFromStart/elapsed,0,1),u2=u*u,u3=u2*u;
+    return (2*u3-3*u2+1)*startValue+(u3-2*u2+u)*elapsed*overallSlope+
+      (-2*u3+3*u2)*current+(u3-u2)*elapsed*slope;
+  };
+  let targetDate=null,deltaDays=null,reachStatus='flat';
   if(current<=+db.goal.target){
-    targetDate=last.date;
-  } else if(slope<-.005){
-    for(let d=1;d<=365;d++){
-      if(forecastValue(d)<=+db.goal.target){ targetDate=addDays(last.date,d); break; }
+    targetDate=last.date; reachStatus='reached';
+  }else if(slope<-.007){
+    reachStatus='beyond';
+    for(let d=1;d<=maxEstimateDays;d++) if(forecastValue(d)<=+db.goal.target){
+      targetDate=addDays(last.date,d); reachStatus='estimated'; break;
     }
   }
   if(targetDate) deltaDays=Math.round((parseDate(targetDate)-parseDate(db.goal.end))/86400000);
-  return {ready:true,slope,current,startValue,elapsed,lastDate:last.date,projectedEnd,targetDate,deltaDays,damping,forecastValue,backcastValue,trendWindowStart:usable[0].date,trendPoints:usable.length};
+  return {ready:true,slope,current,startValue,elapsed,lastDate:last.date,projectedEnd,
+    targetDate,deltaDays,reachStatus,damping,forecastValue,backcastValue,
+    trendWindowStart:usable[0].date,trendPoints:usable.length,
+    method:'robust 7-day mean + Theil-Sen trend + slowing projection'};
 }
 function forecastMessage(f){
   if(!f.ready) return f.reason;
-  if(f.targetDate){
-    if(f.deltaDays<=-1) return `${Math.abs(f.deltaDays)} days ahead of pace.`;
-    if(f.deltaDays>=1) return `${f.deltaDays} days behind pace.`;
-    return 'Right on pace.';
-  }
-  if(f.slope>=-.005) return 'Goal date is still unclear. Keep logging.';
-  return 'A few more weigh-ins will steady the forecast.';
+  if(f.reachStatus==='reached') return 'Smoothed weight has reached the target.';
+  if(f.reachStatus==='estimated') return 'Estimate from recent trend · not a deadline.';
+  if(f.reachStatus==='beyond') return 'Target not projected within 120 days.';
+  return 'Recent trend is too flat or rising for a date estimate.';
 }
 
 function changePage(){
@@ -757,11 +796,12 @@ function changePage(){
       <div class="row between"><div><b>${escapeHtml(db.goal.name)}</b><div class="small">${fmtDate(db.goal.start)} → ${fmtDate(db.goal.end)}</div></div><div class="small">${tr('goalLine')} ${fmt(db.goal.target)} kg</div></div>
       <div class="small" style="margin-top:8px">${desc}</div>
       <div class="legend" style="justify-content:flex-start;margin-top:13px"><span><span class="legend-line actual-line"></span>${tr('actualWeight')}</span><span><span class="legend-line goal-line"></span>${tr('goalLine')}</span><span><span class="legend-line forecast-line"></span>Forecast</span></div>
+      <div class="chart-setting-bar"><span class="small">Context appears below each weight · previous day</span><button class="quiet-link" data-action="chartSettings">⚙ Customize</button></div>
       <div class="chart-wrap">${renderChart(series,f)}</div>
     </section>
     <section class="forecast-grid compact-forecast">
       <div class="forecast-card pink"><div class="small">By ${fmtDate(db.goal.end,'en')}</div><div class="forecast-value">${f.ready?fmt(f.projectedEnd):'—'} <span>kg</span></div></div>
-      <div class="forecast-card green"><div class="small">Reach ${fmt(db.goal.target)}</div><div class="forecast-text">${f.ready&&f.targetDate?fmtDate(f.targetDate,'en'):'Keep logging'}</div></div>
+      <div class="forecast-card green"><div class="small">Reach ${fmt(db.goal.target)}</div><div class="forecast-text">${f.ready&&f.targetDate?fmtDate(f.targetDate,'en'):f.ready?(f.reachStatus==='beyond'?'> 120 days':'No date yet'):'—'}</div></div>
     </section>
     <div class="insight forecast-insight">${forecastMessage(f)}</div>
     <div class="section-title">Weekly behavior</div>
@@ -790,59 +830,57 @@ function smoothSvgPath(points){
   return d;
 }
 function readDay(s){ return mergeDay({...((db.days||{})[s]||{}),date:s}); }
-function bowelNoStreak(endDate){
-  let streak=0;
-  for(let s=endDate,guard=0;guard<30;guard++,s=addDays(s,-1)){
-    const rec=(db.days||{})[s];
-    if(!rec || rec.bowelMovement==null) break;
-    if(rec.bowelMovement===true) break;
-    if(rec.bowelMovement===false) streak++; else break;
-  }
-  return streak;
-}
+const CHART_GROUPS=[{id:'food',name:'Food context',dot:'social'},{id:'hunger',name:'Bedtime hunger',dot:'hunger'},{id:'exercise',name:'Exercise',dot:'exercise'},{id:'other',name:'Other context',dot:'other'}];
+const CHART_FOOD=[['eating_out','Eating out'],['alcohol','Alcohol'],['snacks','Snacks · from No snacks']];
+const CHART_EXERCISE=[['steps','10k steps'],['cardio','Cardio'],['strength','Strength']];
+const CHART_OTHER=[['period','Period'],['travel','Travel'],['party','Party'],['vacation','Vacation'],['poor_sleep','Poor sleep'],['sick','Sick'],['short_sleep','Short sleep · <6h']];
 function weightPointContext(weightDate){
   const prevDate=addDays(weightDate,-1);
-  const prev=readDay(prevDate), same=readDay(weightDate);
-  const eatingOut=prev.events.map(eventId).includes('eating_out');
+  const prev=readDay(prevDate), same=readDay(weightDate), settings=db.chartSettings;
+  const events=prev.events.map(eventId);
+  const eatingOut=events.includes('eating_out');
   const alcohol=prev.alcohol==null?null:+prev.alcohol;
+  const snacks=prev.food.noSnack===false; // No snacks: missing is UNKNOWN, never assume snacks.
   const hunger=prev.food.bedtimeHunger==null?null:+prev.food.bedtimeHunger;
   const steps=prev.move.steps==null?null:+prev.move.steps;
   const cardio=prev.move.cardio==null?null:+prev.move.cardio;
   const strength=prev.move.strength==null?null:+prev.move.strength;
-  const sleep=same.sleep==null?null:+same.sleep; // same-day morning log = last night's sleep
-  const bmStreak=bowelNoStreak(prevDate);
-  const hungerNotable=hunger!=null&&hunger>=4;
+  const sleep=same.sleep==null?null:+same.sleep; // morning log for the same weigh-in
+  const exerciseAvailable={steps:steps!=null&&steps>=10000,cardio:cardio!=null&&cardio>0,strength:strength!=null&&strength>0};
+  const exerciseNotable=Object.values(exerciseAvailable).some(Boolean);
   const sleepNotable=sleep!=null&&sleep<6;
-  const exerciseNotable=(steps!=null&&steps>=10000)||(cardio!=null&&cardio>0)||(strength!=null&&strength>0);
-  const prevDetails=[];
-  if(eatingOut) prevDetails.push('Eating out');
-  if(alcohol!=null&&alcohol>0) prevDetails.push(`Alcohol ${alcohol>=2?'2+':alcohol}`);
-  if(hunger!=null) prevDetails.push(`Hunger ${hunger}/5`);
+  const custom=db.customEvents.filter(e=>e.active&&settings.custom.includes(e.id)&&events.includes(e.id));
+  const foodMatch=(eatingOut&&settings.food.includes('eating_out')) || (alcohol>0&&settings.food.includes('alcohol')) || (snacks&&settings.food.includes('snacks')) || custom.some(e=>e.category==='food');
+  const otherMatch=events.some(id=>settings.other.includes(id)) || (sleepNotable&&settings.other.includes('short_sleep')) || custom.some(e=>e.category==='other');
+  const exerciseMatch=settings.exercise.some(key=>exerciseAvailable[key]);
+  const prevDetails=events.map(eventLabel);
+  if(alcohol>0)prevDetails.push(`Alcohol ${alcohol>=2?'2+':alcohol}`);
+  if(snacks)prevDetails.push('Snacks');
+  if(hunger!=null)prevDetails.push(`Hunger ${hunger}/5`);
   if(exerciseNotable){
     const exercise=[];
-    if(steps!=null&&steps>=10000) exercise.push(`${steps>=1000?(steps/1000).toFixed(1).replace('.0','')+'k':Math.round(steps)} steps`);
-    if(cardio!=null&&cardio>0) exercise.push(`Cardio ${Math.round(cardio)}m`);
-    if(strength!=null&&strength>0) exercise.push(`Strength ${Math.round(strength)}m`);
-    if(exercise.length) prevDetails.push(exercise.join(' · '));
+    if(exerciseAvailable.steps)exercise.push(`${steps>=1000?(steps/1000).toFixed(1).replace('.0','')+'k':Math.round(steps)} steps`);
+    if(exerciseAvailable.cardio)exercise.push(`Cardio ${Math.round(cardio)}m`);
+    if(exerciseAvailable.strength)exercise.push(`Strength ${Math.round(strength)}m`);
+    if(exercise.length)prevDetails.push(exercise.join(' · '));
   }
-  if(bmStreak>=3) prevDetails.push(`BM ${bmStreak}d`);
-  if(sleepNotable) prevDetails.push(`Sleep ${sleep.toFixed(1).replace('.0','')}h`);
-  return {prevDate,eatingOut,alcohol,hunger,steps,cardio,strength,sleep,bmStreak,hungerNotable,exerciseNotable,sleepNotable,prevDetails};
+  if(sleepNotable)prevDetails.push(`Sleep ${sleep.toFixed(1).replace('.0','')}h (last night)`);
+  return {prevDate,eatingOut,alcohol,snacks,hunger,steps,cardio,strength,sleep,exerciseNotable,sleepNotable,prevDetails,
+    markers:{food:foodMatch,hunger:hunger!=null&&hunger>=settings.hungerMin,exercise:exerciseMatch,other:otherMatch}};
 }
 function contextMarkersSvg(d,x,markerTop,rowGap){
   const c=weightPointContext(d.date);
-  let out='';
-  if(c.eatingOut || (c.alcohol!=null&&c.alcohol>0)) out+=`<circle class="ctx-marker social" cx="${x.toFixed(1)}" cy="${markerTop}" r="2.7"></circle>`;
-  if(c.hungerNotable) out+=`<circle class="ctx-marker hunger" cx="${x.toFixed(1)}" cy="${markerTop+rowGap}" r="2.7"></circle>`;
-  return out;
+  return db.chartSettings.categories.map((id,i)=>c.markers[id]?`<circle class="ctx-marker ${CHART_GROUPS.find(g=>g.id===id).dot}" cx="${x.toFixed(1)}" cy="${markerTop+i*rowGap}" r="2.7"></circle>`:'').join('');
 }
 function contextLegendHtml(){
-  return `<div class="context-legend"><span><i class="ctx-dot social"></i>Eating out / alcohol</span><span><i class="ctx-dot hunger"></i>Bedtime hunger</span></div>`;
+  const active=CHART_GROUPS.filter(g=>db.chartSettings.categories.includes(g.id));
+  if(!active.length)return `<div class="context-legend">Context markers off · enable in Chart settings.</div>`;
+  return `<div class="context-legend">${active.map(g=>`<span><i class="ctx-dot ${g.dot}"></i>${g.name}</span>`).join('')}</div>`;
 }
 
 function renderChart(data,forecast){
   if(data.length<2) return `<div class="empty">Log at least two weights to see the chart.</div>`;
-  const W=340,H=264,L=48,R=12,Tp=24,labelBand=26,axisGap=10,markerRows=2,markerRowGap=9,markerBand=markerRows*markerRowGap;
+  const W=340,H=264,L=48,R=12,Tp=24,labelBand=26,axisGap=10,markerRows=Math.max(1,db.chartSettings.categories.length),markerRowGap=9,markerBand=markerRows*markerRowGap;
   const axisY=H-labelBand-axisGap;
   const markerTop=axisY-markerBand+2;
   const plotBottom=markerTop-6;
@@ -908,7 +946,7 @@ function renderChart(data,forecast){
 function chartTipHtml(d){
   if(!d) return '';
   const c=weightPointContext(d.date);
-  const context=c.prevDetails.length?`<span class="tip-context-inline">· ${fmtShortDate(c.prevDate)} · ${escapeHtml(c.prevDetails.join(' · '))}</span>`:'';
+  const context=c.prevDetails.length?`<span class="tip-context-inline">· Previous day ${fmtShortDate(c.prevDate)} (sleep: same morning) · ${escapeHtml(c.prevDetails.join(' · '))}</span>`:'';
   return `<b>${fmtShortDate(d.date)}</b><span>${fmt(d.weight)} kg</span>${context}`;
 }
 function weeklyTargetFor(g,id){
@@ -1213,9 +1251,9 @@ function goalReviewPack(g){
     const rec=day(s);
     const foodValues=Object.values(rec.food||{}).some(v=>v!==null&&v!==false&&v!=='');
     const exerciseValues=Object.values(rec.move||{}).some(v=>v!==null&&v!==false&&v!=='');
-    const hasData=rec.weight!=null || rec.sleep!=null || rec.alcohol!=null || rec.bowelMovement!=null || foodValues || exerciseValues || Object.values(rec.skips||{}).some(Boolean) || rec.events.length || rec.note;
+    const hasData=rec.weight!=null || rec.sleep!=null || rec.alcohol!=null || foodValues || exerciseValues || Object.values(rec.skips||{}).some(Boolean) || rec.events.length || rec.note;
     if(!hasData) continue;
-    records.push({date:s,weight:rec.weight,sevenDayAverage:goalAverageFor(g,s),lastNightSleepHours:rec.sleep,alcohol:rec.alcohol==null?null:(+rec.alcohol>=2?'2+':+rec.alcohol===1?'1':'none'),bowelMovement:rec.bowelMovement===true?'yes':rec.bowelMovement===false?'no':null,food:{veg:rec.food.veg,protein:rec.food.protein,fruit:rec.food.fruit,noSnack:rec.food.noSnack,noFoodAfterCutoff:rec.food.stop6,waterLiters:rec.food.water,bedtimeHunger:rec.food.bedtimeHunger},exercise:{...rec.move},skipOrNA:{...rec.skips},lifeEvents:rec.events.map(eventLabel),note:rec.note||''});
+    records.push({date:s,weight:rec.weight,sevenDayAverage:goalAverageFor(g,s),lastNightSleepHours:rec.sleep,alcohol:rec.alcohol==null?null:(+rec.alcohol>=2?'2+':+rec.alcohol===1?'1':'none'),food:{veg:rec.food.veg,protein:rec.food.protein,fruit:rec.food.fruit,noSnack:rec.food.noSnack,noFoodAfterCutoff:rec.food.stop6,waterLiters:rec.food.water,bedtimeHunger:rec.food.bedtimeHunger},exercise:{...rec.move},skipOrNA:{...rec.skips},lifeEvents:rec.events.map(eventLabel),note:rec.note||''});
   }
   const endWeight=active ? latestWeight(through)?.weight??null : g.endWeight??null;
   const startWeight=active ? activeGoalStartWeight() : +g.startWeight;
@@ -1235,13 +1273,13 @@ function goalReviewPack(g){
       bedtimeHunger:{scale:'1-5',meaning:'1 = low hunger; 5 = very hungry',use:'Track-only context. Higher hunger is NOT success; use it to judge whether the diet may be too aggressive or hard to sustain.'},
       lastNightSleepHours:{meaning:'Sleep during the night immediately before the morning weight recorded on the same date.'},
       alcohol:{values:'none / 1 / 2+',meaning:'Alcohol consumed on that calendar day.'},
-      bowelMovement:{values:'yes / no / null',meaning:'Whether a bowel movement was explicitly recorded that day; null means not recorded.'},
+      snacks:{source:'food.noSnack === false',meaning:'Automatically derives snacks from the existing No snacks tracker. Missing value is unknown. No separate Snacks life-event input; do not infer causation.'},
       sevenDayAverage:{meaning:'Calendar-based 7-day weight average used for trend context, not adherence.'},
       period:{meaning:'Period is a life-event context tag, not an adherence metric.'}
     },
     timingGuide:{
       morningWeight:'Weight is recorded in the morning.',
-      previousDayContext:'When looking for possible short-term context for a morning weight on date D, consider eating out, alcohol, bedtime hunger, exercise, and bowel movement from D-1.',
+      previousDayContext:'When looking for possible short-term context for morning weight on date D, consider eating out, alcohol, snacks, bedtime hunger and exercise from D-1.',
       sleepAlignment:'lastNightSleepHours on date D refers to the sleep during D-1 → D, immediately before that morning weight.',
       interpretation:'Context may help explain patterns but is not proof of causation. Prefer repeated or multi-day patterns over one-day explanations.'
     },
@@ -1351,9 +1389,74 @@ function saveGoalReviewDraft(){
 function pasteGoalReview(){ previewGoalReview(); }
 function lastReviewedGoal(){ return [...db.goals].reverse().find(g=>latestReview(g)); }
 
+function chartChoice(group,id,label){
+  const checked=db.chartSettings[group].includes(id);
+  return `<label class="chart-choice"><input type="checkbox" data-chart-source="${group}" data-source-id="${escapeHtml(id)}" ${checked?'checked':''}><span>${escapeHtml(label)}</span></label>`;
+}
+function chartSettingsPage(){
+  const selected=db.chartSettings.categories;
+  const sourcePanel=(group,choices)=>{
+    if(!selected.includes(group))return '';
+    const extra=['food','other'].includes(group)?db.customEvents.filter(e=>e.active&&e.category===group):[];
+    return `<div class="chart-source-panel">${choices.map(([id,label])=>chartChoice(group,id,label)).join('')}${extra.map(e=>chartChoice('custom',e.id,e.label+' · custom')).join('')}${extra.length?'<div class="setting-helper">Custom names are shared with Life events.</div>':''}${group==='hunger'?`<div class="chart-threshold">Show when hunger is ${[3,4,5].map(v=>`<button data-hunger-min="${v}" class="${db.chartSettings.hungerMin===v?'on':''}">${v}+</button>`).join('')}</div>`:''}${['food','other'].includes(group)?'<button class="quiet-link" data-action="manageCustom">Manage custom events ›</button>':''}</div>`;
+  };
+  return `${topbar('Chart settings','',`<button class="btn secondary save-top" data-action="backProgress">Done</button>`)}
+    <div class="insight chart-hint">Choose up to two categories. These settings change <b>only the dots</b> on the chart, not your daily records or Goals.</div>
+    <section class="card chart-settings-card"><div class="row between"><div class="actual-label">Context markers</div><span class="small">${selected.length}/2</span></div>
+      ${CHART_GROUPS.map(g=>`<div class="chart-group"><button data-chart-category="${g.id}" class="chart-group-row ${selected.includes(g.id)?'on':''}" aria-pressed="${selected.includes(g.id)}" ${!selected.includes(g.id)&&selected.length>=2?'disabled':''}><span class="ctx-dot ${g.dot}"></span><span>${g.name}</span><span class="chart-select-indicator">${selected.includes(g.id)?'✓':selected.length>=2?'Max 2':'○'}</span></button>${sourcePanel(g.id,g.id==='food'?CHART_FOOD:g.id==='exercise'?CHART_EXERCISE:g.id==='other'?CHART_OTHER:[])}</div>`).join('')}
+    </section><div class="small chart-footnote">Snacks uses the existing No snacks record (false = snacks; unanswered = unknown). Eating out never means “ate more.” Period is optional context, not a weight correction. Context is not proof of cause.</div>`;
+}
+function customEventsPage(){
+  const active=db.customEvents.filter(e=>e.active),removed=db.customEvents.filter(e=>!e.active);
+  const row=e=>`<div class="custom-manage-row"><div class="custom-manage-name">${escapeHtml(e.label)}</div><select data-custom-category="${escapeHtml(e.id)}" aria-label="Group for ${escapeHtml(e.label)}"><option value="other" ${e.category==='other'?'selected':''}>Other</option><option value="food" ${e.category==='food'?'selected':''}>Food</option></select><button class="quiet-link custom-remove" data-archive-event="${escapeHtml(e.id)}" aria-label="Remove ${escapeHtml(e.label)}">Remove</button></div>`;
+  return `${topbar('Custom events','',`<button class="btn secondary save-top" data-action="backFromCustom">Done</button>`)}${flashHtml()}
+    <section class="card"><div class="actual-label">Your custom events <span class="small">· ${active.length}</span></div>
+      <div class="small" style="margin-bottom:9px">One list shared by Life events and Chart settings. Change an event's group here to choose where its chart dot belongs.</div>
+      ${active.length?active.map(row).join(''):'<div class="small">No custom events yet. Add one in a day’s Life events.</div>'}
+    </section><div class="insight">Remove hides a name from future choices and chart settings. Past dated records stay in your history and JSON backups.</div>
+    ${removed.length?`<details class="card removed-custom"><summary>Removed events · ${removed.length}</summary>${removed.map(e=>`<div class="custom-manage-row"><div class="custom-manage-name">${escapeHtml(e.label)}</div><button class="quiet-link" data-restore-event="${escapeHtml(e.id)}">Restore</button></div>`).join('')}</details>`:''}`;
+}
+function customRemoveModal(){
+  if(!removeCustomId)return '';
+  const e=db.customEvents.find(x=>x.id===removeCustomId);
+  if(!e)return '';
+  return `<div class="modal-backdrop" data-action="cancelRemoveEvent"><div class="archive-confirm-modal custom-confirm" role="dialog" aria-modal="true" aria-label="Remove custom event"><div class="weight-modal-handle"></div><div class="archive-confirm-title">Remove ${escapeHtml(e.label)}?</div><div class="archive-confirm-copy">It will disappear from Life events and Chart settings. Your past records will remain. You can restore the name later.</div><div class="archive-confirm-actions"><button class="btn ghost" data-action="cancelRemoveEvent">Cancel</button><button class="btn archive-confirm-danger" data-action="confirmRemoveEvent">Remove</button></div></div></div>`;
+}
+function addCustomEvent(){
+  const input=document.getElementById('customEvent');
+  const label=String(input?.value||'').trim().replace(/\s+/g,' ').slice(0,40);
+  if(!label)return;
+  const category=document.getElementById('customEventCategory')?.value==='food'?'food':'other';
+  const reserved=[...EVENTS.map(e=>e.en),...EVENTS.map(e=>e.id),'Alcohol','Snacks','Bedtime hunger','Exercise','Short sleep'];
+  if(reserved.some(x=>x.toLowerCase()===label.toLowerCase())){flash='Already a built-in event or tracker. Use its existing control.';render();return;}
+  let found=db.customEvents.find(e=>e.label.toLowerCase()===label.toLowerCase());
+  if(found&&!found.active){flash='This name was removed. Restore it in Manage custom events.';render();return;}
+  if(!found){
+    found={id:`custom:${Date.now().toString(36)}-${Math.random().toString(36).slice(2,7)}`,label,category,active:true};
+    db.customEvents.push(found);
+  }
+  const d=day(selected);
+  if(!d.events.includes(found.id))d.events.push(found.id);
+  save();
+}
+function removeCustomEvent(id){
+  const e=db.customEvents.find(x=>x.id===id&&x.active);if(!e)return;
+  e.active=false;
+  db.chartSettings.custom=db.chartSettings.custom.filter(x=>x!==id);
+  removeCustomId=null;save('Custom event removed from choices; history kept.');
+}
+function restoreCustomEvent(id){const e=db.customEvents.find(x=>x.id===id);if(!e)return;e.active=true;save('Custom event restored.');}
+function changeCustomCategory(id,category){const e=db.customEvents.find(x=>x.id===id&&x.active);if(!e||!['food','other'].includes(category))return;e.category=category;save();}
+function toggleChartCategory(group){if(!CHART_GROUPS.some(g=>g.id===group))return;const a=db.chartSettings.categories;db.chartSettings.categories=a.includes(group)?a.filter(x=>x!==group):a.length<2?[...a,group]:a;save();}
+function toggleChartSource(group,id,checked){
+  const valid={food:CHART_FOOD.map(x=>x[0]),exercise:CHART_EXERCISE.map(x=>x[0]),other:CHART_OTHER.map(x=>x[0]),custom:db.customEvents.filter(e=>e.active).map(e=>e.id)};
+  if(!valid[group]?.includes(id))return;
+  const a=db.chartSettings[group];db.chartSettings[group]=checked?[...new Set([...a,id])]:a.filter(x=>x!==id);save();
+}
+
 function settingsPage(){
   return `${topbar('Settings')}
-    <section class="settings-list"><button class="setting-row" data-action="editPlan" style="width:100%;border:0;background:#fff;text-align:left"><span>Default Plan</span><span class="right">›</span></button><button class="setting-row" data-action="export"><span>Export Data</span><span class="right">JSON ›</span></button><label class="setting-row" style="margin:0"><span>Import Data</span><span class="right">JSON ›</span><input id="importFile" type="file" accept="application/json" style="display:none"></label><div class="setting-row"><span>About Tide</span><span class="right">Version ${VERSION}</span></div></section>
+    <section class="settings-list"><button class="setting-row" data-action="editPlan" style="width:100%;border:0;background:#fff;text-align:left"><span>Default Plan</span><span class="right">›</span></button><button class="setting-row" data-action="chartSettings"><span>Chart settings</span><span class="right">›</span></button><button class="setting-row" data-action="manageCustom"><span>Custom events</span><span class="right">›</span></button><button class="setting-row" data-action="export"><span>Export Data</span><span class="right">JSON ›</span></button><label class="setting-row" style="margin:0"><span>Import Data</span><span class="right">JSON ›</span><input id="importFile" type="file" accept="application/json" style="display:none"></label><div class="setting-row"><span>About Tide</span><span class="right">Version ${VERSION}</span></div></section>
     <div class="insight" style="margin-top:16px">Your data stays on this device. Tide upgrades migrate existing data automatically; export a JSON backup anytime for extra safety.</div>`;
 }
 
@@ -1396,7 +1499,6 @@ function toggleCustom(key){ const d=day(selected); if(key==='allowSnack') d.cust
 function togglePlannedMove(key){ const d=day(selected); d.plannedMove[key]=d.plannedMove[key]===true?false:true; save(); }
 function toggleEvent(e){ const d=day(selected); d.events=d.events.includes(e)?d.events.filter(x=>x!==e):[...d.events,e]; save(); }
 function cycleAlcohol(){ const d=day(selected),v=d.alcohol==null?0:+d.alcohol; d.alcohol=v<=0?1:v===1?2:null; save(); }
-function cycleBowelMovement(){ const d=day(selected); d.bowelMovement=d.bowelMovement==null?true:d.bowelMovement===true?false:null; save(); }
 function shiftMonth(n){ const d=parseDate(calendarMonth); d.setMonth(d.getMonth()+n); calendarMonth=iso(new Date(d.getFullYear(),d.getMonth(),1,12)); selected=calendarMonth; render(); }
 function saveGoalForm(){
   const oldStart=db.goal.start;
@@ -1472,7 +1574,13 @@ function bind(){
     if(a==='saveQuickWeight'){const el=document.getElementById('quickWeightInput');const v=el?.value===''?null:+el.value;if(v!=null&&Number.isFinite(v)){day(today()).weight=v;persist();quickWeightOpen=false;flash='Morning weight saved.';render();}}
     if(a==='openSelected'){view='day';render();}
     if(a==='saveDay'||a==='saveDayBottom'){saveInputsFromDOM();view='calendar';save(tr('saved'));}
-    if(a==='addEvent'){const el=document.getElementById('customEvent');const v=el?.value.trim();if(v){day(selected).events.push(v);save();}}
+    if(a==='addEvent')addCustomEvent();
+    if(a==='chartSettings'){view='chartSettings';render();}
+    if(a==='backProgress'){view='change';render();}
+    if(a==='manageCustom'){customReturnView=view;view='customEvents';render();}
+    if(a==='backFromCustom'){view=customReturnView||'day';render();}
+    if(a==='cancelRemoveEvent'){removeCustomId=null;render();}
+    if(a==='confirmRemoveEvent')removeCustomEvent(removeCustomId);
     if(a==='editGoal'){view='goalEdit';render();}
     if(a==='saveGoal'){saveGoalForm();view='goals';save(tr('saved'));}
     if(a==='requestArchiveGoal'){saveGoalForm();archiveConfirmOpen=true;render();}
@@ -1499,8 +1607,13 @@ function bind(){
   document.querySelectorAll('[data-date]').forEach(b=>b.addEventListener('click',()=>{selected=b.dataset.date;render();}));
   document.querySelectorAll('[data-month]').forEach(b=>b.addEventListener('click',()=>shiftMonth(+b.dataset.month)));
   document.querySelectorAll('[data-event]').forEach(b=>b.addEventListener('click',()=>toggleEvent(b.dataset.event)));
+  document.querySelectorAll('[data-chart-category]').forEach(b=>b.addEventListener('click',()=>toggleChartCategory(b.dataset.chartCategory)));
+  document.querySelectorAll('[data-chart-source]').forEach(b=>b.addEventListener('change',()=>toggleChartSource(b.dataset.chartSource,b.dataset.sourceId,b.checked)));
+  document.querySelectorAll('[data-hunger-min]').forEach(b=>b.addEventListener('click',()=>{db.chartSettings.hungerMin=+b.dataset.hungerMin;save();}));
+  document.querySelectorAll('[data-custom-category]').forEach(el=>el.addEventListener('change',()=>changeCustomCategory(el.dataset.customCategory,el.value)));
+  document.querySelectorAll('[data-archive-event]').forEach(b=>b.addEventListener('click',()=>{removeCustomId=b.dataset.archiveEvent;render();}));
+  document.querySelectorAll('[data-restore-event]').forEach(b=>b.addEventListener('click',()=>restoreCustomEvent(b.dataset.restoreEvent)));
   document.querySelectorAll('[data-cycle-alcohol]').forEach(b=>b.addEventListener('click',cycleAlcohol));
-  document.querySelectorAll('[data-cycle-bm]').forEach(b=>b.addEventListener('click',cycleBowelMovement));
   document.querySelectorAll('[data-range]').forEach(b=>b.addEventListener('click',()=>{range=b.dataset.range;render();}));
   document.querySelectorAll('[data-day-field]').forEach(el=>el.addEventListener('change',()=>{saveInputsFromDOM();persist();}));
   document.querySelectorAll('[data-plan]').forEach(el=>el.addEventListener('change',()=>{saveInputsFromDOM();persist();}));
@@ -1530,12 +1643,15 @@ function render(){
   else if(view==='goalEdit')content=goalEditPage();
   else if(view==='goalReview')content=goalReviewPage();
   else if(view==='settings')content=settingsPage();
+  else if(view==='chartSettings')content=chartSettingsPage();
+  else if(view==='customEvents')content=customEventsPage();
   else if(view==='endGoal')content=endGoalPage();
   else if(view==='planEdit')content=planEditPage();
-  document.getElementById('app').innerHTML=`<main class="shell">${content}${['today','calendar','change','goals','settings'].includes(view)?nav():''}</main>${quickWeightModal()}${archiveGoalModal()}`;
+  document.getElementById('app').innerHTML=`<main class="shell">${content}${['today','calendar','change','goals','settings'].includes(view)?nav():''}</main>${quickWeightModal()}${archiveGoalModal()}${customRemoveModal()}`;
   bind();
   document.querySelector('.weight-modal')?.addEventListener('click',e=>e.stopPropagation());
   document.querySelector('.archive-confirm-modal')?.addEventListener('click',e=>e.stopPropagation());
+  document.querySelector('.custom-confirm')?.addEventListener('click',e=>e.stopPropagation());
   const q=document.getElementById('quickWeightInput'); if(q) q.addEventListener('keydown',e=>{if(e.key==='Enter')document.querySelector('[data-action=\"saveQuickWeight\"]')?.click();});
 }
 

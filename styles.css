@@ -630,3 +630,41 @@ input:focus,select:focus,textarea:focus{border-color:var(--lab-mid);box-shadow:0
 .tooltip .tip-context-inline{color:var(--lab-muted);font-size:10.5px;line-height:1.35;white-space:normal}
 .event-chip.context-chip-no{background:#E9E5DD;border-color:#D7D1C6;color:#6B675F}
 .life-events .event-chip{white-space:nowrap}
+
+/* Tide V9.0 · compact, shared custom events and two-row chart settings */
+.chart-setting-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px}
+.chart-setting-bar .small{font-size:10px;line-height:1.3;flex:1}
+.quiet-link{border:0;background:transparent;color:var(--forest-deep,#365644);font-size:11px;font-weight:700;padding:6px 2px;white-space:nowrap;min-height:29px}
+.quiet-link:focus-visible,.chart-group-row:focus-visible{outline:2px solid var(--dusty-pink-deep,#a66b79);outline-offset:2px}
+.custom-category-line{display:flex;align-items:center;justify-content:flex-end;gap:9px;margin:6px 0 0}
+.custom-category-line span{font-size:10.5px;color:var(--lab-muted)}
+.custom-category-line select{flex:0 0 130px;width:130px;border-radius:9px;padding:6px 24px 6px 9px;font-size:11px;min-height:30px}
+.chart-hint{font-size:11px;margin-bottom:10px}
+.chart-settings-card{padding:12px 13px}
+.chart-settings-card .actual-label{margin:0}
+.chart-group{border-top:1px solid var(--lab-border,rgba(64,88,74,.12))}
+.chart-group:first-of-type{margin-top:5px}
+.chart-group-row{width:100%;display:flex;align-items:center;gap:9px;border:0;background:transparent;text-align:left;padding:12px 2px;color:var(--lab-text,#3d5145);font-size:13px;font-weight:660;min-height:43px}
+.chart-group-row.on{color:var(--forest-deep,#365644)}
+.chart-group-row:disabled{opacity:.45}
+.chart-group-row .ctx-dot{width:9px;height:9px;flex:0 0 9px}
+.chart-select-indicator{margin-left:auto;font-weight:650;font-size:11px;color:var(--lab-muted)}
+.chart-group-row.on .chart-select-indicator{color:var(--forest-deep,#365644)}
+.chart-source-panel{padding:0 4px 10px 19px;display:flex;flex-direction:column;gap:1px}
+.chart-choice{margin:0;min-height:33px;display:flex;align-items:center;gap:10px;color:var(--lab-text,#3d5145);font-size:11.5px;line-height:1.25;padding:5px 0}
+.chart-choice input{width:16px;height:16px;flex:0 0 16px;padding:0;margin:0;accent-color:var(--forest-deep,#365644)}
+.chart-source-panel .quiet-link{text-align:left;align-self:flex-start;margin-top:3px}
+.chart-threshold{display:flex;align-items:center;gap:5px;flex-wrap:wrap;font-size:11px;color:var(--lab-muted);margin-top:5px}
+.chart-threshold button{border:1px solid var(--lab-border,rgba(64,88,74,.18));border-radius:8px;background:var(--cream-2,#f5f0e8);padding:6px 9px;color:var(--lab-text,#3d5145);font-size:11px}
+.chart-threshold button.on{background:var(--forest-deep,#365644);color:#fff}
+.chart-footnote{font-size:10.5px;line-height:1.5;margin:11px 3px 0}
+.setting-helper{font-size:10px;color:var(--lab-muted)}
+.custom-manage-row{display:flex;align-items:center;gap:7px;border-top:1px solid var(--lab-border,rgba(64,88,74,.12));padding:8px 0;min-width:0}
+.custom-manage-name{font-size:12px;color:var(--lab-text);flex:1;min-width:0;overflow-wrap:anywhere}
+.custom-manage-row select{width:87px;flex:0 0 87px;min-width:0;font-size:11px;padding:7px 4px;height:34px;border-radius:9px}
+.custom-remove{color:#A75F69;font-size:11px}
+.removed-custom{padding:10px 14px}
+.removed-custom summary{cursor:pointer;color:var(--lab-muted);font-size:12px;font-weight:670;padding:3px 0}
+.ctx-dot.other{background:#89928B}
+.chart .ctx-marker.other{fill:#89928B}
+.life-events .archived-event{display:inline-flex;align-items:center;opacity:.65;background:var(--lab-surface-2,#f5f1ea);color:var(--lab-muted,#72756f);cursor:default}
