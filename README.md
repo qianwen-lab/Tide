@@ -1,22 +1,20 @@
-# Tide Private V9.3
+# Tide Private V9.3.1 — Calendar historical-rule fix
 
-**Private Tide only.** Do not upload this build to Tide-Beta. The GitHub path, storage key `tide.v1`, icons, app identity, tracker data, goal review history, and model mathematics are unchanged.
+**Private Tide only; Beta unchanged.** This is a focused patch to V9.3. The previously discussed V9.4 wishlist (Cancel Edit Goal, compact date picker, adjustable cutoff tracker design, pre-goal chart history and archived goal chart snapshot) is NOT included.
 
-## Safe installation
-1. Open private Tide → Settings → Export backup and save the JSON.
-2. Unzip and upload all eight files flat into the root of the ORIGINAL `Tide` GitHub repository. Do not create a nested folder.
-3. After GitHub Pages updates, reopen the installed app; Settings should show version 9.3.0. Reload Safari once if the cached old version remains.
+## Upgrade safely
+1. Export your private Tide JSON backup under Settings before updating.
+2. Unzip and upload the eight files flat into the original `Tide` GitHub repository root, **not** `Tide-Beta`.
+3. Confirm Settings shows `9.3.1` and refresh Safari once if cached.
 
-## What changed
-- Restored V9.1's visual presentation of the **continuous pink dashed forecast curve**, using the current robust V9.2 estimator. Previous fixes to the Goal date actual card and Snacks D−1 semantics remain. The pink curve is a smoothed model/trend, not actual weigh-ins.
-- Removed the ugly blue rectangle from point selection, preserved large mobile tap targets and keyboard access with a discreet focus indication on the point itself.
-- Added a subtle vertical **Goal · date** marker at the actual goal end date even when the graph's x-axis extends further into the future. Horizontal target weight remains.
-- Removed the confusing sleep explanation from the chart's ⓘ unless **Other → Short sleep** is actually selected. When shown, it explains that the sleep input belongs to that same morning's date. No sleep data or log inputs changed.
-- Goal Review export now starts with `READ_THIS_FIRST_FOR_CHATGPT`: includes explicit analysis rules, the exact 3-field top-level / 3-field nested import JSON contract, goalId matching, 1–3 nonempty string requirements, no commentary/fences, and instructions to generate a JSON file if possible. Uploading the export is the entire prompt.
-- Goal Review now offers **Import review JSON** alongside Paste; file import previews and validates before saving, and rejects mismatched goalId/extra keys with specific messages. Exported original goal data cannot be mistaken for the completed review.
+## Calendar rule revisions
+- Calendar food status now evaluates each day against a dated copy of the goal, tracker roles and plan effective on that date. The first subsequent edit saves the existing rules as a baseline; all future edits keep prior rules intact.
+- Editing cutoff, thresholds, goal dates, or tracker roles creates a new rule revision without touching original daily food, exercise, event or weight records. Old-day corrections re-evaluate using rules valid for that old date. Past-day plan labels also show the cutoff valid on that date.
+- Goal editing and Default Plan editing both expose **Calendar scoring effective from** (default today; future dates accepted). A later edit supersedes a not-yet-effective rule revision. This effective date controls dated Calendar evaluation; goal setup itself is edited immediately.
+- Goal archiving also preserves the outgoing goal as historical rules before switching to the new goal.
+- Changing a goal's start date without explicitly changing the start weight no longer writes an invented weigh-in into the new start date.
+- History is backed up and restored as `calendarRuleHistory` in the existing `tide.v1` JSON data. Old backups migrate without dropping existing data.
 
-## Important
-- User data are not cleared or re-keyed. No Beta files modified. These are software tests using synthetic data, not your real backup. Export your own backup before upgrading.
-- The AI-generated review is external content and should be checked in Tide's Preview before Save; the schema validator cannot verify the truth of analytical claims.
+**Limit of old versions:** V9.3 did not store earlier cutoff/goal rule versions. Installing this patch cannot reconstruct which rules were used before a cutoff you ALREADY changed. The current setup becomes the migration baseline, and subsequent edits will be preserved.
 
-Exactly eight flat files: `index.html`, `app.js`, `styles.css`, `manifest.json`, `sw.js`, `icon-192.png`, `icon-512.png`, `README.md`.
+The calendar revision patch does not alter the forecast, graph appearance, or Snacks marker logic. Exactly eight flat files: index.html, app.js, styles.css, manifest.json, sw.js, icon-192.png, icon-512.png, README.md.

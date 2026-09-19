@@ -1,6 +1,6 @@
 const STORAGE_KEY = 'tide.v1';
-const VERSION = '9.3.0';
-const SCHEMA_VERSION = 13; // No user-record schema change; only chart preference ID is migrated.
+const VERSION = '9.3.1';
+const SCHEMA_VERSION = 14; // Date-effective calendar rule history; original daily records remain unchanged.
 
 const COLORS = { sage:'#5E836F', sageDeep:'#244C3E', pink:'#C98994', pinkSoft:'#EBCFD4', blue:'#8C918D', ink:'#1F2823' };
 const iso = d => {
@@ -283,6 +283,7 @@ const defaults = {
   language:'en',
   goal:{id:`goal-${today()}-active`,name:'Back to 50',start:today(),end:addDays(today(),31),startWeight:52.7,target:50,status:'active',focus:'both',trackers:defaultTrackersForFocus('both',today()),review:blankReview(),reviews:[]},
   days:{},
+  calendarRuleHistory:[], // Dated rule revisions preserve past Calendar evaluations.
   customEvents:[],
   chartSettings:{categories:['food','hunger'],food:['eating_out','alcohol','snacks'],exercise:['steps','cardio','strength'],other:['period','travel','party','vacation','poor_sleep','sick','short_sleep'],custom:[],hungerMin:4},
   plan:{veg:3,fruit:2,noSnack:true,stop:'18:00',satiety:7,water:2,stepsTarget:10000,stepsDays:5,stretchDays:5,cardio:90,strength:60,strengthSessions:2},
@@ -335,6 +336,13 @@ function migrate(raw){
   out.goals=Array.isArray(raw.goals)?raw.goals.map((g,i)=>{const x={...g,id:stableGoalId(g,`-${i}`),focus:['diet','exercise','both','other'].includes(g.focus)?g.focus:'both',review:normalizeReview(g.review),planSnapshot:g.planSnapshot?{...g.planSnapshot}:null,snapshot:true};x.trackers=normalizeTrackers(x,true);x.reviews=normalizeReviews(x);return x;}):[];
   out.days={};
   Object.entries(raw.days||{}).forEach(([k,v])=>out.days[k]=mergeDay({...v,date:k}));
+  // Older backups had no rule history: their CURRENT rules form the starting
+  // baseline. Past cutoff values cannot be reconstructed from old daily booleans.
+  out.calendarRuleHistory=Array.isArray(raw.calendarRuleHistory)
+    ? raw.calendarRuleHistory.filter(r=>r && /^\d{4}-\d{2}-\d{2}$/.test(String(r.effectiveFrom||'')) && r.goal && r.plan)
+      .map(r=>({effectiveFrom:r.effectiveFrom,goal:JSON.parse(JSON.stringify(r.goal)),plan:{...r.plan}}))
+      .sort((a,b)=>a.effectiveFrom.localeCompare(b.effectiveFrom))
+    : [];
   // Historical free-text events become reusable options without rewriting day records.
   // Archived IDs stay registered so a removed option is never regenerated from history.
   const seen=new Set();
@@ -388,7 +396,33 @@ function dayPlanForGoal(g,d){
   if(d.planMode==='custom') return {...base,...Object.fromEntries(Object.entries(d.customPlan||{}).filter(([,v])=>v!==null&&v!==''))};
   return base;
 }
-function dayPlan(d){ return dayPlanForGoal(db.goal,d); }
+function dayPlan(d){ return dayPlanForGoal(calendarRulesForDate(d.date).goal,d); }
+// A rule change creates a new effective-dated revision, NEVER a rewrite of old
+// daily food/weight logs. Date lookups use the most recent revision at or before
+// that day; editing an old log still recomputes against that day's original rules.
+function calendarRulesForDate(date){
+  const rows=db.calendarRuleHistory||[];
+  let chosen=null;
+  for(const row of rows){if(row.effectiveFrom<=date)chosen=row;else break;}
+  if(!chosen) return {goal:{...db.goal,planSnapshot:{...db.plan}},plan:db.plan};
+  return {goal:{...chosen.goal,planSnapshot:{...chosen.plan}},plan:chosen.plan};
+}
+function calendarEffectiveDate(){
+  const raw=document.getElementById('goalEffectiveFrom')?.value || document.getElementById('planEffectiveFrom')?.value || today();
+  // Never silently regrade an already completed day with a retroactive rule.
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw) && raw>=today()?raw:today();
+}
+function recordCalendarRuleChange(beforeGoal,beforePlan,effectiveFrom=today()){
+  if(JSON.stringify(beforeGoal)===JSON.stringify(db.goal) && JSON.stringify(beforePlan)===JSON.stringify(db.plan))return;
+  const from=effectiveFrom>=today()?effectiveFrom:today();
+  if(!Array.isArray(db.calendarRuleHistory))db.calendarRuleHistory=[];
+  if(!db.calendarRuleHistory.length){
+    db.calendarRuleHistory.push({effectiveFrom:'0001-01-01',goal:JSON.parse(JSON.stringify(beforeGoal)),plan:{...beforePlan}});
+  }
+  // A newly edited rule supersedes any not-yet-effective scheduled revisions.
+  db.calendarRuleHistory=db.calendarRuleHistory.filter(r=>r.effectiveFrom<from);
+  db.calendarRuleHistory.push({effectiveFrom:from,goal:JSON.parse(JSON.stringify(db.goal)),plan:{...db.plan}});
+}
 function trackerRoleBadge(g,id){ return `<span class="role-mini ${trackerRole(g,id)}">${ROLE_LABELS[trackerRole(g,id)]}</span>`; }
 function dailyTrackerEval(g,id,d){
   if(!TRACKER_DEFS[id] || TRACKER_DEFS[id].cadence!=='daily') return {recorded:false,met:false,na:true};
@@ -419,7 +453,8 @@ function weeklyTrackerContribution(id,d,g=db.goal){
   return 0;
 }
 function trackerRuleLabel(g,id,d){
-  const p=dayPlanForGoal(g,d||day(today())), plan=planForGoal(g);
+  const dated=(g===db.goal && d?.date)?calendarRulesForDate(d.date).goal:g;
+  const p=dayPlanForGoal(dated,d||day(today())), plan=planForGoal(dated);
   if(id==='veg') return `Vegetables ≥ ${p.veg}`;
   if(id==='protein') return 'Protein';
   if(id==='fruit') return `Fruit ≤ ${p.fruit}`;
@@ -452,13 +487,14 @@ function weightChange(s){
   return +w - +prev[prev.length-1].weight;
 }
 function foodStatus(d){
-  const inGoal=d.date>=db.goal.start && d.date<=db.goal.end;
+  const {goal:g}=calendarRulesForDate(d.date);
+  const inGoal=d.date>=g.start && d.date<=(g.ended||g.end);
   if(inGoal){
-    const ids=TRACKER_IDS.filter(id=>TRACKER_DEFS[id].group==='diet'&&TRACKER_DEFS[id].cadence==='daily'&&trackerRole(db.goal,id)==='goal'&&trackerActiveOn(db.goal,id,d.date));
+    const ids=TRACKER_IDS.filter(id=>TRACKER_DEFS[id].group==='diet'&&TRACKER_DEFS[id].cadence==='daily'&&trackerRole(g,id)==='goal'&&trackerActiveOn(g,id,d.date));
     if(ids.length){
       let recorded=0,pass=0,eligible=0;
       for(const id of ids){
-        const e=dailyTrackerEval(db.goal,id,d);
+        const e=dailyTrackerEval(g,id,d);
         if(e.na) continue;
         eligible++;
         if(e.recorded){recorded++; if(e.met) pass++;}
@@ -472,7 +508,7 @@ function foodStatus(d){
     }
   }
   // Legacy behavior outside the active goal range.
-  const f=d.food, p=dayPlan(d), core=[f.veg,f.fruit,f.noSnack,f.stop6];
+  const f=d.food, p=dayPlanForGoal(g,d), core=[f.veg,f.fruit,f.noSnack,f.stop6];
   const recorded=core.filter(v=>v!==null&&v!=='').length;
   if(!recorded) return {recorded:0,score:null,enough:false,calendarPass:false,label:'No record'};
   let pass=0,denom=0;
@@ -612,10 +648,11 @@ function todayPage(){
   <button class="today-edit-button" data-action="editToday">View / edit today</button>`;
 }
 function skipButton(id,d){ return `<button class="skip-chip ${d.skips?.[id]?'on':''}" data-toggle-skip="${id}">${d.skips?.[id]?'N/A ✓':'N/A'}</button>`; }
-function trackerHead(id,d){ return `<div class="tracker-head"><div class="actual-label">${TRACKER_DEFS[id].label} ${trackerRoleBadge(db.goal,id)}</div>${skipButton(id,d)}</div>`; }
+function trackerHead(id,d){ return `<div class="tracker-head"><div class="actual-label">${TRACKER_DEFS[id].label} ${trackerRoleBadge(calendarRulesForDate(d.date).goal,id)}</div>${skipButton(id,d)}</div>`; }
 function todayPlanChips(d){
-  const ids=TRACKER_IDS.filter(id=>TRACKER_DEFS[id].cadence==='daily'&&trackerRole(db.goal,id)==='goal'&&trackerActiveOn(db.goal,id,d.date));
-  const chips=ids.map(id=>trackerRuleLabel(db.goal,id,d));
+  const dated=calendarRulesForDate(d.date).goal;
+  const ids=TRACKER_IDS.filter(id=>TRACKER_DEFS[id].cadence==='daily'&&trackerRole(dated,id)==='goal'&&trackerActiveOn(dated,id,d.date));
+  const chips=ids.map(id=>trackerRuleLabel(dated,id,d));
   return `<div class="rule-grid compact-rules">${chips.length?chips.map(x=>`<div class="rule">${escapeHtml(x)}</div>`).join(''):'<div class="small">No daily behavior goals set.</div>'}</div>${d.events.length?`<div class="life-events compact-events">${d.events.map(e=>`<span class="event-chip on">${escapeHtml(eventLabel(e))}</span>`).join('')}</div>`:''}`;
 }
 function actualFoodControls(d){
@@ -1223,7 +1260,7 @@ function goalEditPage(){
   const g=db.goal;
   return `${topbar('Edit goal')}
     <section class="card"><label>Goal name</label><input id="goalName" value="${escapeHtml(g.name)}"><div class="two"><label>${tr('start')} kg<input id="goalStartWeight" type="number" step="0.1" value="${activeGoalStartWeight()}"></label><label>${tr('target')} kg<input id="goalTarget" type="number" step="0.1" value="${g.target}"></label></div><div class="two"><label>${tr('start')}<input id="goalStart" type="date" value="${g.start}"></label><label>End date<input id="goalEnd" type="date" value="${g.end}"></label></div></section>
-    <section class="card"><div class="actual-label">Diet targets</div>${planInputsFood()}</section>
+    <section class="card"><div class="actual-label">Diet targets</div>${planInputsFood()}<label class="effective-date-setting">Calendar scoring effective from<input id="goalEffectiveFrom" type="date" min="${today()}" value="${today()}"></label><div class="small plan-helper">Earlier Calendar days keep their original rules. Old records are never rewritten.</div></section>
     <section class="card"><div class="actual-label">Weekly exercise targets</div>${planInputsMove()}</section>
     <section class="card"><div class="row between"><div class="actual-label" style="margin:0">Diet trackers</div><span class="small">Role for this goal</span></div>${roleEditorGroup(g,'diet')}</section>
     <section class="card"><div class="row between"><div class="actual-label" style="margin:0">Exercise trackers</div><span class="small">Role for this goal</span></div>${roleEditorGroup(g,'exercise')}</section>
@@ -1236,23 +1273,27 @@ function setGoalFocus(focus){
   if(!['diet','exercise','both','other'].includes(focus)) return;
   saveGoalForm();
   const g=db.goal, previous=normalizeTrackers(g,false), roles=focusRoles(focus), startToday=today()<g.start?g.start:today();
+  const oldGoal=JSON.parse(JSON.stringify(g)),oldPlan={...db.plan};
   g.focus=focus; g.trackers={};
   for(const id of TRACKER_IDS){
     const was=previous[id]||{role:'track',activeFrom:g.start};
     const role=roles[id];
     g.trackers[id]={role,activeFrom:(role==='goal'&&was.role!=='goal')?startToday:(was.activeFrom||g.start),roleAuto:true};
   }
+  recordCalendarRuleChange(oldGoal,oldPlan,calendarEffectiveDate());
   persist();render();
 }
 function setTrackerRole(id,role){
   if(!TRACKER_DEFS[id]||!['goal','bonus','track'].includes(role)) return;
   saveGoalForm();
   db.goal.trackers=normalizeTrackers(db.goal,false);
+  const oldGoal=JSON.parse(JSON.stringify(db.goal)),oldPlan={...db.plan};
   const prev=db.goal.trackers[id];
   // A role change must never wipe or hide previously entered tracker data.
   // Keep the tracker's existing activation date; new migrated trackers already start from their safe migration date.
   const activeFrom=prev.activeFrom||db.goal.start;
   db.goal.trackers[id]={role,activeFrom,roleAuto:false};
+  recordCalendarRuleChange(oldGoal,oldPlan,calendarEffectiveDate());
   persist();render();
 }
 
@@ -1517,7 +1558,7 @@ function settingsPage(){
 }
 
 function planEditPage(){
-  return `${topbar('Default Plan','',`<button class="btn sky save-top" data-action="savePlan">${tr('save')}</button>`)}<section class="card"><div class="actual-label">Food goals</div>${planInputsFood()}</section><section class="card"><div class="actual-label">Weekly exercise goals</div>${planInputsMove()}</section><button class="btn sky full" data-action="savePlanBottom">${tr('done')}</button>`;
+  return `${topbar('Default Plan','',`<button class="btn sky save-top" data-action="savePlan">${tr('save')}</button>`)}<section class="card"><div class="actual-label">Food goals</div>${planInputsFood()}<label class="effective-date-setting">Calendar scoring effective from<input id="planEffectiveFrom" type="date" min="${today()}" value="${today()}"></label><div class="small plan-helper">Earlier Calendar days keep their original rules.</div></section><section class="card"><div class="actual-label">Weekly exercise goals</div>${planInputsMove()}</section><button class="btn sky full" data-action="savePlanBottom">${tr('done')}</button>`;
 }
 
 function weekStats(){
@@ -1533,7 +1574,9 @@ function weekBars(w){
   return rows.map(([l,a,b])=>`<div class="week-row"><div class="label-line"><span>${l}</span><b>${a}/${b}</b></div><div class="bar"><i style="width:${clamp((a/(b||1))*100,0,100)}%"></i></div></div>`).join('');
 }
 
-function saveInputsFromDOM(){
+function saveInputsFromDOM(recordRuleHistory=true){
+  const beforeGoal=JSON.parse(JSON.stringify(db.goal)), beforePlan={...db.plan};
+  const effectiveFrom=calendarEffectiveDate();
   const targetDate=view==='today'?today():selected;
   document.querySelectorAll('[data-day-field]').forEach(el=>{
     const path=el.dataset.dayField.split('.'); let root=day(targetDate), obj=root;
@@ -1546,6 +1589,7 @@ function saveInputsFromDOM(){
   document.querySelectorAll('[data-plan]').forEach(el=>{
     let val=el.value; if(el.type==='number')val=val===''?0:+val; db.plan[el.dataset.plan]=val;
   });
+  if(recordRuleHistory)recordCalendarRuleChange(beforeGoal,beforePlan,effectiveFrom);
 }
 function setFood(key,val){ const d=day(view==='day'?selected:today()); d.food[key]=val; d.skips[key]=false; save(); }
 function setNoSnack(value){const d=day(view==='day'?selected:today());d.food.noSnack=value==='null'?null:value==='true';d.skips.noSnack=false;save();}
@@ -1558,6 +1602,8 @@ function toggleEvent(e){ const d=day(selected); d.events=d.events.includes(e)?d.
 function cycleAlcohol(){ const d=day(selected),v=d.alcohol==null?0:+d.alcohol; d.alcohol=v<=0?1:v===1?2:null; save(); }
 function shiftMonth(n){ const d=parseDate(calendarMonth); d.setMonth(d.getMonth()+n); calendarMonth=iso(new Date(d.getFullYear(),d.getMonth(),1,12)); selected=calendarMonth; render(); }
 function saveGoalForm(){
+  const beforeGoal=JSON.parse(JSON.stringify(db.goal)), beforePlan={...db.plan};
+  const effectiveFrom=calendarEffectiveDate();
   const oldStart=db.goal.start;
   const newStart=document.getElementById('goalStart')?.value||db.goal.start;
   db.goal.name=document.getElementById('goalName')?.value.trim()||db.goal.name;
@@ -1568,11 +1614,17 @@ function saveGoalForm(){
     for(const id of TRACKER_IDS){ if(db.goal.trackers[id].activeFrom===oldStart) db.goal.trackers[id].activeFrom=newStart; }
   }
   const entered=document.getElementById('goalStartWeight')?.value;
-  if(entered!==undefined&&entered!=='') { db.goal.startWeight=+entered; day(newStart).weight=+entered; }
-  saveInputsFromDOM();
+  if(entered!==undefined&&entered!=='' && Number.isFinite(+entered)) {
+    // Changing a goal start date must not invent a historical weigh-in.
+    if(+entered!==activeGoalStartWeight() && newStart===oldStart)day(newStart).weight=+entered;
+    db.goal.startWeight=+entered;
+  }
+  saveInputsFromDOM(false);
+  recordCalendarRuleChange(beforeGoal,beforePlan,effectiveFrom);
 }
 function archiveGoal(){
   saveGoalForm();
+  const oldGoal=JSON.parse(JSON.stringify(db.goal)),oldPlan={...db.plan};
   const end=latestWeight(today())?.weight??null; const startSnapshot=activeGoalStartWeight(); const status=goalStatus({...db.goal,startWeight:startSnapshot,snapshot:true},end);
   let planDays=0, strengthMinutes=0, cardioMinutes=0, eventCount=0;
   for(let s=db.goal.start;s<=today()&&s<=db.goal.end;s=addDays(s,1)){
@@ -1582,6 +1634,7 @@ function archiveGoal(){
   }
   const snapshot={...db.goal,id:db.goal.id||newGoalId(),trackers:normalizeTrackers(db.goal,false),review:blankReview(),reviews:normalizeReviews(db.goal),planSnapshot:{...db.plan},startWeight:startSnapshot,ended:today(),endWeight:end,resultStatus:status,planDays,strengthMinutes,cardioMinutes,eventCount,snapshot:true,schemaVersion:SCHEMA_VERSION}; db.goals.push(snapshot);
   db.goal={id:newGoalId(),name:'New goal',start:today(),end:addDays(today(),30),startWeight:end??db.goal.target,target:Math.max(35,(end??db.goal.target)-2),status:'active',focus:'both',trackers:defaultTrackersForFocus('both',today()),review:blankReview(),reviews:[]};
+  recordCalendarRuleChange(oldGoal,oldPlan,today());
   view='goals'; save(db.language==='zh'?'当前目标已归档。':'Goal archived.');
 }
 function exportData(){
