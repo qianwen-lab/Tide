@@ -1,6 +1,6 @@
 const STORAGE_KEY = 'tide.v1';
-const VERSION = '9.4.1';
-const SCHEMA_VERSION = 15; // Date-effective calendar rule history; original daily records remain unchanged.
+const VERSION = '9.5.0';
+const SCHEMA_VERSION = 16; // Small-win receipts; original daily records remain unchanged.
 
 const COLORS = { sage:'#5E836F', sageDeep:'#244C3E', pink:'#C98994', pinkSoft:'#EBCFD4', blue:'#8C918D', ink:'#1F2823' };
 const iso = d => {
@@ -740,7 +740,7 @@ function goalForecast(){
 function changePage(){
   const series=chartData(), f=goalForecast();
   const targetVisible=db.goal.status!=='idle'&&db.goal.mode!=='record'&&(range==='goal'||(series.length&&db.goal.start<=series.at(-1).date&&db.goal.end>=series[0].date));
-  return `${topbar('Progress')}<section class="card change-goal-card"><div class="row between"><b>Weight</b><button class="quiet-link" data-action="chartSettings">Customize</button></div><div class="range-controls" role="group" aria-label="Chart range">${[['goal','Goal'],['30','30D'],['90','90D'],['all','All']].map(([v,label])=>`<button class="pill ${range===v?'on':''}" data-range="${v}" aria-pressed="${range===v}">${label}</button>`).join('')}</div><div class="legend"><span><span class="legend-line actual-line"></span>Weight</span><span><span class="legend-line average-line"></span>7-day avg</span>${targetVisible?'<span><span class="legend-line goal-line"></span>Target</span>':''}${showForecast?'<span><span class="legend-line forecast-line"></span>Estimate</span>':''}</div><div class="chart-wrap">${renderChart(series,showForecast?f:null)}</div><div class="chart-bottom"><button class="quiet-link" data-action="toggleForecast" aria-pressed="${showForecast}">${showForecast?'Hide':'Show'} estimate</button><details class="chart-info-wrap"><summary aria-label="Chart information">i</summary><div class="chart-info-popover">Goal includes the previous 7 days. Longer views start at the first available reading. Missing stretches stay open. An average needs 3 readings. Dots show previous-day context, not causes.</div></details></div>${showForecast&&!f.ready?'<div class="small">Not enough recent data.</div>':''}</section>${db.goal.status!=='idle'?`<section class="card progress-behavior-card">${weeklyBehaviorProgress(db.goal)}</section><section class="card other-signals-card">${otherSignals(db.goal)}</section>`:''}${returnCount()?`<div class="small return-count">Back on plan ${returnCount()} time${returnCount()===1?'':'s'}.</div>`:''}`;
+  return `${topbar('Progress')}<section class="card change-goal-card"><div class="row between"><b>Weight</b><button class="quiet-link" data-action="chartSettings">Customize</button></div><div class="range-controls" role="group" aria-label="Chart range">${[['goal','Goal'],['30','30D'],['90','90D'],['all','All']].map(([v,label])=>`<button class="pill ${range===v?'on':''}" data-range="${v}" aria-pressed="${range===v}">${label}</button>`).join('')}</div><div class="legend"><span><span class="legend-line actual-line"></span>Weight</span><span><span class="legend-line average-line"></span>7-day avg</span>${targetVisible?'<span><span class="legend-line goal-line"></span>Target</span>':''}${showForecast?'<span><span class="legend-line forecast-line"></span>Estimate</span>':''}</div><div class="chart-wrap">${renderChart(series,showForecast?f:null)}</div><div class="chart-bottom"><button class="quiet-link" data-action="toggleForecast" aria-pressed="${showForecast}">${showForecast?'Hide':'Show'} estimate</button><details class="chart-info-wrap"><summary aria-label="Chart information">i</summary><div class="chart-info-popover">Goal includes the previous 7 days. Longer views start at the first available reading. Missing stretches stay open. An average needs 3 readings. Dots show previous-day context, not causes.</div></details></div>${showForecast&&!f.ready?'<div class="small">Not enough recent data.</div>':''}</section>${db.goal.status!=='idle'?`<section class="card progress-behavior-card">${weeklyBehaviorProgress(db.goal)}</section>`:''}<section class="card other-signals-card">${weeklyWinHtml()}${otherSignals(db.goal)}</section><button class="wins-progress-link" data-action="openWins">Small wins & collection <span>→</span></button>`;
 }
 
 function chartData(){
@@ -773,11 +773,11 @@ function weightPointContext(weightDate){
   const eatingOut=events.includes('eating_out')||prev.eveningOut===true;
   const alcohol=prev.alcohol==null?null:+prev.alcohol;
   const hadSnacks=snackValue(prev)===false; // D-1 explicit Had snacks ONLY; true, null and N/A do not match.
-  const hunger=prev.food.bedtimeHunger==null?null:+prev.food.bedtimeHunger;
-  const steps=prev.move.steps==null?null:+prev.move.steps;
-  const cardio=prev.move.cardio==null?null:+prev.move.cardio;
-  const strength=prev.move.strength==null?null:+prev.move.strength;
-  const sleep=same.sleep==null?null:+same.sleep; // morning log for the same weigh-in
+  const hunger=prev.skips.bedtimeHunger||prev.food.bedtimeHunger==null?null:+prev.food.bedtimeHunger;
+  const steps=prev.skips.steps||prev.move.steps==null?null:+prev.move.steps;
+  const cardio=prev.skips.cardio||prev.move.cardio==null?null:+prev.move.cardio;
+  const strength=prev.skips.strength||prev.move.strength==null?null:+prev.move.strength;
+  const sleep=same.skips.sleep||same.sleep==null?null:+same.sleep; // morning log for the same weigh-in
   const exerciseAvailable={steps:steps!=null&&steps>=10000,cardio:cardio!=null&&cardio>0,strength:strength!=null&&strength>0};
   const exerciseNotable=Object.values(exerciseAvailable).some(Boolean);
   const sleepNotable=sleep!=null&&sleep<6;
@@ -785,18 +785,20 @@ function weightPointContext(weightDate){
   const foodMatch=(eatingOut&&settings.food.includes('eating_out')) || (alcohol>0&&settings.food.includes('alcohol')) || (hadSnacks&&settings.food.includes('snacks')) || custom.some(e=>e.category==='food');
   const otherMatch=events.some(id=>settings.other.includes(id)) || (sleepNotable&&settings.other.includes('short_sleep')) || custom.some(e=>e.category==='other');
   const exerciseMatch=settings.exercise.some(key=>exerciseAvailable[key]);
-  const prevDetails=events.map(eventLabel);
+  const prevDetails=events.filter(id=>!(id==='eating_out'&&prev.eveningOut)).map(eventLabel);
   if(prev.eveningOut===true)prevDetails.push('Dinner out');
   if(alcohol>0)prevDetails.push(`Alcohol ${alcohol>=2?'2+':alcohol}`);
   if(hadSnacks)prevDetails.push(usesEveningPlan(prevDate)?'Extra snacks':'Snacks');
   else if(snackValue(prev)===true)prevDetails.push(usesEveningPlan(prevDate)?'No extra snacks':'No snacks');
   if(prev.eveningFood==='had')prevDetails.push(`Planned evening food: ${eveningPlanFor(prevDate)}`);
+  if(prev.eveningFood==='not-needed')prevDetails.push('Evening food not needed');
   if(hunger!=null)prevDetails.push(`Hunger ${hunger}/5`);
-  if(exerciseNotable){
+  if(steps>0||cardio>0||strength>0||(!prev.skips.stretch&&prev.move.stretch===true)){
     const exercise=[];
-    if(exerciseAvailable.steps)exercise.push(`${steps>=1000?(steps/1000).toFixed(1).replace('.0','')+'k':Math.round(steps)} steps`);
+    if(steps>0)exercise.push(`${steps>=1000?(steps/1000).toFixed(1).replace('.0','')+'k':Math.round(steps)} steps`);
     if(exerciseAvailable.cardio)exercise.push(`Cardio ${Math.round(cardio)}m`);
     if(exerciseAvailable.strength)exercise.push(`Strength ${Math.round(strength)}m`);
+    if(!prev.skips.stretch&&prev.move.stretch===true)exercise.push('Stretch');
     if(exercise.length)prevDetails.push(exercise.join(' · '));
   }
   // Sleep is logged on the weigh-in morning, not on the previous calendar day.
@@ -868,8 +870,9 @@ function chartTipHtml(d,showContext=true){
   if(!d) return '';
   const c=weightPointContext(d.date);
   const context=showContext&&c.prevDetails.length?`<span class="tip-context-inline">· ${fmtShortDate(c.prevDate)} logs · ${escapeHtml(c.prevDetails.join(' · '))}</span>`:'';
-  const sleepContext=showContext&&c.sleepNotable?`<span class="tip-context-inline">· Last night sleep ${fmt(c.sleep)}h</span>`:'';
-  return `<b>${fmtShortDate(d.date)}</b><span>${fmt(d.weight)} kg${d.avg==null?'':` · avg ${fmt(d.avg)}`}</span>${context}${sleepContext}`;
+  const sleepContext=showContext&&c.sleep!=null?`<span class="tip-context-inline">· Last night sleep ${fmt(c.sleep)}h</span>`:'';
+  const emptyContext=showContext&&!c.prevDetails.length&&c.sleep==null?'<span class="tip-context-inline">No context logged.</span>':'';
+  return `<b>${fmtShortDate(d.date)}</b><span>${fmt(d.weight)} kg${d.avg==null?'':` · avg ${fmt(d.avg)}`}</span>${context}${sleepContext}${emptyContext}`;
 }
 function weeklyTargetFor(g,id){
   const p=planForGoal(g);
@@ -1159,7 +1162,7 @@ function goalReviewPack(g){
     const exerciseValues=Object.values(rec.move||{}).some(v=>v!==null&&v!=='');
     const hasData=rec.weight!=null || rec.sleep!=null || rec.alcohol!=null || foodValues || exerciseValues || Object.values(rec.skips||{}).some(Boolean) || rec.events.length || rec.note;
     if(!hasData&&!rec.eveningFood&&rec.eveningOut==null) continue;
-    records.push({date:s,weight:rec.weight,sevenDayAverage:goalAverageFor(g,s),lastNightSleepHours:rec.sleep,alcohol:rec.alcohol==null?null:(+rec.alcohol>=2?'2+':+rec.alcohol===1?'1':'none'),eveningFood:{plan:eveningPlanFor(s),status:rec.eveningFood,dinnerOut:rec.eveningOut},returnPlanned:!!returnFor(s),food:{extraSnacks:rec.food.extraSnacks,veg:rec.food.veg,protein:rec.food.protein,fruit:rec.food.fruit,noSnack:rec.food.noSnack,noFoodAfterCutoff:rec.food.stop6,waterLiters:rec.food.water,bedtimeHunger:rec.food.bedtimeHunger},exercise:{...rec.move},skipOrNA:{...rec.skips},lifeEvents:rec.events.map(eventLabel),note:rec.note||''});
+    records.push({date:s,weight:rec.weight,sevenDayAverage:goalAverageFor(g,s),lastNightSleepHours:rec.sleep,alcohol:rec.alcohol==null?null:(+rec.alcohol>=2?'2+':+rec.alcohol===1?'1':'none'),eveningFood:{plan:eveningPlanFor(s),status:rec.eveningFood,dinnerOut:rec.eveningOut},returnPlanned:!!returnFor(s),backOnPlan:returnedOn(s),food:{extraSnacks:rec.food.extraSnacks,veg:rec.food.veg,protein:rec.food.protein,fruit:rec.food.fruit,noSnack:rec.food.noSnack,noFoodAfterCutoff:rec.food.stop6,waterLiters:rec.food.water,bedtimeHunger:rec.food.bedtimeHunger},exercise:{...rec.move},skipOrNA:{...rec.skips},lifeEvents:rec.events.map(eventLabel),note:rec.note||''});
   }
   const endWeight=active ? goalEvidence(g).last?.weight??null : g.endWeight??null;
   const startWeight=active ? activeGoalStartWeight() : +g.startWeight;
@@ -1185,7 +1188,9 @@ function goalReviewPack(g){
         'Bedtime hunger 1=low and 5=very hungry. Do not praise high hunger, restrictive behavior or excessive exercise; prioritize sustainable practices.',
         'If this export includes sleep data, lastNightSleepHours on D is the night immediately before morning D. If not logged or irrelevant, do not discuss sleep.',
         'Period and other events are optional context. Note repeated associations as tentative, never claim a single event caused next-day weight change.',
-        'Make 1-3 concrete observations supported by data and 1-3 practicable next actions; state important gaps in the summary if records are sparse.'
+        'Make 1-3 concrete observations supported by data and 1-3 practicable next actions; state important gaps in the summary if records are sparse.',
+        'Acknowledge one actual small win when present, including movement that is not a Goal tracker. Never invent success, reward hunger, or link a reward to weight loss. A return means the first actual on-plan snack log after extras, even after unlogged days; promises do not count.',
+        'Keep the review concise. Sleep/hunger/planned-evening-food associations are exploratory, not causes; do not compare original snack rules to the new extra-snack policy as equivalent outcomes.'
       ],
       inTide:'Open Goals → Goal review → Add review. Use Import review JSON if you saved the generated file, or paste the generated JSON, Preview review, then Save Review. Do not import the original goal-data export as a completed review.'
     },
@@ -1194,6 +1199,8 @@ function goalReviewPack(g){
     priorWeightContext:latestWeights(addDays(g.start,-1)).filter(r=>r.date>=addDays(g.start,-21)).map(r=>({date:r.date,weight:r.weight})),
     calendarRuleHistory:db.calendarRuleHistory.filter(r=>r.effectiveFrom<=through),
     datedEvidence:goalEvidence(g),
+    smallWins:{...weeklyWin(through,g.snapshot?[g.start,addDays(through,-6)].sort().at(-1):addDays(through,-6)),lifetimeOnPlanDays:encouragementStats(db,through).days.length,lifetimeReturns:encouragementStats(db,through).returns.length},
+    localReview:reviewDigest(g),
     goalId:g.id,
     exportedAt:new Date().toISOString(),
     goal:{name:g.name,start:g.start,end:g.end,startWeight,targetWeight:+g.target,currentOrEndWeight:endWeight,status:active?'active':goalStatus(g,endWeight),focus:g.focus||'both'},
@@ -1439,7 +1446,7 @@ function saveInputsFromDOM(recordRuleHistory=true){
   if(recordRuleHistory)recordCalendarRuleChange(beforeGoal,beforePlan,effectiveFrom);
 }
 function setFood(key,val){ const d=day(view==='day'?selected:today()); d.food[key]=val; d.skips[key]=false; save(); }
-function setNoSnack(value){const d=day(view==='day'?selected:today());const v=value==='null'?null:value==='true';if(usesEveningPlan(d.date)){d.food.extraSnacks=v==null?null:!v;snapshotEveningPlan(d);}else d.food.noSnack=v;d.skips.noSnack=false;save();}
+function setNoSnack(value){const before=encouragementStats(),d=day(view==='day'?selected:today());if(d.date>today())return;const v=value==='null'?null:value==='true';if(usesEveningPlan(d.date)){d.food.extraSnacks=v==null?null:!v;snapshotEveningPlan(d);}else d.food.noSnack=v;d.skips.noSnack=false;celebrateSnackLog(before,d.date);save();}
 function toggleFood(key){ const d=day(view==='day'?selected:today()); d.food[key]=d.food[key]===true?false:true; d.skips[key]=false; save(); }
 function toggleMove(key){ const d=day(view==='day'?selected:today()); d.move[key]=d.move[key]===true?false:true; d.skips[key]=false; save(); }
 function toggleSkip(id){ const d=day(view==='day'?selected:today()); d.skips[id]=!d.skips[id]; save(); }
@@ -1638,9 +1645,12 @@ function render(){
   else if(view==='endGoal')content=endGoalPage();
   else if(view==='planEdit')content=planEditPage();
   else if(view==='eveningEdit')content=eveningEditPage();
+  else if(view==='wins')content=winsPage();
   lastRenderDate=today();
-  document.getElementById('app').innerHTML=`<main class="shell">${content}${['today','calendar','change','goals','settings'].includes(view)?nav():''}</main>${quickWeightModal()}${archiveGoalModal()}${customRemoveModal()}`;
+  document.getElementById('app').innerHTML=`<main class="shell">${content}${['today','calendar','change','goals','settings'].includes(view)?nav():''}</main>${quickWeightModal()}${archiveGoalModal()}${customRemoveModal()}${encouragementToast()}`;
   bind();
+  const notice=document.querySelector('.win-toast');
+  if(notice){const timer=setTimeout(()=>{notice.remove();document.querySelectorAll('.win-dot.is-new').forEach(dot=>dot.classList.remove('is-new'));},3200);timer.unref?.();}
   document.querySelector('.weight-modal')?.addEventListener('click',e=>e.stopPropagation());
   document.querySelector('.archive-confirm-modal')?.addEventListener('click',e=>e.stopPropagation());
   document.querySelector('.custom-confirm')?.addEventListener('click',e=>e.stopPropagation());

@@ -5,7 +5,7 @@ function migrateJourney(out, raw) {
     out.journey = JSON.parse(JSON.stringify(raw.journey));
     out.journey.returns ||= [];
     out.journey.eveningPlans ||= [];
-    return out;
+    return migrateEncouragement(out);
   }
   const from = today();
   const beforeGoal = JSON.parse(JSON.stringify(out.goal)), beforePlan = {...out.plan};
@@ -18,13 +18,16 @@ function migrateJourney(out, raw) {
   }));
   out.calendarRuleHistory = out.calendarRuleHistory.filter(r=>r.effectiveFrom<from);
   out.calendarRuleHistory.push({effectiveFrom:from,goal:JSON.parse(JSON.stringify(out.goal)),plan:{...out.plan}},...scheduled);
-  return out;
+  return migrateEncouragement(out);
 }
 function usesEveningPlan(date) { return date >= db.journey.effectiveFrom; }
 function snackValue(d) {
+  return snackValueFor(d, db.journey.effectiveFrom);
+}
+function snackValueFor(d, effectiveFrom) {
   if (d.skips?.noSnack) return null;
-  if (!usesEveningPlan(d.date)) return d.food.noSnack;
-  return typeof d.food.extraSnacks === 'boolean' ? !d.food.extraSnacks : null;
+  if (d.date < effectiveFrom) return typeof d.food?.noSnack === 'boolean' ? d.food.noSnack : null;
+  return typeof d.food?.extraSnacks === 'boolean' ? !d.food.extraSnacks : null;
 }
 function eveningPlanFor(date) {
   const override = db.days[date]?.eveningPlan;
@@ -33,8 +36,8 @@ function eveningPlanFor(date) {
 }
 function snapshotEveningPlan(d) { if (d.eveningPlan == null) d.eveningPlan = eveningPlanFor(d.date); }
 function returnFor(date) { return db.journey.returns.find(r=>r.date===date); }
-function returnedOn(date) { return !!returnFor(date) && snackValue(readDay(date))===true; }
-function returnCount() { return db.journey.returns.filter(r=>r.date<=today() && returnedOn(r.date)).length; }
+function returnedOn(date) { return encouragementStats().returns.includes(date); }
+function returnCount() { return encouragementStats().returns.length; }
 function snackControls(d) {
   const modern=usesEveningPlan(d.date), value=snackValue(d);
   const choices=modern?[[true,'No extras'],[false,'Had extras'],[null,'Not logged']]:[[true,'No snacks'],[false,'Had snacks'],[null,'Not logged']];
@@ -50,7 +53,8 @@ function eveningFoodCard(d) {
 function returnCard(d) {
   if (d.date!==today()) return '';
   const value=snackValue(d), planned=returnFor(d.date), next=returnFor(addDays(d.date,1));
-  if(planned&&value===true) return '<div class="return-strip returned" role="status"><b>Back on plan ✓</b></div>';
+  if(value===true&&returnedOn(d.date)) return '<div class="return-strip returned"><b>Back on plan ✨</b></div>';
+  if(value===true)return '';
   if(value===false) return next?'<div class="return-strip"><span>Tomorrow planned ✓</span><button class="quiet-link" data-action="undoReturn">Undo</button></div>':'<div class="return-strip"><button class="quiet-link" data-action="planReturn">Back to my plan tomorrow →</button></div>';
   return planned?'<div class="return-strip"><b>Back to plan today</b></div>':'';
 }
@@ -104,7 +108,8 @@ function goalEvidence(g) {
 function localGoalReview(g, compact=false) {
   const e=goalEvidence(g), digest=reviewDigest(g), theme=goalTheme(g);
   const warning=e.discrepancy?'Saved end weight differs from dated logs.':e.stale?'Latest weight is out of date.':'';
-  return `<section class="card local-review review-${theme.tone}"><div class="digest-row"><span>Trend</span><b>${escapeHtml(digest.trend)}</b></div>${!compact?`<div class="digest-row"><span>Pattern</span><b>${escapeHtml(digest.pattern)}</b></div><div class="digest-row next"><span>Next</span><b>${escapeHtml(digest.next)}</b></div>`:''}${warning?`<p class="data-note">${warning}</p>`:''}${!compact?`<details class="review-details"><summary>Data</summary><div class="small">${e.last?`${fmt(e.last.weight)} kg · ${fmtDate(e.last.date)}`:'No weigh-ins'}${e.endTrend.value==null?'':` · average ${fmt(e.endTrend.value)} kg`}<br>${e.met} / ${e.logged} snack logs on plan · ${Math.max(0,e.total-e.logged)} unknown or N/A<br>Pattern window: ${fmtDate(digest.from)}–${fmtDate(e.through)}${e.discrepancy?`<br>Saved end: ${fmt(g.endWeight)} kg. Original values preserved.`:''}</div></details>`:''}</section>`;
+  const winFrom=g.snapshot?[g.start,addDays(e.through,-6)].sort().at(-1):addDays(e.through,-6);
+  return `<section class="card local-review review-${theme.tone}">${!compact?weeklyWinHtml(e.through,winFrom):''}<div class="digest-row"><span>Trend</span><b>${escapeHtml(digest.trend)}</b></div>${!compact?`<div class="digest-row"><span>Pattern</span><b>${escapeHtml(digest.pattern)}</b></div><div class="digest-row next"><span>Next</span><b>${escapeHtml(digest.next)}</b></div>`:''}${warning?`<p class="data-note">${warning}</p>`:''}${!compact?`<details class="review-details"><summary>Data</summary><div class="small">${e.last?`${fmt(e.last.weight)} kg · ${fmtDate(e.last.date)}`:'No weigh-ins'}${e.endTrend.value==null?'':` · average ${fmt(e.endTrend.value)} kg`}<br>${e.met} / ${e.logged} snack logs on plan · ${Math.max(0,e.total-e.logged)} unknown or N/A<br>Pattern window: ${fmtDate(digest.from)}–${fmtDate(digest.through)}${digest.evidence?`<br>${escapeHtml(digest.evidence)}<br>Observed together; not proof of cause.`:''}<br>Small wins: ${fmtDate(winFrom)}–${fmtDate(e.through)}${e.discrepancy?`<br>Saved end: ${fmt(g.endWeight)} kg. Original values preserved.`:''}</div></details>`:''}</section>`;
 }
 
 function nextStepChoices() {
@@ -133,7 +138,9 @@ function validateGoalForm() {
   return true;
 }
 function handleJourneyAction(action, button) {
-  if(action==='planReturn') { const date=addDays(today(),1);if(!returnFor(date))db.journey.returns.push({from:today(),date,createdAt:new Date().toISOString()});save(); }
+  if(action==='openWins') { winsReturnView=view;view='wins';render(); }
+  else if(action==='closeWins') { view=winsReturnView;render(); }
+  else if(action==='planReturn') { const date=addDays(today(),1);if(!returnFor(date))db.journey.returns.push({from:today(),date,createdAt:new Date().toISOString()});save(); }
   else if(action==='undoReturn') { db.journey.returns=db.journey.returns.filter(r=>r.date!==addDays(today(),1));save(); }
   else if(action==='editEvening') { if(view==='goalEdit')saveGoalForm();eveningReturnView=view;eveningEditDate=button.dataset.eveningDate||today();view='eveningEdit';render(); }
   else if(action==='cancelEvening') { view=eveningReturnView;render(); }
@@ -150,7 +157,7 @@ function journeyTodayPage() {
   const d=day(today());
   return `${topbar(`Today · ${fmtDate(today())}`)}${flashHtml()}${endGoalTodayEntry()}${todayGoalCard()}
     <button class="quick-weight-card ${d.weight==null?'empty-weight':''}" data-action="quickWeight"><div><div class="quick-weight-label">Morning weight</div><div class="quick-weight-value">${d.weight==null?'Log weight':`${fmt(d.weight)} <span>kg</span>`}</div></div><div class="quick-weight-action">${d.weight==null?'Add':'Edit'} ›</div></button>
-    <section class="card today-food">${snackControls(d)}${eveningFoodCard(d)}${returnCard(d)}</section>
+    <section class="card today-food">${snackControls(d)}${encouragementStrip()}${eveningFoodCard(d)}${returnCard(d)}</section>
     <button class="today-edit-button" data-action="editToday">Log today →</button>${dailyThoughtBlock()}`;
 }
 
@@ -195,9 +202,14 @@ function goalMiniChart(g) {
 }
 function reviewDigest(g) {
   const e=goalEvidence(g), from=g.snapshot&&g.start>addDays(e.through,-13)?g.start:addDays(e.through,-13);
-  const days=Object.values(db.days).filter(d=>d.date>=from&&d.date<=e.through);
+  const allDays=Object.values(db.days).filter(d=>d.date>=from&&d.date<=e.through);
+  const hasModernLogs=allDays.some(d=>usesEveningPlan(d.date)&&snackValue(d)!=null);
+  const patternFrom=hasModernLogs&&db.journey.effectiveFrom>from?db.journey.effectiveFrom:from;
+  const patternThrough=hasModernLogs||from>=db.journey.effectiveFrom?e.through:[e.through,addDays(db.journey.effectiveFrom,-1)].sort()[0];
+  const days=allDays.filter(d=>d.date>=patternFrom&&d.date<=patternThrough);
   const recent=days.filter(d=>d.date>=addDays(e.through,-6)), previous=days.filter(d=>d.date<addDays(e.through,-6));
-  const logs=days.filter(d=>snackValue(d)!=null), snackDays=logs.filter(d=>snackValue(d)===false);
+  // Do not compare two different snack policies as if they were one measurement.
+  const logs=days.filter(d=>d.date>=patternFrom&&snackValue(d)!=null), snackDays=logs.filter(d=>snackValue(d)===false);
   const hunger=days.filter(d=>d.food.bedtimeHunger!=null&&!d.skips?.bedtimeHunger), hungry=hunger.filter(d=>d.food.bedtimeHunger>=4);
   const overlap=snackDays.filter(d=>d.food.bedtimeHunger>=4&&!d.skips?.bedtimeHunger);
   const out=logs.filter(d=>d.eveningOut||d.events.includes('eating_out'));
@@ -212,10 +224,12 @@ function reviewDigest(g) {
     const change=e.last.weight-e.rows[0].weight;
     trend=change<-.2?'Lower than the first reading.':change>.2?'Higher than the first reading.':'Little change so far.';
   }
-  let pattern='Food logs are too sparse.', next='Log snacks and evening hunger.';
+  let pattern='Food logs are too sparse.', next='Log snacks and evening hunger.', evidence='';
   const rate=rows=>{const logged=rows.filter(d=>snackValue(d)!=null);return {n:logged.length,rate:logged.length?logged.filter(d=>snackValue(d)===false).length/logged.length:null};};
-  const old=rate(previous), now=rate(recent);
-  if(overlap.length>=3){pattern='Snacking and high hunger overlap.';next='Adjust the evening food plan.';}
+  const old=rate(previous.filter(d=>d.date>=patternFrom)), now=rate(recent.filter(d=>d.date>=patternFrom));
+  const signal=reviewSignal(logs);
+  if(signal){({pattern,next,evidence}=signal);}
+  else if(overlap.length>=3){pattern='Snacking and high hunger overlap.';next='Adjust the evening food plan.';evidence=`${overlap.length} snack days also logged hunger 4–5/5.`;}
   else if(hungry.length>=3&&hungry.length/hunger.length>=.5){pattern='High evening hunger keeps returning.';next='Try a more satisfying evening plan.';}
   else if(old.n>=3&&now.n>=3&&now.rate<=old.rate-.25){pattern='Fewer snack days lately.';next='Keep the current evening routine.';}
   else if(snackDays.length>=3&&snackDays.length/logs.length>=.5){pattern='Snack days are frequent.';next='Plan tomorrow’s evening food.';}
@@ -223,8 +237,22 @@ function reviewDigest(g) {
   else if(logs.length>=4&&snackDays.length/logs.length<=.25){pattern='Snack habits look consistent.';next='Keep the routine; watch the trend.';}
   else if(logs.length>=4){pattern='Some days return to extra snacks.';next='Choose one easy plan for tomorrow.';}
   if(e.discrepancy){next='Check the dated weight logs.';}
-  else if(e.stale||!e.last){next='Log a current weight first.';}
-  return {trend,pattern,next,from};
+  return {trend,pattern,next,from:patternFrom,through:patternThrough,evidence};
+}
+function reviewSignal(logs) {
+  const comparison=(rows,key,labelA,labelB,pattern,next)=>{
+    const a=rows.filter(d=>key(d)===true),b=rows.filter(d=>key(d)===false);
+    if(a.length<3||b.length<3)return null;
+    const extras=rows=>rows.filter(d=>snackValue(d)===false).length, na=extras(a),nb=extras(b);
+    if(na/a.length-nb/b.length<.3||na<3)return null;
+    return {pattern,next,evidence:`Snack days: ${labelA} ${na}/${a.length}; ${labelB} ${nb}/${b.length}.`};
+  };
+  const evening=logs.filter(d=>usesEveningPlan(d.date)&&!d.eveningOut&&['had','not-needed'].includes(d.eveningFood));
+  const hunger=logs.filter(d=>!d.skips?.bedtimeHunger&&Number.isFinite(d.food.bedtimeHunger)&&d.food.bedtimeHunger>=1&&d.food.bedtimeHunger<=5);
+  const sleep=logs.filter(d=>!d.skips?.sleep&&Number.isFinite(d.sleep)&&d.sleep>0&&d.sleep<=24);
+  return comparison(evening,d=>d.eveningFood==='not-needed','no evening food','had planned food','Fewer extras on planned-food evenings.','Try keeping evening food ready.')
+    ||comparison(hunger,d=>d.food.bedtimeHunger>=4,'hunger 4–5','hunger 1–3','Snacking was more common on hungry evenings.','Try preparing evening food earlier.')
+    ||comparison(sleep,d=>d.sleep<6,'sleep under 6h','sleep 6h or more','Snacking was more common after short sleep.','Keep an easy evening option ready.');
 }
 function weekGridHeader() {
   return '<div class="behavior-row week-labels"><span></span><div class="seven-grid">'+['M','T','W','T','F','S','S'].map(x=>`<span>${x}</span>`).join('')+'</div></div>';
@@ -246,4 +274,104 @@ function otherSignals(g) {
     return `<span class="signal-cell ${v==null?'unlogged':'logged'}" title="${fmtShortDate(date)} · ${v==null?'Not logged':typeof v==='boolean'?(v?'Yes':'No'):escapeHtml(String(v))}">${text}</span>`;
   }).join('')}</div></div>`).join('');
   return `<div class="row between behavior-heading"><b>Other signals</b><span class="small">Not scored</span></div>${weekGridHeader()}${rows}`;
+}
+
+// Counts come from dated logs, never promises, goal boundaries, or body weight.
+const WIN_MILESTONES=[
+  {days:3,id:'shell',name:'First shell',tone:'shell'},
+  {days:7,id:'wave',name:'Gentle tide',tone:'wave'},
+  {days:14,id:'sunrise',name:'New light',tone:'sunrise'}
+];
+let winsReturnView='today', encouragementMoment=null;
+function encouragementStats(source=db, through=today()) {
+  const days=[], returns=[];
+  let waiting=false;
+  for(const date of Object.keys(source.days).filter(date=>/^\d{4}-\d{2}-\d{2}$/.test(date)&&date<=through).sort()) {
+    const value=snackValueFor({...source.days[date],date},source.journey.effectiveFrom);
+    if(value===false) waiting=true;
+    if(value===true) {
+      days.push(date);
+      if(waiting) returns.push(date);
+      waiting=false;
+    }
+  }
+  const week=weekDates(through), weekDays=days.filter(date=>date>=week[0]);
+  return {days,returns,weekDays,waiting};
+}
+function migrateEncouragement(out) {
+  const stats=encouragementStats(out), old=out.journey.encouragement;
+  // Opening an existing history unlocks earned pieces without replaying celebrations.
+  const dates=value=>Array.isArray(value)?[...new Set(value.filter(x=>typeof x==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(x)))]:[];
+  out.journey.encouragement={
+    seenDays:old?dates(old.seenDays):[...stats.days],
+    seenReturns:old?dates(old.seenReturns):[...stats.returns],
+    seenMilestones:old&&Array.isArray(old.seenMilestones)?[...new Set(old.seenMilestones.filter(x=>WIN_MILESTONES.some(m=>m.id===x)))]:WIN_MILESTONES.filter(m=>stats.days.length>=m.days).map(m=>m.id)
+  };
+  return out;
+}
+function celebrateSnackLog(before,date) {
+  encouragementMoment=null;
+  if(date>today())return;
+  const after=encouragementStats(), seen=db.journey.encouragement;
+  const added=after.days.includes(date)&&!before.days.includes(date);
+  if(!added)return;
+  const freshDay=!seen.seenDays.includes(date);
+  const freshReturn=after.returns.includes(date)&&!seen.seenReturns.includes(date);
+  const unlocked=WIN_MILESTONES.filter(m=>after.days.length>=m.days&&!seen.seenMilestones.includes(m.id));
+  if(freshDay)seen.seenDays.push(date);
+  if(freshReturn)seen.seenReturns.push(date);
+  seen.seenMilestones.push(...unlocked.map(m=>m.id));
+  if(freshDay||freshReturn||unlocked.length)encouragementMoment={date,
+    text:freshReturn?'Back on plan ✨':date===today()?'Today counts ✓':'Day added ✓',
+    award:unlocked.at(-1)||null};
+}
+function winDots(anchor=today(), animatedDate=encouragementMoment?.date) {
+  return `<span class="win-dots" role="list" aria-label="This week, Monday to Sunday">${weekDates(anchor).map(date=>{
+    const v=date<=today()?snackValue(readDay(date)):null;
+    const state=date>today()?'future':v===true?'earned':v===false?'logged':'unknown';
+    const label=v===true?'On plan':date>today()?'Upcoming':v===false?'Extras logged':'Not logged';
+    return `<span class="win-dot ${state} ${date===today()?'current':''} ${date===animatedDate&&v===true?'is-new':''}" role="listitem" aria-label="${fmtDate(date)}: ${label}" title="${fmtDate(date)} · ${label}">${v===true?'✓':v===false?'·':''}</span>`;
+  }).join('')}</span>`;
+}
+function encouragementStrip() {
+  const n=encouragementStats().weekDays.length;
+  return `<button class="wins-strip" data-action="openWins" aria-label="Small wins: ${n} on-plan days this week. View collection."><span class="wins-heading"><b>On plan · ${n} ${n===1?'day':'days'} this week</b><span aria-hidden="true">↗</span></span>${winDots()}</button>`;
+}
+function encouragementToast() {
+  if(!encouragementMoment)return '';
+  const m=encouragementMoment;encouragementMoment=null;
+  return `<div class="win-toast" role="status"><span>${escapeHtml(m.text)}</span>${m.award?`<span class="win-toast-award">${rewardArt(m.award.id)}${escapeHtml(m.award.name)} unlocked</span>`:''}</div>`;
+}
+function rewardArt(id) {
+  const art={
+    shell:'<path class="reward-fill" d="M22 48C9 44 7 33 13 27c-1-9 8-15 15-12 6-8 17-7 22 1 9 0 15 9 11 17 4 8-3 15-15 17l-5 5H28z"/><path d="M31 47 19 29m16 17-5-24m9 24 4-25m0 26 12-16M25 51h20"/>',
+    wave:'<path class="reward-fill" d="M9 43c8 0 12-5 15-13 7-17 28-18 32-3-8-5-16-2-15 4 1 8 12 9 19 7-5 13-35 19-51 5z"/><path d="M10 50c8 4 14 4 21 1s14-4 26-2M25 31c7-15 22-17 29-7"/>',
+    sunrise:'<path class="reward-fill" d="M19 39a17 17 0 0 1 34 0z"/><path d="M10 40h52M16 48h40M24 55h24M36 9v5M13 19l4 4M59 19l-4 4M7 31l5 2M65 31l-5 2"/>'
+  };
+  return `<svg class="reward-art" viewBox="0 0 72 64" fill="none" aria-hidden="true">${art[id]||art.shell}</svg>`;
+}
+function weeklyWin(through=today(), from=weekDates(through)[0]) {
+  const days=Object.values(db.days).filter(d=>d.date>=from&&d.date<=through&&d.date<=today());
+  const moved=days.filter(d=>['steps','cardio','strength','stretch'].some(id=>!d.skips?.[id]&&(id==='stretch'?d.move[id]===true:Number(d.move[id])>0))).length;
+  const n=days.filter(d=>snackValue(d)===true).length;
+  if(moved)return {text:`You moved on ${moved} ${moved===1?'day':'days'}.`,kind:'movement',count:moved,from,through};
+  const returns=encouragementStats(db,through).returns.filter(date=>date>=from).length;
+  if(returns)return {text:`You came back ${returns===1?'once':`${returns} times`}.`,kind:'return',count:returns,from,through};
+  if(n)return {text:`${n} ${n===1?'day':'days'} on your plan.`,kind:'plan',count:n,from,through};
+  return null;
+}
+function weeklyWinHtml(through=today(),from=weekDates(through)[0]) {
+  const win=weeklyWin(through,from);
+  const period=through===today()?(from===weekDates(today())[0]?'This week':'Last 7 days'):`${fmtShortDate(from)}–${fmtShortDate(through)}`;
+  return win?`<div class="weekly-win"><span aria-hidden="true">✧</span><span><small>${period}</small>${escapeHtml(win.text)}</span></div>`:'';
+}
+function winsPage() {
+  const stats=encouragementStats(), n=stats.days.length, next=WIN_MILESTONES.find(m=>n<m.days);
+  return `${topbar('Small wins','', '<button class="btn ghost" data-action="closeWins">Done</button>')}
+    <section class="card wins-overview"><div class="wins-totals"><div><b>${n}</b><span>${n===1?'day':'days'} on plan</span></div><div><b>${stats.returns.length}</b><span>${stats.returns.length===1?'time':'times'} back on plan</span></div></div><div class="wins-week"><span>This week</span>${winDots()}</div><div class="wins-caption">Every day adds up.</div></section>
+    <div class="collection-heading"><h2>Your collection</h2><span>${WIN_MILESTONES.filter(m=>n>=m.days).length} / 3</span></div>
+    <div class="reward-grid">${WIN_MILESTONES.map(m=>{const earned=n>=m.days;return `<article class="reward-piece reward-${m.tone} ${earned?'earned':'locked'}" aria-label="${m.name}: ${earned?'earned':'not yet earned'}, ${m.days} days"><div class="reward-medallion">${rewardArt(m.id)}</div><b>${m.name}</b><span>${m.days} days</span><small>${earned?`✓ ${fmtShortDate(stats.days[m.days-1])}`:'To collect'}</small></article>`;}).join('')}</div>
+    <p class="collection-note">${next?`${next.days-n} more ${next.days-n===1?'day':'days'} to ${escapeHtml(next.name.toLowerCase())}.`:'All three collected. Your days keep adding up.'}</p>
+    ${weeklyWinHtml()}
+    <details class="card wins-rules"><summary>What counts?</summary><p>A logged day with no extra snacks. Planned evening food is allowed. Dinner out alone doesn’t change the count.</p><p>Returns count the first on-plan day after extras, even after a gap. Unlogged days stay unknown.</p><p>Totals span all goals. Earlier logs use the original snack rule. A break keeps your collection; correcting a log updates totals and earned pieces.</p></details>`;
 }
