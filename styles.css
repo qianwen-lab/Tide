@@ -715,3 +715,28 @@ input:focus,select:focus,textarea:focus{border-color:var(--lab-mid);box-shadow:0
 /* 9.3.1: compact effective-date rule for historical calendar integrity. */
 .effective-date-setting {display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:13px;font-size:13px;color:#47564e;}
 .effective-date-setting input {width:155px;max-width:55%;min-width:0;font-size:14px;padding:8px 7px;}
+
+/* V9.4 — quiet daily focus, planned evenings and return support. */
+.focus-card h2{font-size:23px;line-height:1.2;margin:12px 0 5px;letter-spacing:-.5px}
+.focus-card .actual-row{border:0;padding-bottom:0}.focus-card .actual-label{font-size:14px}
+.evening-card{background:#ECEBE3}.evening-plan{font-size:19px;font-weight:650;line-height:1.4;margin:12px 0;overflow-wrap:anywhere}
+.evening-card .chip-row{margin-top:14px;flex-wrap:wrap}.evening-card .pill{min-height:42px}
+.return-card{background:#E1E9E0;border:1px solid #CFDCCA}.return-card>b{font-size:21px;line-height:1.3;display:block;letter-spacing:-.3px}
+.return-card p{line-height:1.55;font-size:14px;margin:12px 0}.return-commitment{font-weight:650;padding:10px 0}
+.returned{position:relative;padding-right:52px}.return-check{position:absolute;right:18px;top:18px;font-size:25px;color:#456C53;animation:return-arrive .35s ease-out}
+@keyframes return-arrive{from{opacity:0;transform:scale(.7)}to{opacity:1;transform:scale(1)}}
+@media(prefers-reduced-motion:reduce){.return-check{animation:none}}
+.range-controls{display:flex;gap:8px;margin:17px 0 12px}.range-controls button{min-height:40px}
+.chart .goal-interval{fill:#5E836F;opacity:.07}.chart .smooth{stroke:#BA7A85;stroke-width:2;stroke-dasharray:none}.chart .forecast{stroke:#8C918D;stroke-width:1.5;stroke-dasharray:4 4}
+.legend .average-line{border-top:2px solid #BA7A85}.legend .forecast-line{border-top:2px dashed #8C918D!important}
+.chart-footnote{font-size:11px;margin:7px 0}.week-cell.unknown{background:transparent;border:1px dashed #9AA69D}
+.local-review p{font-size:14px;line-height:1.6;margin:13px 0}.local-review .row b{font-size:20px;line-height:1.25}
+.review-facts{display:grid;gap:15px}.review-facts>div{display:grid;gap:4px;font-size:13px;line-height:1.5}.review-facts b{font-size:12px;color:#5C6D60}
+.data-note{border-left:3px solid #BE9C73;padding-left:10px;color:#655641;font-size:12px!important;line-height:1.6}
+.next-step-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.next-step-grid .btn{white-space:normal;min-height:48px}
+#eveningScope{width:100%;min-height:44px;padding:10px;border:1px solid #D2D8D0;border-radius:12px;background:#fff;font:inherit;margin:8px 0 14px}
+.local-review .row{gap:12px;align-items:flex-start}.local-review .row>.small{flex-shrink:0;font-size:10px}
+.today-goal-card .row{gap:12px}.today-goal-card .status{white-space:normal;text-align:center}
+.snack-choices{flex-wrap:wrap}.snack-choice{white-space:normal!important;min-height:44px}
+button:focus-visible,summary:focus-visible{outline:2px solid #456C53;outline-offset:3px}
+@media(max-width:360px){.snack-choice{font-size:11px;padding:8px 5px}.local-review .row{flex-direction:column}.next-step-grid{grid-template-columns:1fr}}
