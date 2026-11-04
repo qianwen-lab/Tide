@@ -1,46 +1,43 @@
-# Tide 9.5.0 — Small wins
+# Tide Private V9.4 — Less logging, more useful feedback
 
-Tide is a local-first, offline-capable personal tracker. This release adds positive feedback and useful context while keeping the daily screen compact and preserving existing records.
+**Private Tide only; Beta unchanged.** V9.4 builds on V9.3.2 and keeps the existing Progress forecast, historical-weight context, Snacks marker, and dated Calendar scoring fixes.
 
-## What changed
+## Upgrade safely
+1. In your current private Tide, export a JSON backup from Settings before updating.
+2. Unzip this package and upload the eight files flat to the root of the original `Tide` GitHub repository, **not** `Tide-Beta`.
+3. After GitHub Pages deploys, refresh Safari once. Settings should show version `9.4`.
 
-- **Today:** A compact **On plan** row with seven weekly dots. Explicit no-extra-snack days count; planned evening food is allowed. Dinner out, missing logs and future dates do not create successes or failures. A completed day gets a brief animation, with reduced-motion support.
-- **Returning:** The first actual on-plan day after extra snacks earns **Back on plan**, even after a gap. No promise is required. Consecutive on-plan days do not create extra returns. The optional **Back to my plan tomorrow** commitment remains available but never earns credit by itself.
-- **Small wins:** Tap the weekly row or **Small wins & collection** in Progress for lifetime days and return counts. At 3, 7 and 14 cumulative days, collect **First shell**, **Gentle tide** and **New light**. Earlier eligible logs count immediately; they do not replay old celebrations. Breaks and new goals keep earned pieces. Correcting or clearing logs recalculates counts and earned pieces. Repeated taps and reloads never replay the same reward.
-- **Review:** Three short rows—**Trend**, **Pattern**, **Next**—plus one supported positive observation from the latest seven days when available. Movement counts as a real effort even when it is not a Goal tracker. Archived reviews stay within that goal's dates.
-- **Useful context:** Sleep, hunger and actual evening-food records can suggest one adjustment. Comparison patterns require at least three paired records in each group, at least three snack days in the higher-rate group, and a difference of at least 30 percentage points. These are exploratory associations, not causes or clinical thresholds. Exact counts and dates stay inside collapsed **Data**. Different snack-policy periods are not pooled in a comparison.
-- **Progress:** Point selection shows previous-day food, movement and hunger, plus the sleep logged on the weigh-in morning, including normal sleep values. Skipped observations remain unknown. Goal tracking and Other signals remain separate; the latter is available even between goals.
+## Daily Log: lower friction
+- The current **No food after 6 PM / evening cutoff** tracker is retired from new/current Goal and Daily Log screens. Existing historical cutoff records and dated Calendar scoring revisions are preserved so old Calendar evaluations are not rewritten.
+- New **Amount eaten** context records `About right`, `More than intended`, or `Not logged`. It is context only: it does not automatically count as a Goal failure or adherence failure.
+- **Events & Notes** is moved higher in Daily Log. Event chips save in place instead of rerendering the whole Daily page, so the section stays open while you use it.
+- Diet chart context can include **More than intended** alongside Snacks, Eating out and Alcohol. Existing `No snacks` input remains the source for the Snacks chart signal.
 
-The existing goal ring, editable evening food, independent **Dinner out**, continuous weight history, default **Goal + previous 7 days**, cropped rolling ranges, and shaded past-goal cards are retained. The seven-day average needs three readings; gaps stay open. Ending a goal never automatically lowers the next target.
+## A more responsive Today page
+- **Morning response** is a short Chinese interpretation shown after a weigh-in. It distinguishes a one-day change from a sustained recent trend and avoids treating normal daily movement as a proven cause-and-effect result.
+- **Daily Thought / 今日一想** is separate from weight feedback. It is written in Chinese, stays stable for the day, and rotates through body, mindset, relationships, life and growth rather than focusing only on weight loss.
+- **Recent progress / Small Wins** now looks only at recent data and shows at most a few meaningful items. Old wins no longer linger indefinitely.
+- **Weekly pulse** gives a compact seven-day view of weight trend, no-snacks days, 10K-step days and bedtime-hunger context when those data exist.
 
-## Updating the app
+## Move standard
+- A day counts as **Move** only when it reaches **10,000 steps**, or has at least **20 minutes of Cardio or Strength**.
+- Lower step counts are still recorded and displayed, but do not receive Move completion credit.
 
-Deploy these nine files together to the existing Tide site:
+## Goal editing
+- **Edit Goal** now has **Cancel**. If there are unsaved changes, Tide asks whether to discard them or keep editing. Discard restores the entire edit snapshot, including hidden state affected by tracker-role edits.
+- Goal Start and End date inputs are more compact and sit side-by-side where screen width allows.
+- The retired evening-cutoff tracker is not offered in current Goal editing.
 
-`index.html`, `app.js`, `journey.js`, `styles.css`, `sw.js`, `manifest.json`, `icon-192.png`, `icon-512.png`, `README.md`.
+## Past Goal Review
+- Past Goal Review includes a **Final Progress Snapshot** with weight history, Goal boundaries, target and selected context markers.
+- Newly archived goals save a frozen snapshot at archive time. Older archived goals without a saved snapshot reconstruct one from the historical records and label it accordingly.
+- Goal Review export instructions and JSON schema include the new `moreThanIntended` context so an analysis JSON can be imported back into Tide without additional prompt-writing.
 
-`journey.js` must load before `app.js`. There is no build step or runtime npm dependency. Settings displays **9.5.0**. Existing installations retain the `tide.v1` storage key and migrate automatically to schema 16. The service worker caches the new scripts for offline use. Reopen or refresh after deployment. Editing this repository does not itself deploy a hosted site.
+## Preserved behavior from V9.3.x
+- Progress uses earlier real weigh-ins instead of showing a blank chart at the start of a new Goal.
+- Two suitably spaced readings can produce an explicitly provisional early forecast; the established robust forecast remains for richer histories.
+- Previous-day context mapping, including Snacks, remains attached to the following morning weigh-in.
+- Calendar scoring uses dated rule revisions so later Goal edits do not retroactively rewrite prior-day evaluations.
 
-## Data compatibility
-
-- Legacy `food.noSnack` and `food.stop6` remain unchanged. From `journey.effectiveFrom`, `food.extraSnacks` is authoritative: `true` means extras, `false` means none, `null` means unknown. A skipped record stays unknown. Before that date, the original `noSnack` rule applies. The cutoff is no longer scored.
-- `journey.eveningPlans` holds dated defaults; a daily `eveningPlan` is an override or the plan associated with a logged meal. `eveningFood` and `eveningOut` are independent actual records. Editing a later default does not rewrite older dates.
-- `journey.returns` preserves explicit commitments. Return totals now derive from actual snack records across the full history, so earlier returns without commitments also count.
-- `journey.encouragement` stores only celebration receipts: `seenDays`, `seenReturns` and `seenMilestones`. Counts, badge eligibility and earned dates derive from the current dated records, not these receipts. They survive export/import and prevent repeated animations.
-- Archives retain original snapshots, reviews and weight values. New archives include `endWeightDate` and `archivedAt`; inconsistent legacy snapshots are flagged without being overwritten.
-- Goal-data exports include local review evidence, a supported small win, lifetime totals as of the review date, and actual return flags. Existing review JSON imports remain compatible.
-
-Personal backups and health records must never be committed. Automated tests use synthetic fixtures.
-
-## Verification
-
-With Node 20 or later:
-
-```sh
-npm ci
-npm test
-```
-
-All **60 tests** pass, covering migration, original records, day/return counts, gaps and corrections, week rollover, goals, milestones, celebration deduplication, evening food, policy boundaries, review evidence, chart context, and exports. `linkedom` is a development dependency only.
-
-Browser verification used Chromium at **390px and 320px** widths across 18 screen states. Checks cover layout, touch and keyboard interaction, reduced motion, award feedback, evening edits, chart selection, actual backup export/import, and offline reopening. Native iPhone Safari and installed-PWA behavior have not been tested on a physical device. Data stays in the current browser; cross-device sync is not provided.
+## Package
+Exactly eight flat files: `index.html`, `app.js`, `styles.css`, `manifest.json`, `sw.js`, `icon-192.png`, `icon-512.png`, `README.md`.

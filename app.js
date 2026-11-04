@@ -1,6 +1,6 @@
 const STORAGE_KEY = 'tide.v1';
-const VERSION = '9.5.0';
-const SCHEMA_VERSION = 16; // Small-win receipts; original daily records remain unchanged.
+const VERSION = '9.4';
+const SCHEMA_VERSION = 15; // Retire eating cutoff going forward; preserve historical scoring and add richer daily context.
 
 const COLORS = { sage:'#5E836F', sageDeep:'#244C3E', pink:'#C98994', pinkSoft:'#EBCFD4', blue:'#8C918D', ink:'#1F2823' };
 const iso = d => {
@@ -51,135 +51,57 @@ const newGoalId = () => `goal-${today()}-${Date.now().toString(36)}`;
 // V8.3 — quiet End Goal anchor + local Daily Thought bank.
 // The thoughts are bundled with the app so they work fully offline. They are
 // intentionally original Tide copy: no attribution risk and no feed behavior.
-const THOUGHT_HISTORY_KEY = 'tide.dailyThought.v1';
+const THOUGHT_HISTORY_KEY = 'tide.dailyThought.v2';
 const THOUGHT_BANK = {
-  Body:[
-    "A plan that works on ordinary days matters more than a perfect plan that only works when life is quiet. Keep the approach simple enough to repeat.",
-    "Daily weight is noisy; the direction over several days is the useful part. One number does not deserve the power to rewrite the whole plan.",
-    "Reaching a lower weight is only half the job. The better end state is a weight you can maintain without spending all day thinking about food.",
-    "Strength does not need to compete with weight loss right now. It can become the next emphasis once the basic weight trend is where you want it.",
-    "Sleep is part of body progress, not an unrelated side project. A body that is tired makes every other choice feel harder than it needs to.",
-    "You do not need to make today stricter because yesterday was imperfect. Returning to the normal plan is usually more useful than compensating.",
-    "The most useful diet rule is one that reduces decisions. If a rule creates constant negotiation, it may be adding more mental work than value.",
-    "A flat day on the scale can still be a successful day. Behavior is the input; weight is an outcome that often arrives with a delay.",
-    "Being lighter is not the same as feeling good in your body. The end goal includes energy, sleep, strength, and being able to live normally at that weight.",
-    "There is no prize for making weight loss maximally difficult. A repeatable calorie deficit beats a dramatic plan that creates rebound eating.",
-    "When the plan is working, boredom is not a problem. Repetition is often what allows the result to become predictable.",
-    "A meal outside the usual routine is information, not a moral event. The useful question is whether you returned to your normal pattern afterward.",
-    "If hunger keeps becoming the main event of the day, that is useful feedback. The goal is not to prove how much discomfort you can tolerate.",
-    "The best maintenance plan will probably look less intense than the weight-loss phase. That is a feature, not a loss of discipline.",
-    "Muscle is a long-term investment in how your body feels and functions. It does not need to be rushed into the same phase as every other body goal.",
-    "A few consistent weeks tell you more than one unusually good or bad day. Give a plan enough time to produce a pattern before judging it.",
-    "Do not confuse urgency with effectiveness. Faster is only better if the approach is still sustainable enough to finish and maintain.",
-    "Your body does not need a new intervention every time the scale pauses. Sometimes the correct response is simply to keep collecting data.",
-    "Exercise is useful even when it does not immediately change the scale. Strength, mood, sleep, and fitness are real outcomes too.",
-    "The goal is not to win against hunger. The goal is to build an eating pattern that creates progress without making food dominate your attention.",
-    "One simple day can be enough: eat according to the plan, move if it helps, sleep, and let the trend do its work.",
-    "A comfortable body weight should eventually feel ordinary. If maintaining it requires constant emergency-level effort, the system still needs work.",
-    "You can be serious about the goal without monitoring every variable. Track the few inputs that actually help you make better decisions.",
-    "The scale can confirm progress, but it cannot create it. Most of today's useful work happens before tomorrow morning's number exists.",
-    "A good body goal should leave room for the rest of your life. Health is not improved if the process consumes all of your attention.",
-    "When weight loss is mostly finished, the question changes from 'How do I get smaller?' to 'How do I feel strong and stay here comfortably?'",
-    "Sleep, food, and exercise interact, but they do not need to be optimized all at once. Fix the biggest friction first and let the rest stay simple.",
-    "A slower week is not automatically a problem. Look for a real multi-day pattern before deciding that anything needs to change.",
-    "Consistency is easier when the plan has fewer exceptions to negotiate. Simple boundaries can be more freeing than constant optimization.",
-    "The body end goal is not just a number. It is reaching a place where the number, your habits, and how you feel can coexist comfortably."
+  身体:[
+    "一天的体重很容易让人高兴或失望，但真正值得反应的是连续几天的方向。数字好看时不用立刻把计划收得更紧；数字不好看时，也不用马上惩罚自己。能保持原来的节奏，本身就是一种能力。",
+    "一个真正适合长期执行的饮食方式，应该让你大多数时候不用反复谈判。规则越多，不一定越有效；如果每天都要花很多力气判断自己有没有做对，系统本身可能就太复杂了。",
+    "身体的变化通常比人的耐心慢。很多时候不是方法失效了，而是结果还没有来得及完整地反映出来。先给一个合理的计划足够的时间，再决定要不要调整。",
+    "健康并不只是把一个数字降下来。睡眠、力量、精力和对食物的注意力都属于结果的一部分。一个需要全天候克制才能维持的体重，也许还不是最舒服的终点。",
+    "运动的价值不需要每天都由体重来证明。力量、心肺、睡眠和情绪都可能先发生变化，而体重只是其中一个比较吵闹的指标。",
+    "偶尔吃多一次并不会决定趋势，真正改变趋势的是接下来几天是否继续把一次偏离放大。下一顿回到平常，通常比补偿、挨饿或重新制定规则更有用。",
+    "饥饿不是意志力考试。偶尔饿很正常，但如果它频繁占据注意力，就值得把它当成系统反馈，而不是要求自己再坚持一点。",
+    "真正轻松的维持状态，应该逐渐变得普通。你不需要每天都觉得自己正在‘减重’，生活仍然可以有聚餐、旅行和喜欢吃的东西。"
   ],
-  Mind:[
-    "Not every thought deserves a decision. Sometimes calm comes from noticing a concern and allowing it to remain unresolved for a while.",
-    "A fuller life is not created only by removing anxiety. It is also created by adding people, books, ideas, and projects that are genuinely yours.",
-    "If a small issue keeps taking up a large amount of mental space, the useful goal may be less analysis rather than a better analysis.",
-    "Connection usually grows from repeated ordinary contact, not from finding the perfect friendship immediately. Make room for people you simply enjoy.",
-    "Reading something because you are curious is productive enough. Not every interest needs to become a credential, project, or measurable outcome.",
-    "Calm does not require every loose end to be solved. It often requires confidence that you can handle things when they actually need handling.",
-    "Your own life deserves protected space even when family logistics are busy. A small amount of regular time can matter more than waiting for a completely free season.",
-    "There is a difference between useful thinking and repetitive thinking. If the same question has produced no new information, more thinking may not help.",
-    "You do not need to optimize every hour for it to be worthwhile. Time spent reading, wandering through an idea, or doing nothing urgent can still belong to a good life.",
-    "Anxiety often asks for certainty before allowing you to move on. Real life rarely provides that much certainty, so 'good enough to proceed' is an important skill.",
-    "A decision can be reasonable without being provably best. Leaving some alternatives unexplored is part of actually living the choice you made.",
-    "Friendship does not need to be maximally deep to be valuable. A person you enjoy seeing regularly can make life noticeably better.",
-    "Curiosity is easier to hear when every open space is not immediately filled with errands, optimization, or scrolling. Leave a little room unassigned.",
-    "You can care about something without revisiting it every day. Attention is a resource, and not every concern deserves a permanent subscription.",
-    "The goal is not to eliminate all worry. It is to make worry smaller than the life happening around it.",
-    "Sometimes the most meaningful personal project is simply the one you keep returning to because you like it. It does not need a strategic justification.",
-    "If you already made a thoughtful decision, repeatedly reopening it can create the feeling of control while actually increasing uncertainty.",
-    "A calmer mind often comes from fewer active questions. Decide which questions truly need an answer this week and let the others wait.",
-    "Being connected means having people in your life before you urgently need them. Small invitations and casual plans are part of building that fabric.",
-    "Learning for pleasure is still learning. The absence of a practical payoff can be exactly what makes an interest feel like your own.",
-    "The point of reducing anxiety is not to become endlessly efficient. It is to have more attention available for things that are interesting, warm, and alive.",
-    "You do not need to turn every insight into a system. Sometimes noticing a pattern once is enough to make a different choice next time.",
-    "A quiet afternoon is not empty space waiting to be optimized. It can be the part of life where your own preferences become visible again.",
-    "If a problem is small but emotionally sticky, ask whether solving it will meaningfully change your life. If not, letting it be imperfect may be the better skill.",
-    "More information is not always more reassuring. At some point, another search or comparison can make a decision feel less settled rather than more informed.",
-    "Your mind needs experiences that are not about fixing yourself. Friendship, humor, stories, and curiosity can do work that self-analysis cannot.",
-    "It is possible to be thoughtful without being continuously vigilant. Good judgment can include knowing when to stop monitoring.",
-    "A personal life grows through repetition too: the book you keep reading, the friend you keep seeing, the subject you keep returning to.",
-    "You do not need a grand new identity. More of your own life can start with one small recurring thing that is chosen because you want it.",
-    "The end state is not a perfectly controlled mind. It is a mind with enough room that small worries no longer crowd out everything else."
+  心态:[
+    "人很容易把‘还没有确定’误解成‘出了问题’。其实很多事情只是需要更多时间和信息。能在答案还不完整的时候继续生活，而不是立刻把它解决掉，是一种很实用的稳定感。",
+    "有些问题反复想，并不是因为它们越来越重要，而是因为大脑把熟悉的焦虑当成了待办事项。判断一件事值不值得继续想，可以问自己：再想二十分钟，我真的会得到新的信息吗？",
+    "做了一个已经足够合理的决定之后，继续比较所有没选的选项，常常不会让决定更好，只会让它更不安稳。选择的一部分，就是允许一些可能性永远不被验证。",
+    "很多时候，我们真正想摆脱的不是事情本身，而是不确定带来的不舒服。可惜现实很少提供百分之百的确定。学会在七八成把握的时候继续往前，往往比寻找最后那一点确定更有用。",
+    "不是每一个念头都值得变成行动，也不是每一个担心都需要建立一个系统。能注意到一个问题，同时暂时什么都不做，是判断力的一部分。",
+    "平静并不意味着生活里没有未完成的事情。更现实的平静，是知道有些事现在不需要处理，等它真正需要你的时候，你有能力应付。",
+    "如果一个很小的问题占据了远超它本身价值的注意力，也许最值得练习的不是把它解决得更漂亮，而是停止继续给它资源。",
+    "减少焦虑的目的，不是为了腾出更多时间继续优化自己。更好的结果是把注意力还给朋友、书、好奇心、幽默和那些本来就值得生活的东西。"
   ],
-  Family:[
-    "Not every concern needs a new class, therapist, or intervention. Sometimes the best sign that something is working is that you can stop thinking about it for a while.",
-    "Family life can be going well without every child-related decision being optimized. Good enough choices made with confidence often create more calm than endless refinement.",
-    "The children do not need every possible advantage at the same time. A few well-chosen supports plus room to grow can be a stronger system.",
-    "Connection is not another item to schedule perfectly. Ordinary meals, rides, jokes, and unhurried time often do more than a carefully designed family activity.",
-    "A good education plan should eventually reduce parental mental load. If the plan requires constant re-evaluation, simplification may be part of the solution.",
-    "You can notice a weakness without immediately turning it into a project. Children are allowed to develop unevenly and improve over time.",
-    "The question is not whether every activity is beneficial. The question is whether the whole family system still has enough time, energy, and ease.",
-    "Confidence in parenting does not come from always knowing the best answer. It grows from making reasonable choices and allowing enough time to see what happens.",
-    "Sometimes supporting a child means adding something; sometimes it means protecting space from one more thing. Both are active choices.",
-    "A child can be on the right track without looking optimized in every domain. Direction matters more than a perfectly polished schedule.",
-    "Not every difficult week is evidence that a program is wrong. Look for recurring patterns before rebuilding the plan around a temporary problem.",
-    "Family closeness is easier when not every conversation becomes evaluation. There should be plenty of interactions where nobody is being improved.",
-    "It is useful to ask whether an intervention is solving a meaningful problem or simply reducing parental uncertainty. Those are not always the same thing.",
-    "A schedule that looks impressive from the outside can still be too expensive in family energy. The hidden cost of logistics counts.",
-    "Children benefit from adults who can tolerate some uncertainty about how everything will turn out. Not knowing yet is often a normal stage, not an emergency.",
-    "The goal is not to make childhood maximally productive. It is to help the kids grow while keeping enough room for friendship, play, family, and ordinary life.",
-    "When something is working reasonably well, stability has value. Changing less can sometimes be the more thoughtful parenting decision.",
-    "You do not have to solve a child's entire future from this semester's schedule. Choose what matters now and let later decisions remain later.",
-    "Family systems improve when the adults are not exhausted by maintaining them. Ease is a legitimate design criterion.",
-    "A supportive parent notices problems, but does not need to become the full-time manager of every developing skill. Children also learn by carrying some of the work themselves.",
-    "If you keep revisiting the same activity decision, ask what new information would actually change your mind. Without new information, repetition may just be anxiety in planning form.",
-    "The right track is usually a direction, not a perfectly mapped route. You need enough evidence to continue, not certainty about every future turn.",
-    "Shared family time does not need to be educational or memorable to count. Familiar ordinary time is part of what makes a family feel close.",
-    "A child having one area that is hard does not mean the whole support system is failing. Keep the problem proportional to its actual impact.",
-    "More support is not automatically better support. The best intervention is often the smallest one that meaningfully helps.",
-    "You can care deeply about education while refusing to let education planning dominate family life. Those two positions are compatible.",
-    "The aim is eventually to trust the system you built: school, a few supports, the child's own development, and your ability to adjust when real evidence appears.",
-    "Second-guessing can make even good decisions feel unstable. Sometimes the next family improvement is not a new choice, but allowing the current choice to settle.",
-    "A family's success is not visible in a list of lessons and achievements. It is also visible in whether people like being together and have enough room to breathe.",
-    "By the end of the year, the best sign may be that fewer child-related questions feel urgent. A good system should create more trust, not more monitoring."
+  关系:[
+    "关系变深通常不是靠一次特别精彩的谈话，而是靠很多次普通的联系。一起吃饭、随手发消息、记得对方最近在经历什么，这些看起来很小的事情，时间久了才组成真正的亲近。",
+    "和一个人熟了以后，很容易觉得自己已经知道她是什么样的人。但人一直在变化。偶尔放下过去的判断，重新问一次、重新听一次，关系才不会只剩下旧印象。",
+    "朋友不一定都要承担最深的情绪交流才算重要。有些人只是见面很开心、可以随时发消息、一起做某件事，这样的关系也会让生活明显变丰富。",
+    "关心一个人不一定意味着马上给建议。很多时候，真正有用的是让对方知道：这件事你可以跟我说，而我不会急着把它修好。",
+    "亲近的人之间最容易出现的一种误会，是把熟悉当成理解。知道一个人的习惯，不等于知道她此刻在想什么。留一点好奇，比快速下结论更有用。",
+    "家庭生活很容易被安排、课程和待办事项填满。真正让人记住的，往往不是哪一天效率最高，而是那些没有特别目的、但大家都很放松的普通时间。",
+    "对孩子的支持并不是越多越好。好的支持有时候是提供一个台阶，有时候则是忍住不立刻介入，让她有机会自己发现下一步。",
+    "关系里有些不舒服并不需要马上谈成一个结论。只要彼此仍然有善意，给情绪一点时间，常常比在最激动的时候把每句话解释清楚更有效。"
   ],
-  Money:[
-    "Complexity has a cost even when the numbers look fine. A financial system is better when you understand it, trust it, and rarely need to think about it.",
-    "A loose end is expensive partly because it keeps reopening in your mind. Closing one annoying tax or admin item can be worth more than another round of optimization.",
-    "The best portfolio is not necessarily the one with the most clever components. Simplicity can improve the odds that you understand what you own and leave it alone.",
-    "Money is doing its job when it supports the life you want without demanding constant attention. More monitoring is not the same as better management.",
-    "An intentional purchase can be enjoyable. The exhausting part is often the repeated browsing, comparing, and thinking that happens before and after it.",
-    "Not every available tax optimization deserves implementation. The benefit has to be large enough to justify the complexity it adds.",
-    "A financial decision can be good because it is clear and maintainable, even if another option might be marginally more efficient on paper.",
-    "The goal is not to stop caring about money. It is to move money from a daily mental preoccupation into a system you can review deliberately and then leave alone.",
-    "When you understand why an investment is in the portfolio, short-term noise becomes easier to ignore. Clarity reduces the urge to keep rearranging things.",
-    "Administrative tasks become mentally larger the longer they stay open. A short boring session that closes one item can create disproportionate relief.",
-    "Spending intentionally does not mean spending as little as possible. It means knowing which purchases genuinely improve your life and which mainly create another cycle of wanting.",
-    "Optimization has diminishing returns. Once the important decisions are right, the next tiny improvement may not deserve another hour of attention.",
-    "A clean financial system has fewer things you need to remember. Automate, consolidate, document, or close what repeatedly depends on your memory.",
-    "It is easier to trust an investment plan when every holding has a clear role. If you cannot explain why something is there, that is useful information.",
-    "Money can buy convenience, time, beauty, and experiences. It does not need to turn every purchase into a referendum on whether you are being perfectly rational.",
-    "A decision does not have to maximize expected return to be financially intelligent. Liquidity, simplicity, taxes, and peace of mind are real inputs too.",
-    "The most useful financial review may end with fewer decisions than it started with. Clarity often looks like removing options from active consideration.",
-    "If a purchase keeps occupying your attention after you decided not to buy it, the real cost may be attention rather than money. Closing the loop matters.",
-    "There is value in having a short list of financial questions that actually matter this year. Everything else can wait until it earns a place on that list.",
-    "Good systems make routine money boring. Boring is helpful when it means taxes, cash, investments, and bills are handled without repeated emergencies.",
-    "A complicated strategy needs to earn back its complexity. Compare the real after-tax benefit with the time, fees, restrictions, and attention it consumes.",
-    "Spending can be generous and intentional at the same time. The useful boundary is not 'never buy'; it is 'buy for a reason you still respect tomorrow.'",
-    "Financial confidence comes partly from knowing what you have decided not to optimize. Explicitly choosing simplicity is different from neglecting something.",
-    "One completed admin task is often more valuable than ten tabs of research about future possibilities. Closure creates usable attention.",
-    "If money decisions keep returning to the same unresolved question, write down the rule once. A clear policy can replace dozens of future micro-decisions.",
-    "A portfolio does not need to express every interesting market view. Its job is to serve your actual financial life, not demonstrate sophistication.",
-    "The purpose of wealth is not to create an endless management hobby unless you genuinely enjoy that hobby. It is allowed to become infrastructure.",
-    "A simpler financial life can still be highly deliberate. Simplicity is often the result of making the important decisions clearly, not avoiding them.",
-    "Before optimizing another small number, ask what larger loose end is still open. Closing the important unfinished thing may have the higher return on attention.",
-    "The end goal is not a perfect spreadsheet. It is confidence that the important money decisions are handled, the loose ends are closed, and your attention is free for something else."
+  生活:[
+    "有些事情没有必要优化。喜欢、好看、舒服、想去，这些理由本身就已经够了。生活如果所有选择都需要证明回报率，会慢慢变得很窄。",
+    "人很容易高估一天能改变什么，又低估半年持续做一件小事能改变什么。真正有用的习惯，执行的时候通常没有什么戏剧性；过一段时间回头看，才发现生活已经被它推到了另一个位置。",
+    "空出来的时间不一定需要马上被填满。无所事事、随便逛一逛、读一点没有明确用途的东西，有时正是你重新听见自己偏好的方式。",
+    "生活里真正稀缺的东西往往不是选择，而是注意力。每多维护一个项目、一个物品、一个系统，都在向未来的自己收取一点管理费。",
+    "想做一件事，不一定需要先把它变成一个长期计划。先做一次、去一次、读十页，很多兴趣只有在开始之后才知道值不值得继续。",
+    "效率很有用，但它不是生活的最终目的。把所有事情做得更快，最后还是为了有更多空间去做那些并不需要更快的事。",
+    "如果某样东西已经工作得不错，稳定本身就有价值。不断升级和重新设计会带来新鲜感，但也会把已经解决的问题重新变成项目。",
+    "真正的休息不是把所有任务做完之后才被允许发生。因为任务通常不会真正归零，所以休息需要被当成生活的一部分，而不是完成清单之后的奖励。"
+  ],
+  成长:[
+    "学习一件东西不一定需要证明它以后有用。好奇心本身就可以是足够的理由。很多真正长久的兴趣，反而是在没有绩效目标的时候才有空间长出来。",
+    "做得更好和知道更多并不是同一件事。有时候再看十篇资料不会改变行动，真正缺的是把已经知道的东西重复做几次。",
+    "成长并不总是增加东西。学会删掉一个没有价值的规则、停止维护一个不再需要的系统、接受某件事已经足够好，也属于进步。",
+    "一个项目真正开始变成你的东西，通常是在新鲜感消失以后。还能愿意回来继续做，哪怕每次只推进一点，比一开始的兴奋更能说明它值不值得。",
+    "反馈最有价值的地方，不是告诉你哪里做错了，而是缩短‘尝试—观察—调整’之间的距离。好的系统应该帮助你更快看见模式，而不是让你记录更多。",
+    "如果一个目标已经变成每天都需要证明自己的地方，它可能开始吞掉本来应该服务的生活。偶尔问一次：这个目标现在还在帮我，还是我已经开始替它工作？",
+    "真正的长期主义并不浪漫。它通常只是把重要的事情做得足够简单，以至于普通的一天也能继续。",
+    "有些阶段最重要的进步，是从‘我应该做什么’慢慢变成‘我知道什么对我有用’。后者不一定更严格，但通常更稳定。"
   ]
 };
 function thoughtPool(){
@@ -189,15 +111,20 @@ function thoughtPool(){
 }
 function chooseDailyThought(){
   const all=thoughtPool();
-  let state={recent:[],lastCategory:''};
+  let state={recent:[],lastCategory:'',date:'',currentId:''};
   try{ state={...state,...JSON.parse(localStorage.getItem(THOUGHT_HISTORY_KEY)||'{}')}; }catch{}
+  if(state.date===today() && state.currentId){
+    const same=all.find(x=>x.id===state.currentId); if(same) return same;
+  }
   let eligible=all.filter(x=>!state.recent.includes(x.id));
   const differentCategory=eligible.filter(x=>x.category!==state.lastCategory);
-  if(differentCategory.length>=20) eligible=differentCategory;
+  if(differentCategory.length>=8) eligible=differentCategory;
   if(!eligible.length) eligible=all;
-  const item=eligible[Math.floor(Math.random()*eligible.length)]||all[0];
-  state.recent=[item.id,...state.recent.filter(id=>id!==item.id)].slice(0,12);
-  state.lastCategory=item.category;
+  // Deterministic within a calendar day, while recent-history avoidance keeps variety.
+  const seed=Number(today().replaceAll('-','')) + (state.recent.length*17);
+  const item=eligible[seed%eligible.length]||all[0];
+  state.recent=[item.id,...state.recent.filter(id=>id!==item.id)].slice(0,16);
+  state.lastCategory=item.category; state.date=today(); state.currentId=item.id;
   try{ localStorage.setItem(THOUGHT_HISTORY_KEY,JSON.stringify(state)); }catch{}
   return item;
 }
@@ -214,7 +141,7 @@ const TRACKER_DEFS = {
   protein:{id:'protein',label:'Protein',group:'diet',cadence:'daily'},
   fruit:{id:'fruit',label:'Fruit',group:'diet',cadence:'daily'},
   noSnack:{id:'noSnack',label:'No snacks',group:'diet',cadence:'daily'},
-  stop6:{id:'stop6',label:'No food after 6 PM',group:'diet',cadence:'daily'},
+  stop6:{id:'stop6',label:'Legacy eating cutoff',group:'diet',cadence:'daily'},
   water:{id:'water',label:'Water',group:'diet',cadence:'daily'},
   bedtimeHunger:{id:'bedtimeHunger',label:'Bedtime hunger',group:'diet',cadence:'daily'},
   steps:{id:'steps',label:'10k steps',group:'exercise',cadence:'weekly'},
@@ -227,7 +154,7 @@ const ROLE_LABELS = {goal:'Goal',bonus:'Bonus',track:'Track only'};
 const validRole = r => ['goal','bonus','track'].includes(r) ? r : 'track';
 function focusRoles(focus='both'){
   const track=Object.fromEntries(TRACKER_IDS.map(id=>[id,'track']));
-  const diet={...track,veg:'goal',protein:'goal',fruit:'goal',noSnack:'goal',stop6:'goal',water:'track',bedtimeHunger:'track'};
+  const diet={...track,veg:'goal',protein:'goal',fruit:'goal',noSnack:'goal',stop6:'track',water:'track',bedtimeHunger:'track'};
   const exercise={...track,steps:'goal',cardio:'goal',strength:'bonus',stretch:'bonus'};
   if(focus==='diet') return diet;
   if(focus==='exercise') return exercise;
@@ -282,12 +209,11 @@ const defaults = {
   version:SCHEMA_VERSION,
   language:'en',
   goal:{id:`goal-${today()}-active`,name:'Back to 50',start:today(),end:addDays(today(),31),startWeight:52.7,target:50,status:'active',focus:'both',trackers:defaultTrackersForFocus('both',today()),review:blankReview(),reviews:[]},
-  journey:{effectiveFrom:today(),eveningPlans:[{effectiveFrom:today(),text:'2 eggs + 1 fruit'}],returns:[]},
   days:{},
   calendarRuleHistory:[], // Dated rule revisions preserve past Calendar evaluations.
   customEvents:[],
-  chartSettings:{categories:['food','hunger'],food:['eating_out','alcohol','snacks'],exercise:['steps','cardio','strength'],other:['period','travel','party','vacation','poor_sleep','sick','short_sleep'],custom:[],hungerMin:4},
-  plan:{veg:3,fruit:2,noSnack:true,stop:'18:00',satiety:7,water:2,stepsTarget:10000,stepsDays:5,stretchDays:5,cardio:90,strength:60,strengthSessions:2},
+  chartSettings:{categories:['food','hunger'],food:['eating_out','alcohol','snacks','more_than_intended'],exercise:['steps','cardio','strength'],other:['period','travel','party','vacation','poor_sleep','sick','short_sleep'],custom:[],hungerMin:4},
+  plan:{veg:3,fruit:2,noSnack:true,stop:null,satiety:7,water:2,stepsTarget:10000,stepsDays:5,stretchDays:5,cardio:90,strength:60,strengthSessions:2},
   goals:[]
 };
 
@@ -295,7 +221,7 @@ let db = loadDB();
 let view = 'today';
 let selected = today();
 let calendarMonth = today().slice(0,7) + '-01';
-let range = 'goal';
+let range = '30';
 let flash = '';
 let quickWeightOpen = false;
 let reviewGoalId = null;
@@ -306,8 +232,10 @@ let removeCustomId = null;
 let customReturnView = 'day';
 let dailyThought = chooseDailyThought();
 let thoughtHiddenAt = 0;
-let eveningEditDate=null, eveningReturnView='today', goalEditSnapshot=null, showForecast=false;
-let lastRenderDate=today();
+let goalEditSnapshot = null;
+let goalEditDirty = false;
+let discardGoalEditOpen = false;
+let snapshotExpandedGoalId = null;
 
 function fresh(){ return JSON.parse(JSON.stringify(defaults)); }
 function mergeDay(x={}){
@@ -315,9 +243,6 @@ function mergeDay(x={}){
     date:x.date||today(), weight:x.weight??null, sleep:x.sleep??null,
     alcohol:x.alcohol??null, bowelMovement:x.bowelMovement??null,
     events:Array.isArray(x.events)?x.events.map(e=>({'Dinner out':'eating_out','Eating out':'eating_out','dinner':'eating_out','Travel':'travel','Party':'party','Long flight':'flight','Vacation':'vacation','Poor sleep':'poor_sleep','Period':'period','Sick':'sick'}[e]||e)).filter(e=>e!=='flight'):[],
-    eveningOut:typeof x.eveningOut==='boolean'?x.eveningOut:null,
-    eveningPlan:typeof x.eveningPlan==='string'?x.eveningPlan:null,
-    eveningFood:['had','not-needed'].includes(x.eveningFood)?x.eveningFood:null,
     planMode:x.planMode||'default', plannedSleep:x.plannedSleep??null,
     customPlan:{
       veg:x.customPlan?.veg??null, fruit:x.customPlan?.fruit??null, noSnack:x.customPlan?.noSnack??null,
@@ -325,7 +250,7 @@ function mergeDay(x={}){
       steps:x.customPlan?.steps??null, stretch:x.customPlan?.stretch??null, cardio:x.customPlan?.cardio??null, strength:x.customPlan?.strength??null
     },
     plannedMove:{steps:x.plannedMove?.steps??null,stretch:x.plannedMove?.stretch??null,cardio:x.plannedMove?.cardio??null,strength:x.plannedMove?.strength??null},
-    food:{veg:x.food?.veg??null,protein:x.food?.protein??null,fruit:x.food?.fruit??null,noSnack:x.food?.noSnack??null,extraSnacks:typeof x.food?.extraSnacks==='boolean'?x.food.extraSnacks:null,stop6:x.food?.stop6??null,water:x.food?.water??null,bedtimeHunger:x.food?.bedtimeHunger??null,satiety:x.food?.satiety??null},
+    food:{veg:x.food?.veg??null,protein:x.food?.protein??null,fruit:x.food?.fruit??null,noSnack:x.food?.noSnack??null,moreThanIntended:x.food?.moreThanIntended??null,stop6:x.food?.stop6??null,water:x.food?.water??null,bedtimeHunger:x.food?.bedtimeHunger??null,satiety:x.food?.satiety??null},
     skips:(x.skips&&typeof x.skips==='object')?{...x.skips}:{},
     move:{steps:x.move?.steps??null,stretch:x.move?.stretch??null,cardio:x.move?.cardio??null,strength:x.move?.strength??null},
     close:x.close??null,note:x.note??''
@@ -333,13 +258,18 @@ function mergeDay(x={}){
 }
 function migrate(raw){
   const out=fresh();
-  if(!raw || typeof raw!=='object') return migrateJourney(out,raw);
+  if(!raw || typeof raw!=='object') return out;
+  const previousSchema=+(raw.schemaVersion||raw.version||0);
   out.language='en';
   const rawGoal=raw.goal||{};
   out.goal={...out.goal,...rawGoal};
-  out.goal.id=stableGoalId(out.goal,'-active'); out.goal.focus=['diet','exercise','both','other'].includes(out.goal.focus)?out.goal.focus:'both'; out.goal.trackers=normalizeTrackers({...out.goal,trackers:rawGoal.trackers||null},false); out.goal.review=normalizeReview(out.goal.review); out.goal.reviews=normalizeReviews(out.goal);
+  out.goal.id=stableGoalId(out.goal,'-active'); out.goal.focus=['diet','exercise','both','other'].includes(out.goal.focus)?out.goal.focus:'both'; out.goal.trackers=normalizeTrackers({...out.goal,trackers:rawGoal.trackers||null},false);
+  // Before V9.4, a missing stop6 config inherited the old Diet/Both default: Goal.
+  // Reconstruct that historical default before retiring the tracker for current use.
+  if(previousSchema<15 && !(rawGoal.trackers&&rawGoal.trackers.stop6) && ['diet','both'].includes(out.goal.focus)) out.goal.trackers.stop6={role:'goal',activeFrom:out.goal.start||today(),roleAuto:true};
+  out.goal.review=normalizeReview(out.goal.review); out.goal.reviews=normalizeReviews(out.goal);
   out.plan={...out.plan,...(raw.plan||{}),stepsTarget:10000,strengthSessions:raw.plan?.strengthSessions??out.plan.strengthSessions};
-  out.goals=Array.isArray(raw.goals)?raw.goals.map((g,i)=>{const x={...g,id:stableGoalId(g,`-${i}`),focus:['diet','exercise','both','other'].includes(g.focus)?g.focus:'both',review:normalizeReview(g.review),planSnapshot:g.planSnapshot?{...g.planSnapshot}:null,snapshot:true};x.trackers=normalizeTrackers(x,true);x.reviews=normalizeReviews(x);return x;}):[];
+  out.goals=Array.isArray(raw.goals)?raw.goals.map((g,i)=>{const x={...g,id:stableGoalId(g,`-${i}`),focus:['diet','exercise','both','other'].includes(g.focus)?g.focus:'both',review:normalizeReview(g.review),planSnapshot:g.planSnapshot?{...g.planSnapshot}:null,snapshot:true};x.trackers=normalizeTrackers(x,true);if(previousSchema<15 && !(g.trackers&&g.trackers.stop6) && ['diet','both'].includes(x.focus))x.trackers.stop6={role:'goal',activeFrom:x.start||today(),roleAuto:true};x.reviews=normalizeReviews(x);return x;}):[];
   out.days={};
   Object.entries(raw.days||{}).forEach(([k,v])=>out.days[k]=mergeDay({...v,date:k}));
   // Older backups had no rule history: their CURRENT rules form the starting
@@ -367,16 +297,30 @@ function migrate(raw){
   // V9.2 restores the intended 'Snacks = ate snacks' source. Preserve selections
   // made in V9.1 ('no_snacks') and older V9.0 ('snacks') without changing logs.
   const foodSources=Array.isArray(cs.food)?cs.food.map(x=>x==='no_snacks'?'snacks':x):null;
-  out.chartSettings={categories:groups,food:opts(foodSources,['eating_out','alcohol','snacks'],defaults.chartSettings.food),exercise:opts(cs.exercise,['steps','cardio','strength'],defaults.chartSettings.exercise),other:opts(cs.other,['period','travel','party','vacation','poor_sleep','sick','short_sleep'],defaults.chartSettings.other),custom:opts(cs.custom,activeCustom,[]),hungerMin:[3,4,5].includes(+cs.hungerMin)?+cs.hungerMin:4};
-  migrateJourney(out,raw);
+  out.chartSettings={categories:groups,food:opts(foodSources,['eating_out','alcohol','snacks','more_than_intended'],defaults.chartSettings.food),exercise:opts(cs.exercise,['steps','cardio','strength'],defaults.chartSettings.exercise),other:opts(cs.other,['period','travel','party','vacation','poor_sleep','sick','short_sleep'],defaults.chartSettings.other),custom:opts(cs.custom,activeCustom,[]),hungerMin:[3,4,5].includes(+cs.hungerMin)?+cs.hungerMin:4};
+  if(previousSchema<15 && !out.chartSettings.food.includes('more_than_intended')) out.chartSettings.food.push('more_than_intended');
+  // V9.4 retires the eating-cutoff tracker for new/current use without rewriting
+  // any historical day or historical Calendar evaluation. The old rule remains
+  // available inside dated rule snapshots and archived goals.
+  if(previousSchema<15){
+    const oldGoal=JSON.parse(JSON.stringify(out.goal)), oldPlan={...out.plan};
+    if(!out.calendarRuleHistory.length){
+      out.calendarRuleHistory.push({effectiveFrom:'0001-01-01',goal:oldGoal,plan:oldPlan});
+    }
+    out.plan.stop=null;
+    out.goal.trackers=normalizeTrackers(out.goal,false);
+    out.goal.trackers.stop6={role:'track',activeFrom:today(),roleAuto:false};
+    out.calendarRuleHistory=out.calendarRuleHistory.filter(r=>r.effectiveFrom<today());
+    out.calendarRuleHistory.push({effectiveFrom:today(),goal:JSON.parse(JSON.stringify(out.goal)),plan:{...out.plan}});
+  }
   out.schemaVersion=SCHEMA_VERSION; out.version=SCHEMA_VERSION;
   return out;
 }
 function loadDB(){
   try{return migrate(JSON.parse(localStorage.getItem(STORAGE_KEY)||'null'));}
-  catch{return migrateJourney(fresh(),null);}
+  catch{return fresh();}
 }
-function persist(){ localStorage.setItem(STORAGE_KEY,JSON.stringify(goalEditSnapshot?{...db,...goalEditSnapshot}:db)); }
+function persist(){ localStorage.setItem(STORAGE_KEY,JSON.stringify(db)); }
 function save(message=''){ persist(); if(message) flash=message; render(); }
 function day(s){ if(!db.days[s]) db.days[s]=mergeDay({date:s}); else db.days[s]=mergeDay(db.days[s]); return db.days[s]; }
 
@@ -391,18 +335,16 @@ function latestWeights(until=today()){
 }
 function latestWeight(until=today()){ const a=latestWeights(until); return a.length?a[a.length-1]:null; }
 function movingAverage(date, window=7){ const from=addDays(date,-(window-1)); const a=latestWeights(date).filter(x=>x.date>=from).map(x=>+x.weight); return avg(a); }
-function goalMovingAverage(date) { return trendStats(date).value; }
-
-function activeGoalStartWeight(){ return db.goal.startWeight==null?null:+db.goal.startWeight; }
+function goalMovingAverage(date, window=7){ const from=addDays(date,-(window-1)); const start=from>db.goal.start?from:db.goal.start; const a=latestWeights(date).filter(x=>x.date>=start && x.date<=date).map(x=>+x.weight); return avg(a); }
+function activeGoalStartWeight(){ const rec=db.days[db.goal.start]; return rec?.weight!=null ? +rec.weight : +db.goal.startWeight; }
 function planForGoal(g){
   return g?.planSnapshot ? {...defaults.plan,...g.planSnapshot} : db.plan;
 }
 function dayPlanForGoal(g,d){
   const src=planForGoal(g);
   const base={veg:src.veg,fruit:src.fruit,noSnack:src.noSnack,stop:src.stop,satiety:src.satiety,water:src.water,steps:src.stepsTarget||10000,stretch:null,cardio:null,strength:null};
-  if(usesEveningPlan(d.date)) base.stop=null;
   if(d.planMode==='flexible') return {...base,stop:null};
-  if(d.planMode==='custom') return {...base,...Object.fromEntries(Object.entries(d.customPlan||{}).filter(([k,v])=>v!==null&&v!==''&&!(k==='stop'&&usesEveningPlan(d.date))))};
+  if(d.planMode==='custom') return {...base,...Object.fromEntries(Object.entries(d.customPlan||{}).filter(([,v])=>v!==null&&v!==''))};
   return base;
 }
 function dayPlan(d){ return dayPlanForGoal(calendarRulesForDate(d.date).goal,d); }
@@ -443,10 +385,10 @@ function dailyTrackerEval(g,id,d){
   if(id==='fruit') return {recorded:f.fruit!=null,met:f.fruit!=null && +f.fruit<=+p.fruit};
   if(id==='noSnack'){
     if(p.noSnack===false) return {recorded:false,met:false,na:true,plannedException:true};
-    const value=snackValue(d); return {recorded:value!=null,met:value===true};
+    return {recorded:f.noSnack!=null,met:f.noSnack===true};
   }
   if(id==='stop6'){
-    if(p.stop==null || usesEveningPlan(d.date)) return {recorded:false,met:false,na:true,plannedException:true};
+    if(p.stop==null) return {recorded:false,met:false,na:true,plannedException:true};
     return {recorded:f.stop6!=null,met:f.stop6===true};
   }
   if(id==='water') return {recorded:f.water!=null,met:f.water!=null && +f.water>=+p.water};
@@ -467,7 +409,7 @@ function trackerRuleLabel(g,id,d){
   if(id==='veg') return `Vegetables ≥ ${p.veg}`;
   if(id==='protein') return 'Protein';
   if(id==='fruit') return `Fruit ≤ ${p.fruit}`;
-  if(id==='noSnack') return usesEveningPlan(d?.date||today())?'No extra snacks':'No snacks';
+  if(id==='noSnack') return 'No snacks';
   if(id==='stop6') return p.stop?`No food after ${fmtClock(p.stop)}`:'Eating cutoff paused';
   if(id==='water') return `Water ≥ ${p.water}L`;
   if(id==='bedtimeHunger') return 'Bedtime hunger';
@@ -517,27 +459,30 @@ function foodStatus(d){
     }
   }
   // Legacy behavior outside the active goal range.
-  const f=d.food, p=dayPlanForGoal(g,d), core=[f.veg,f.fruit,snackValue(d),p.stop==null?null:f.stop6];
+  const f=d.food, p=dayPlanForGoal(g,d), core=[f.veg,f.fruit,f.noSnack,f.stop6];
   const recorded=core.filter(v=>v!==null&&v!=='').length;
   if(!recorded) return {recorded:0,score:null,enough:false,calendarPass:false,label:'No record'};
   let pass=0,denom=0;
   if(f.veg!=null){denom++;if(+f.veg>=+p.veg)pass++;}
   if(f.fruit!=null){denom++;if(+f.fruit<=+p.fruit)pass++;}
-  if(snackValue(d)!=null){denom++;if(p.noSnack===false||snackValue(d)===true)pass++;}
+  if(f.noSnack!=null){denom++;if(p.noSnack===false||f.noSnack===true)pass++;}
   if(p.stop!=null&&f.stop6!=null){denom++;if(f.stop6===true)pass++;}
   const score=denom?pass/denom:null, enough=denom>=3, calendarPass=enough&&score>=.8;
   return {recorded,score,enough,calendarPass,label:calendarPass?'Food goal met':enough?(score>=.6?'Mostly on plan':'Off plan'):'Incomplete'};
 }
 function moveStatus(d){
-  const m=d.move; const meaningful=(+m.steps||0)>=10000 || (+m.cardio||0)>0 || (+m.strength||0)>0;
-  const any=(+m.steps||0)>0 || m.stretch===true || (+m.cardio||0)>0 || (+m.strength||0)>0;
-  if(!any) return {done:false,calendarPass:false,label:'No record'};
+  const m=d.move, steps=+m.steps||0, cardio=+m.cardio||0, strength=+m.strength||0;
+  const meaningful=steps>=10000 || cardio>=20 || strength>=20;
+  const any=steps>0 || m.stretch===true || cardio>0 || strength>0;
+  if(!any) return {done:false,recorded:false,calendarPass:false,label:'No record',shortLabel:'Not logged'};
   const pieces=[];
-  if(+m.steps>=10000) pieces.push('10k steps');
-  if(+m.cardio>0) pieces.push(`Cardio ${m.cardio} min`);
-  if(+m.strength>0) pieces.push(`Strength ${m.strength} min`);
-  if(!pieces.length&&m.stretch) pieces.push('Stretch');
-  return {done:any,calendarPass:meaningful,label:pieces.slice(0,2).join(' · ')};
+  if(steps>=10000) pieces.push(`${(steps/1000).toFixed(steps%1000?1:0)}k steps`);
+  else if(steps>0) pieces.push(`${(steps/1000).toFixed(1)}k steps · below 10k`);
+  if(cardio>0) pieces.push(`Cardio ${cardio} min${cardio<20?' · short':''}`);
+  if(strength>0) pieces.push(`Strength ${strength} min${strength<20?' · short':''}`);
+  if(!pieces.length&&m.stretch) pieces.push('Stretch logged');
+  const shortLabel=meaningful?'Goal met':steps>0?`${(steps/1000).toFixed(1)}k · below 10K`:'Logged';
+  return {done:meaningful,recorded:any,calendarPass:meaningful,label:pieces.slice(0,2).join(' · '),shortLabel};
 }
 function plannedMoveStatus(d){
   const m=d.plannedMove||{}; const any=(+m.steps||0)>0 || m.stretch===true || (+m.cardio||0)>0 || (+m.strength||0)>0;
@@ -547,18 +492,97 @@ function plannedMoveStatus(d){
   if(m.stretch) pieces.push('Stretch');
   if(+m.cardio>0) pieces.push(`${m.cardio}${db.language==='zh'?'分有氧':'m cardio'}`);
   if(+m.strength>0) pieces.push(`${m.strength}${db.language==='zh'?'分力量':'m strength'}`);
-  return {planned:true,calendarPass:(+m.steps||0)>=10000 || (+m.cardio||0)>0 || (+m.strength||0)>0,label:pieces.slice(0,2).join(' · ')};
+  return {planned:true,calendarPass:(+m.steps||0)>=10000 || (+m.cardio||0)>=20 || (+m.strength||0)>=20,label:pieces.slice(0,2).join(' · ')};
 }
 function plannedMoveControls(d){
   const m=d.plannedMove||{};
   return `<div class="two"><label>${tr('steps')}<input data-day-field="plannedMove.steps" inputmode="numeric" type="number" min="0" value="${m.steps??''}" placeholder="10000"></label><label>${tr('cardio')} · ${tr('minutes')}<input data-day-field="plannedMove.cardio" inputmode="numeric" type="number" min="0" value="${m.cardio??''}" placeholder="0"></label><label>${tr('strength')} · ${tr('minutes')}<input data-day-field="plannedMove.strength" inputmode="numeric" type="number" min="0" value="${m.strength??''}" placeholder="0"></label><div style="padding-top:26px"><div class="switch-row"><span style="font-size:14px">${tr('stretch')}</span><button class="toggle ${m.stretch===true?'on':''}" data-toggle-planned-move="stretch"></button></div></div></div>`;
 }
-function dynamicInsight(){
+function morningResponse(){
   const d=readDay(today());
-  if(returnedOn(today())) return 'You came back. One ordinary day is a useful next step.';
-  if(d.food.bedtimeHunger>=4) return 'Hunger is useful feedback. Make room for satisfying meals and planned evening food.';
-  if(snackValue(d)===false) return 'One day does not erase your history. Return to regular meals at your next opportunity.';
-  return 'Look at the trend over time. Your meals, sleep, and how the plan feels matter too.';
+  if(d.weight==null) return '';
+  const weights=latestWeights(today());
+  const idx=weights.findIndex(x=>x.date===today());
+  const prev=idx>0?weights[idx-1]:null;
+  const current=+d.weight;
+  const avgNow=movingAverage(today());
+  const avgWeekAgo=movingAverage(addDays(today(),-7));
+  const trend=(avgNow!=null&&avgWeekAgo!=null)?avgNow-avgWeekAgo:null;
+  const change=prev?current-(+prev.weight):null;
+  const changeText=change==null?'':`${Math.abs(change).toFixed(1)} kg`;
+  if(change!=null && change<=-.2 && trend!=null && trend<=-.1){
+    return `今天比上一次称重轻了 ${changeText}，而且 7 日平均也比一周前低了 ${Math.abs(trend).toFixed(1)} kg。单日数字和短期趋势同时往下，比只看到某一天更值得高兴。先保持现在的节奏，不需要因为今天漂亮就把计划再收紧。`;
+  }
+  if(change!=null && change<=-.2){
+    return `今天轻了 ${changeText}，可以开心一下。不过 7 日平均还没有出现同样明显的变化，所以先把它当成一个好信号，而不是新的结论。再看几天，真正有意义的是这个方向能不能慢慢留下来。`;
+  }
+  if(change!=null && change>=.3 && trend!=null && trend<=-.1){
+    return `今天比上一次高了 ${changeText}，但 7 日平均仍然比一周前低 ${Math.abs(trend).toFixed(1)} kg。一天的反弹没有改变目前的方向，不需要追着今天的数字去补偿或重新设计计划。`;
+  }
+  if(change!=null && change>=.3){
+    return `今天的数字高了 ${changeText}。这值得留意，但还不足以说明趋势发生了变化。先继续按平常的方式记录两三天，再看 7 日平均是否真的往上；没有必要为了一个早晨立刻调整整个计划。`;
+  }
+  if(trend!=null && trend<=-.1){
+    return `今天和上一次差别不大，但 7 日平均比一周前低了 ${Math.abs(trend).toFixed(1)} kg。趋势在慢慢移动，而不是靠某一个特别低的数字制造进展；这种变化通常更值得信任。`;
+  }
+  if(trend!=null && trend>=.15){
+    return `今天本身没有特别大的变化，但最近一周的平均值比前一周高了 ${trend.toFixed(1)} kg。先把它当成需要继续观察的信号，而不是失败。看看接下来几天 Diet、活动量和晚间饥饿有没有形成连续模式，再决定是否值得调整。`;
+  }
+  return `今天的体重仍然在最近的波动区间里，没有出现需要马上反应的新信号。继续记录就好；当几天的数据开始朝同一个方向移动时，Tide 再把它当成真正的趋势。`;
+}
+function morningResponseBlock(){
+  const text=morningResponse();
+  return text?`<section class="morning-response"><div class="feedback-label">今早</div><div class="feedback-copy">${escapeHtml(text)}</div></section>`:'';
+}
+function recentWindow(days=7, through=today()){
+  const from=addDays(through,-(days-1));
+  const rows=[]; for(let d=from;d<=through;d=addDays(d,1)) rows.push(readDay(d));
+  return rows;
+}
+function recentWins(){
+  const rows=recentWindow(14), last7=rows.slice(-7), wins=[];
+  const recentWeights=last7.filter(d=>d.weight!=null);
+  const previous7=rows.slice(0,7).filter(d=>d.weight!=null);
+  if(recentWeights.length>=3 && previous7.length>=3){
+    const a=avg(recentWeights.map(d=>+d.weight)), b=avg(previous7.map(d=>+d.weight));
+    if(a!=null&&b!=null&&a<=b-.15) wins.push(`最近 7 天的平均体重比前一周低了 ${(b-a).toFixed(1)} kg。`);
+  }
+  const snackLogged=last7.filter(d=>d.food.noSnack!=null&&!d.skips?.noSnack);
+  const noSnack=snackLogged.filter(d=>d.food.noSnack===true).length;
+  if(snackLogged.length>=4 && noSnack>=4) wins.push(`过去 7 天，有记录的 ${snackLogged.length} 天里 ${noSnack} 天没有吃零食。`);
+  const steps10=last7.filter(d=>(+d.move.steps||0)>=10000).length;
+  if(steps10>=2) wins.push(`过去 7 天有 ${steps10} 天走到 10K+ 步。`);
+  const workouts=last7.filter(d=>(+d.move.cardio||0)>=20 || (+d.move.strength||0)>=20).length;
+  if(workouts>=2) wins.push(`过去 7 天完成了 ${workouts} 天至少 20 分钟的 Cardio / Strength。`);
+  const amountLogged=last7.filter(d=>d.food.moreThanIntended!=null);
+  const aboutRight=amountLogged.filter(d=>d.food.moreThanIntended===false).length;
+  if(amountLogged.length>=4 && aboutRight>=4) wins.push(`过去 7 天，有记录的 ${amountLogged.length} 天里 ${aboutRight} 天的进食量在自己原本想要的范围内。`);
+  const weighCount=last7.filter(d=>d.weight!=null).length;
+  if(weighCount>=5) wins.push(`这一周已经有 ${weighCount} 次晨间称重，趋势判断会比单日数字可靠得多。`);
+  return wins.slice(0,3);
+}
+function recentWinsBlock(){
+  const wins=recentWins(); if(!wins.length)return '';
+  return `<section class="card recent-wins"><div class="feedback-label">最近的进展</div>${wins.map(x=>`<div class="win-row"><span>•</span><div>${escapeHtml(x)}</div></div>`).join('')}</section>`;
+}
+function weeklyPulseBlock(){
+  const rows=recentWindow(7), weights=rows.filter(d=>d.weight!=null), snackLogged=rows.filter(d=>d.food.noSnack!=null&&!d.skips?.noSnack);
+  const noSnack=snackLogged.filter(d=>d.food.noSnack===true).length;
+  const steps10=rows.filter(d=>(+d.move.steps||0)>=10000).length;
+  const hungers=rows.map(d=>d.food.bedtimeHunger).filter(v=>v!=null).map(Number);
+  const avgNow=movingAverage(today()), avgAgo=movingAverage(addDays(today(),-7));
+  const trend=(avgNow!=null&&avgAgo!=null)?avgNow-avgAgo:null;
+  const enough=weights.length>=2||snackLogged.length>=3||steps10>=2||hungers.length>=3; if(!enough)return '';
+  const metrics=[];
+  metrics.push(`<div><span>7日趋势</span><b>${trend==null?'—':`${trend>0?'+':''}${trend.toFixed(1)} kg`}</b></div>`);
+  metrics.push(`<div><span>No snacks</span><b>${snackLogged.length?`${noSnack}/${snackLogged.length}`:'—'}</b></div>`);
+  metrics.push(`<div><span>10K+</span><b>${steps10} 天</b></div>`);
+  if(hungers.length) metrics.push(`<div><span>晚间饥饿</span><b>${avg(hungers).toFixed(1)}/5</b></div>`);
+  let note='这周的数据还在积累，先看方向，不急着给自己下结论。';
+  if(trend!=null&&trend<=-.15) note='最明显的是体重趋势在往下。保持能重复的做法，比为了加快速度再增加规则更重要。';
+  else if(steps10>=4) note='这一周活动量比较稳定。10K 是真正达到门槛的天数，低于 10K 的步数仍保留记录，但不会算成 Move day。';
+  else if(snackLogged.length>=4&&noSnack/snackLogged.length>=.75) note='这一周 No snacks 的执行比较稳定。继续观察它和整体进食量，而不是把零食当成唯一的 Diet 指标。';
+  return `<section class="card weekly-pulse"><div class="row between"><div class="feedback-label">最近 7 天</div><span class="small">Weekly pulse</span></div><div class="pulse-grid">${metrics.join('')}</div><div class="pulse-note">${escapeHtml(note)}</div></section>`;
 }
 
 function icons(name){
@@ -582,7 +606,7 @@ function flashHtml(){ if(!flash)return ''; const s=flash; flash=''; return `<div
 
 function todayGoalLearning(){
   const r=latestReview(db.goal);
-  if(!r) return '';
+  if(!r || r.date<addDays(today(),-21)) return '';
   const summary=String(r.summary||r.preview||'').trim();
   if(!summary) return '';
   return `<section class="today-learning-card"><div class="row between"><div class="today-learning-label">Goal review</div><div class="small">${fmtShortDate(r.date)}${r.day?` · Day ${r.day}`:''}</div></div><div class="today-learning-copy">${escapeHtml(summary)}</div><button class="review-inline-link" data-review-goal="${escapeHtml(db.goal.id)}">Review history →</button></section>`;
@@ -594,7 +618,7 @@ function endGoalTodayEntry(){
 }
 function dailyThoughtBlock(){
   const t=dailyThought||chooseDailyThought();
-  return `<section class="daily-thought"><div class="daily-thought-label">${escapeHtml(t.category.toUpperCase())} · Daily thought</div><div class="daily-thought-copy">${escapeHtml(t.text)}</div></section>`;
+  return `<section class="daily-thought"><div class="daily-thought-label">今日一想 · ${escapeHtml(t.category)}</div><div class="daily-thought-copy">${escapeHtml(t.text)}</div></section>`;
 }
 function endGoalPage(){
   return `${topbar('End Goal','',`<button class="btn ghost" data-action="backToday">Done</button>`)}
@@ -604,10 +628,44 @@ function endGoalPage(){
     <div class="end-goal-footer">These are the things that actually matter this year.</div>`;
 }
 
-function todayPage(){ return journeyTodayPage(); }
-
+function todayPage(){
+  const d=day(today()), lw=latestWeight(today());
+  const startW=activeGoalStartWeight(), current=lw?.weight??startW, progress=goalProgress(current);
+  const food=foodStatus(d), move=moveStatus(d), events=d.events.length;
+  const remaining=Math.max(0,(+current)-(+db.goal.target));
+  const daysLeft=Math.max(0,Math.ceil((parseDate(db.goal.end)-parseDate(today()))/86400000));
+  const foodDone=food.calendarPass, moveDone=move.calendarPass, lifeDone=events>0;
+  return `${topbar(`Today · ${fmtDate(today(),'en')}`)}
+  ${flashHtml()}
+  ${dailyThoughtBlock()}
+  ${endGoalTodayEntry()}
+  <section class="today-goal-card">
+    <div class="row between"><div><div class="eyebrow">Current goal</div><div class="today-goal-name">${escapeHtml(db.goal.name)}</div></div><span class="status active">Active</span></div>
+    <div class="today-goal-line"><i style="width:${progress}%"></i></div>
+    <div class="today-goal-metrics"><div><span>Current</span><b>${fmt(current)}</b><em>kg</em></div><div><span>Target</span><b>${fmt(db.goal.target)}</b><em>kg</em></div><div><span>Goal date</span><b class="date-value">${fmtDate(db.goal.end)}</b></div></div>
+  </section>
+  <button class="quick-weight-card ${d.weight==null?'empty-weight':''}" data-action="quickWeight">
+    <div><div class="quick-weight-label">Morning weight</div><div class="quick-weight-value">${d.weight==null?'Log morning weight':`${fmt(d.weight)} <span>kg</span>`}</div></div>
+    <div class="quick-weight-action">${d.weight==null?'Log now':'Edit'} ›</div>
+  </button>
+  ${morningResponseBlock()}
+  ${recentWinsBlock()}
+  ${weeklyPulseBlock()}
+  ${todayGoalLearning()}
+  <section class="today-summary-grid">
+    <button class="summary-tile green" data-action="editToday"><div class="summary-label">Diet</div><div class="summary-value">${foodDone?'Goal met':food.recorded?'In progress':'Not logged'}</div><span class="summary-dot ${foodDone?'done':''}"></span></button>
+    <button class="summary-tile pink" data-action="editToday"><div class="summary-label">Move</div><div class="summary-value">${moveDone?'Move day':move.recorded?move.shortLabel:'Not logged'}</div><span class="summary-dot ${moveDone?'done':''}"></span></button>
+    <button class="summary-tile green-soft" data-action="editToday"><div class="summary-label">Life</div><div class="summary-value">${events?`${events} event${events>1?'s':''}`:'No special events'}</div><span class="summary-dot ${lifeDone?'done':''}"></span></button>
+  </section>
+  <section class="today-progress-card">
+    <div class="progress-stat"><div class="big-stat">${(startW-current)>=0?'-':''}${Math.abs(startW-current).toFixed(1)}</div><div class="stat-caption">kg from start</div></div>
+    <div class="goal-ring" style="--p:${progress}"><div><b>${Math.round(progress)}%</b><span>complete</span></div></div>
+    <div class="progress-stat right"><div class="big-stat">${daysLeft}</div><div class="stat-caption">days left</div><div class="tiny-remaining">${remaining.toFixed(1)} kg to go</div></div>
+  </section>
+  <button class="today-edit-button" data-action="editToday">View / edit today</button>`;
+}
 function skipButton(id,d){ return `<button class="skip-chip ${d.skips?.[id]?'on':''}" data-toggle-skip="${id}">${d.skips?.[id]?'N/A ✓':'N/A'}</button>`; }
-function trackerHead(id,d){ return `<div class="tracker-head"><div class="actual-label">${id==='noSnack'&&usesEveningPlan(d.date)?'No extra snacks':TRACKER_DEFS[id].label} ${trackerRoleBadge(calendarRulesForDate(d.date).goal,id)}</div>${skipButton(id,d)}</div>`; }
+function trackerHead(id,d){ return `<div class="tracker-head"><div class="actual-label">${TRACKER_DEFS[id].label} ${trackerRoleBadge(calendarRulesForDate(d.date).goal,id)}</div>${skipButton(id,d)}</div>`; }
 function todayPlanChips(d){
   const dated=calendarRulesForDate(d.date).goal;
   const ids=TRACKER_IDS.filter(id=>TRACKER_DEFS[id].cadence==='daily'&&trackerRole(dated,id)==='goal'&&trackerActiveOn(dated,id,d.date));
@@ -620,8 +678,8 @@ function actualFoodControls(d){
   <div class="actual-row tracker-row ${d.skips?.veg?'is-skip':''}">${trackerHead('veg',d)}<div class="chip-row">${veg.map(v=>`<button class="pill ${d.food.veg!==null && +d.food.veg===v?'on':''}" data-set-food="veg" data-value="${v}">${v===4?'4+':v}</button>`).join('')}</div></div>
   <div class="actual-row tracker-row ${d.skips?.protein?'is-skip':''}">${trackerHead('protein',d)}<div class="switch-row compact-switch"><span>${d.food.protein===true?'Target met':'Mark when met'}</span><button class="toggle ${d.food.protein===true?'on':''}" data-toggle-food="protein" aria-label="Protein"></button></div></div>
   <div class="actual-row tracker-row ${d.skips?.fruit?'is-skip':''}">${trackerHead('fruit',d)}<div class="chip-row">${fruit.map(v=>`<button class="pill ${d.food.fruit!==null && +d.food.fruit===v?'on':''}" data-set-food="fruit" data-value="${v}">${v===3?'3+':v}</button>`).join('')}</div></div>
-  ${snackControls(d)}${eveningFoodCard(d)}
-  ${!usesEveningPlan(d.date)?`<div class="actual-row tracker-row ${d.skips?.stop6?'is-skip':''}">${trackerHead('stop6',d)}<div class="switch-row compact-switch"><span>${d.food.stop6===true?'On plan':'Mark when met'}</span><button class="toggle ${d.food.stop6===true?'on':''}" data-toggle-food="stop6" aria-label="No food after cutoff"></button></div></div>`:''}
+  <div class="actual-row tracker-row ${d.skips?.noSnack?'is-skip':''}">${trackerHead('noSnack',d)}<div class="snack-choices" role="group" aria-label="Snacks on this date">${[[true,'No snacks'],[false,'Had snacks'],[null,'Not logged']].map(([val,label])=>`<button type="button" class="snack-choice ${d.food.noSnack===val?'on':''}" data-no-snack="${val===null?'null':String(val)}" aria-pressed="${d.food.noSnack===val}">${label}</button>`).join('')}</div></div>
+  <div class="actual-row tracker-row context-row"><div class="tracker-head"><div class="actual-label">Amount eaten <span class="role-mini track">Context</span></div></div><div class="snack-choices amount-choices" role="group" aria-label="Amount eaten on this date">${[[false,'About right'],[true,'More than intended'],[null,'Not logged']].map(([val,label])=>`<button type="button" class="snack-choice ${d.food.moreThanIntended===val?'on':''}" data-more-than="${val===null?'null':String(val)}" aria-pressed="${d.food.moreThanIntended===val}">${label}</button>`).join('')}</div></div>
   <div class="actual-row tracker-row ${d.skips?.water?'is-skip':''}">${trackerHead('water',d)}<div class="chip-row">${[1,1.5,2,2.5,3].map(v=>`<button class="pill ${d.food.water!==null && +d.food.water===v?'on':''}" data-set-food="water" data-value="${v}">${v}L</button>`).join('')}</div></div>
   <div class="actual-row tracker-row ${d.skips?.bedtimeHunger?'is-skip':''}">${trackerHead('bedtimeHunger',d)}<div class="hunger-scale"><span class="small">Low</span><div class="chip-row">${hunger.map(v=>`<button class="pill ${d.food.bedtimeHunger!==null && +d.food.bedtimeHunger===v?'on':''}" data-set-food="bedtimeHunger" data-value="${v}">${v}</button>`).join('')}</div><span class="small">High</span></div></div>`;
 }
@@ -661,7 +719,7 @@ function calendarPage(){
     const current=dt.getMonth()===m; const dots=[];
     if(food.calendarPass) dots.push('<i class="dot food"></i>');
     if(mv.calendarPass) dots.push('<i class="dot move"></i>'); else if(s>today()&&pm.calendarPass) dots.push('<i class="dot move-outline"></i>');
-    if(d.events.length||d.eveningOut) dots.push('<i class="dot event"></i>');
+    if(d.events.length) dots.push('<i class="dot event"></i>');
     cells.push(`<button class="day-cell ${!current?'out':''} ${s===selected?'selected':''} ${s===today()?'today':''}" data-date="${s}"><span class="day-number">${dt.getDate()}</span><span class="dots">${dots.join('')}</span></button>`);
   }
   const d=day(selected), food=foodStatus(d), mv=moveStatus(d), pm=plannedMoveStatus(d), wc=weightChange(selected);
@@ -675,7 +733,7 @@ function calendarPage(){
       <div class="summary-grid" style="margin-top:12px">
         <div class="mini-state"><i class="dot food ${food.calendarPass?'':'outline'}"></i><b>${tr('food')}</b><span>${food.label}</span></div>
         <div class="mini-state"><i class="dot ${selected>today()&&pm.planned?'move-outline':'move'}"></i><b>${tr('movement')}</b><span>${selected>today()&&pm.planned?pm.label:mv.label}</span></div>
-        <div class="mini-state"><i class="dot event"></i><b>${tr('special')}</b><span>${d.events.length?escapeHtml(eventLabel(d.events[0])):d.eveningOut?'Dinner out':tr('noRecord')}</span></div>
+        <div class="mini-state"><i class="dot event"></i><b>${tr('special')}</b><span>${d.events.length?escapeHtml(eventLabel(d.events[0])):tr('noRecord')}</span></div>
       </div>
       ${d.weight!=null?`<div class="small" style="margin-top:10px">${tr('fastingWeight')} ${fmt(d.weight)} kg${wc==null?'':` · ${wc>0?'+':''}${wc.toFixed(1)} kg`}</div>`:''}
     </section>`;
@@ -683,16 +741,24 @@ function calendarPage(){
 
 function dayPage(){
   const d=day(selected), future=selected>today();
-  return `${topbar(fmtDate(selected),future?'Plan':selected===today()?'Today':'Edit',`<button class="btn sky save-top" data-action="saveDay">Save</button>`)}${flashHtml()}
-    ${future?`<section class="card">${futurePlanSummary(d)}${eveningFoodCard(d)}${plannedMoveControls(d)}</section>`:`<section class="card blue-soft"><div class="two"><label>Weight · kg<input data-day-field="weight" type="number" step="0.1" inputmode="decimal" value="${d.weight??''}"></label><label>Sleep · hours<input data-day-field="sleep" type="number" step="0.1" inputmode="decimal" value="${d.sleep??''}"></label></div></section><section class="card day-food"><div class="actual-label">Food</div>${actualFoodControls(d)}${returnCard(d)}</section><section class="card"><div class="actual-label">Exercise</div>${movementControls(d)}</section>`}
-    <details class="card"><summary>Events & notes</summary><div class="life-events">${lifeEventTagsHtml(d,future)}</div><div class="row"><input id="customEvent" maxlength="40" placeholder="Add event" aria-label="New custom event"><button class="btn secondary" data-action="addEvent">Add</button></div><button class="quiet-link" data-action="manageCustom">Manage events</button><label>Notes<textarea data-day-field="note" rows="3">${escapeHtml(d.note)}</textarea></label></details><button class="btn sky full" data-action="saveDayBottom">Done</button>`;
+  const title=fmtDate(selected,'en'), sub=future?'Future plan':selected===today()?'Today':'Edit past day';
+  const eventsNotes=`<section class="card events-notes-card" id="eventsNotes"><div class="row between"><div class="actual-label">Events & Notes</div><button class="quiet-link" data-action="manageCustom">Manage custom ›</button></div><div class="life-events">${lifeEventTagsHtml(d,future)}</div><div class="custom-event-inline"><input id="customEvent" maxlength="40" placeholder="New custom event" aria-label="New custom event"><button class="btn secondary" data-action="addEvent">Add</button></div><label class="notes-inline">Notes<textarea data-day-field="note" rows="2" placeholder="Optional">${escapeHtml(d.note)}</textarea></label></section>`;
+  let main='';
+  if(future){
+    main=`${eventsNotes}<section class="card"><div class="actual-label">Day plan</div>${futurePlanSummary(d)}<hr class="sep"><div class="actual-label">Exercise plan (optional)</div>${plannedMoveControls(d)}</section>`;
+  }else{
+    main=`<section class="card blue-soft"><div class="actual-label">Morning log</div><div class="two"><label>Weight · kg<input data-day-field="weight" type="number" step="0.1" inputmode="decimal" value="${d.weight??''}"></label><label>Last night's sleep · hours<input data-day-field="sleep" type="number" step="0.1" inputmode="decimal" value="${d.sleep??''}"></label></div></section>${eventsNotes}<section class="card"><div class="actual-label">Diet</div>${actualFoodControls(d)}${plannedMoveStatus(d).planned?`<div class="planned-reference">Planned: ${escapeHtml(plannedMoveStatus(d).label)}</div>`:''}<hr class="sep"><div class="actual-label">Exercise</div>${movementControls(d)}</section>`;
+  }
+  return `${topbar(title,sub,`<button class="btn sky save-top" data-action="saveDay">Save</button>`)}
+    ${flashHtml()}
+    ${main}
+    <button class="btn sky full" data-action="saveDayBottom">Done</button>`;
 }
-
 function futurePlanSummary(d){
   const ids=TRACKER_IDS.filter(id=>TRACKER_DEFS[id].cadence==='daily'&&trackerRole(db.goal,id)==='goal'&&trackerActiveOn(db.goal,id,d.date));
   return `<div class="rule-grid">${ids.map(id=>`<div class="rule">${escapeHtml(trackerRuleLabel(db.goal,id,d))}</div>`).join('')}</div>`;
 }
-function customPlanControls(d){const p=d.customPlan||{};return `<div class="custom-plan"><div class="actual-label">Custom food goals</div><div class="two"><label>Vegetables ≥<input data-day-field="customPlan.veg" type="number" value="${p.veg??db.plan.veg}"></label><label>Fruit ≤<input data-day-field="customPlan.fruit" type="number" value="${p.fruit??db.plan.fruit}"></label><label>Water ≥ L<input data-day-field="customPlan.water" type="number" step="0.1" value="${p.water??db.plan.water}"></label><label>Stop eating time<input data-day-field="customPlan.stop" type="time" value="${p.stop??db.plan.stop}"></label></div><div class="switch-row actual-row"><span>Allow snacks</span><button class="toggle ${p.noSnack===false?'on':''}" data-toggle-custom="allowSnack"></button></div><div class="small plan-helper">Protein is yes/no. Bedtime hunger is observation only and has no custom target.</div><hr class="sep"><div class="actual-label">Custom exercise</div><div class="two"><label>Steps<input data-day-field="customPlan.steps" type="number" value="${p.steps??''}" placeholder="10000"></label><label>Cardio · min<input data-day-field="customPlan.cardio" type="number" value="${p.cardio??''}"></label><label>Strength · min<input data-day-field="customPlan.strength" type="number" value="${p.strength??''}"></label><div style="padding-top:26px"><div class="switch-row"><span>Stretch</span><button class="toggle ${p.stretch===true?'on':''}" data-toggle-custom="stretch"></button></div></div></div></div>`; }
+function customPlanControls(d){const p=d.customPlan||{};return `<div class="custom-plan"><div class="actual-label">Custom food goals</div><div class="two"><label>Vegetables ≥<input data-day-field="customPlan.veg" type="number" value="${p.veg??db.plan.veg}"></label><label>Fruit ≤<input data-day-field="customPlan.fruit" type="number" value="${p.fruit??db.plan.fruit}"></label><label>Water ≥ L<input data-day-field="customPlan.water" type="number" step="0.1" value="${p.water??db.plan.water}"></label></div><div class="switch-row actual-row"><span>Allow snacks</span><button class="toggle ${p.noSnack===false?'on':''}" data-toggle-custom="allowSnack"></button></div><div class="small plan-helper">Protein is yes/no. Bedtime hunger is observation only and has no custom target.</div><hr class="sep"><div class="actual-label">Custom exercise</div><div class="two"><label>Steps<input data-day-field="customPlan.steps" type="number" value="${p.steps??''}" placeholder="10000"></label><label>Cardio · min<input data-day-field="customPlan.cardio" type="number" value="${p.cardio??''}"></label><label>Strength · min<input data-day-field="customPlan.strength" type="number" value="${p.strength??''}"></label><div style="padding-top:26px"><div class="switch-row"><span>Stretch</span><button class="toggle ${p.stretch===true?'on':''}" data-toggle-custom="stretch"></button></div></div></div></div>`; }
 
 function median(values){
   const sorted=values.filter(Number.isFinite).slice().sort((a,b)=>a-b);
@@ -713,40 +779,139 @@ function robustSevenDayMean(date,records){
   return kept.length>=3?avg(kept):median(values);
 }
 function robustRecentSlope(rows){
-  // Theil-Sen median pairwise slope, spaced to reduce overlapping-window noise.
+  // Prefer pairwise slopes that span at least three days. Two distinct, spaced
+  // readings can produce an explicitly provisional projection: five is NOT a
+  // hard gate. A one-day change alone is too noisy to extrapolate.
   const slopes=[];
   for(let i=0;i<rows.length;i++) for(let j=i+1;j<rows.length;j++){
     const gap=(parseDate(rows[j].date)-parseDate(rows[i].date))/86400000;
     if(gap>=3) slopes.push((rows[j].value-rows[i].value)/gap);
   }
-  return slopes.length>=3?median(slopes):null;
+  return slopes.length?median(slopes):null;
+}
+function forecastWeightRecords(){
+  const all=latestWeights(today());
+  if(!all.length) return [];
+  const goalOnly=all.filter(r=>r.date>=db.goal.start);
+  const goalSpan=goalOnly.length>=2?(parseDate(goalOnly.at(-1).date)-parseDate(goalOnly[0].date))/86400000:0;
+  // Once the goal has an established trend, preserve its own forecast basis.
+  // Until then, borrow PREVIOUSLY RECORDED weights, without copying them into
+  // the new goal or treating their behaviors as current-goal adherence.
+  if(goalOnly.length>=5&&goalSpan>=7) return goalOnly;
+  const last=all.at(-1);
+  const recent=all.filter(r=>r.date>=addDays(last.date,-45));
+  return recent.length>=2?recent:all.slice(-2);
 }
 function goalForecast(){
-  const records=latestWeights(today()).filter(r=>r.date>=addDays(today(),-35));
-  if(!records.length || records.at(-1).date<addDays(today(),-3)) return {ready:false,reason:'Log a recent weight before estimating a trend.'};
-  if(records.length<5) return {ready:false,reason:'Log at least 5 weights to see an estimate.'};
-  if((parseDate(records.at(-1).date)-parseDate(records[0].date))/86400000<7) return {ready:false,reason:'An estimate needs at least a week of data.'};
-  const trend=records.map(r=>({date:r.date,value:robustSevenDayMean(r.date,records)})), last=trend.at(-1);
+  const records=forecastWeightRecords();
+  if(records.length<2) return {ready:false,reason:records.length?'One recorded weight is shown. Add another on a different day to estimate a trend.':'Your chart will show any existing weight records. Log a weight to begin.'};
+  const lastRecord=records.at(-1);
+  const staleDays=Math.round((parseDate(today())-parseDate(lastRecord.date))/86400000);
+  if(staleDays>21) return {ready:false,reason:'Earlier weights are shown, but they are too old for a current forecast. Log a new weight.'};
+  const covered=(parseDate(lastRecord.date)-parseDate(records[0].date))/86400000;
+  if(covered<3) return {ready:false,reason:'Earlier weights are shown. A trend needs two readings at least 3 days apart.'};
+  if(records.length===2 && covered>60) return {ready:false,reason:'Earlier readings are visible, but too far apart for a useful forecast. Add a recent weigh-in.'};
+  // Keep the robust 7-day averages for established series. For 2-4 points
+  // they would blend readings and artificially flatten the only available
+  // slope, so use actual observations and label the result an early estimate.
+  const earlyEstimate=records.length<5 || covered<7;
+  const trend=records.map(r=>({date:r.date,value:earlyEstimate?+r.weight:robustSevenDayMean(r.date,records)}));
+  const last=trend.at(-1);
   let usable=trend.filter(r=>r.date>=addDays(last.date,-14));
-  if(usable.length<5)usable=trend.filter(r=>r.date>=addDays(last.date,-21));
-  if(usable.length<5) return {ready:false,reason:'Not enough recent readings for an estimate.'};
-  const estimate=robustRecentSlope(usable);
-  if(estimate==null)return {ready:false,reason:'More spaced weigh-ins are needed.'};
-  const slope=clamp(estimate,-.12,.08), current=+last.value;
-  const forecastValue=days=>{const d=Math.max(0,days);return current+slope*(.35*d+.65*(1-Math.exp(-.035*d))/.035);};
-  return {ready:true,slope,current,lastDate:last.date,forecastValue,trendWindowStart:usable[0].date,trendPoints:usable.length};
+  if(usable.length<2||(parseDate(usable.at(-1).date)-parseDate(usable[0].date))/86400000<3)
+    usable=trend.filter(r=>r.date>=addDays(last.date,-35));
+  if(usable.length<2||(parseDate(usable.at(-1).date)-parseDate(usable[0].date))/86400000<3) usable=trend;
+  let estimate=robustRecentSlope(usable);
+  if(estimate==null && !earlyEstimate){
+    // Widely spaced historical points can still offer an early estimate.
+    const raw=records.map(r=>({date:r.date,value:+r.weight}));
+    estimate=robustRecentSlope(raw);
+  }
+  if(estimate==null) return {ready:false,reason:'Earlier weights are shown, but their dates are too close for a trend.'};
+  const slope=clamp(estimate,-.12,.08);
+  const current=+last.value;
+  const hasEstablishedGoal=records[0].date>=db.goal.start;
+  const modelStart=hasEstablishedGoal?db.goal.start:records[0].date;
+  const startValue=hasEstablishedGoal?activeGoalStartWeight():+trend[0].value;
+  const elapsed=Math.max(1,Math.round((parseDate(last.date)-parseDate(modelStart))/86400000));
+  const overallSlope=(current-startValue)/elapsed;
+  const daysToEnd=Math.max(0,Math.round((parseDate(db.goal.end)-parseDate(last.date))/86400000));
+  const damping=.035, retainedPace=.35, maxEstimateDays=120;
+  const forecastValue=days=>{
+    const d=Math.max(0,days);
+    return current+slope*(retainedPace*d+(1-retainedPace)*(1-Math.exp(-damping*d))/damping);
+  };
+  const projectedEnd=forecastValue(daysToEnd);
+  const backcastValue=daysFromStart=>{
+    const u=clamp(daysFromStart/elapsed,0,1),u2=u*u,u3=u2*u;
+    return (2*u3-3*u2+1)*startValue+(u3-2*u2+u)*elapsed*overallSlope+
+      (-2*u3+3*u2)*current+(u3-u2)*elapsed*slope;
+  };
+  let targetDate=null,deltaDays=null,reachStatus='flat';
+  if(current<=+db.goal.target){
+    targetDate=last.date; reachStatus='reached';
+  }else if(slope<-.007){
+    reachStatus='beyond';
+    for(let d=1;d<=maxEstimateDays;d++) if(forecastValue(d)<=+db.goal.target){
+      targetDate=addDays(last.date,d); reachStatus='estimated'; break;
+    }
+  }
+  if(targetDate) deltaDays=Math.round((parseDate(targetDate)-parseDate(db.goal.end))/86400000);
+  return {ready:true,slope,current,startValue,modelStart,elapsed,lastDate:last.date,projectedEnd,
+    targetDate,deltaDays,reachStatus,damping,forecastValue,backcastValue,
+    earlyEstimate,usesEarlierData:records.some(r=>r.date<db.goal.start),
+    trendWindowStart:usable[0].date,trendPoints:usable.length,
+    method:earlyEstimate?'spaced historical readings (provisional)':'robust 7-day mean + Theil-Sen trend + slowing projection'};
+}
+function forecastMessage(f){
+  if(!f.ready) return f.reason;
+  if(f.reachStatus==='reached') return f.earlyEstimate?'Early estimate from recorded weights · check against your latest actual reading.':'Smoothed weight has reached the target.';
+  if(f.reachStatus==='estimated') return f.earlyEstimate?`Early estimate from ${f.trendPoints} historical weigh-ins · not a deadline.`:'Estimate from recent trend · not a deadline.';
+  if(f.reachStatus==='beyond') return f.earlyEstimate?'Early trend estimate: target not projected within 120 days.':'Target not projected within 120 days.';
+  return f.earlyEstimate?'Early trend is flat or rising; no target date estimate yet.':'Recent trend is too flat or rising for a date estimate.';
 }
 
+function goalDeadlineCard(f){
+  const end=db.goal.end, now=today(), recorded=readDay(end);
+  const hasActual=end<=now && recorded.weight!=null && Number.isFinite(+recorded.weight);
+  if(end<now) return {label:`${fmtDate(end,'en')} · ${hasActual?'Actual':'No weigh-in'}`, value:hasActual?`${fmt(recorded.weight)} kg`:'No weigh-in recorded'};
+  if(end===now) return {label:hasActual?'Today · Actual':'Today · No weigh-in',value:hasActual?`${fmt(recorded.weight)} kg`:'No weigh-in yet'};
+  return {label:`By ${fmtDate(end,'en')} · Forecast`, value:f.ready?`${fmt(f.projectedEnd)} kg`:'—'};
+}
 function changePage(){
-  const series=chartData(), f=goalForecast();
-  const targetVisible=db.goal.status!=='idle'&&db.goal.mode!=='record'&&(range==='goal'||(series.length&&db.goal.start<=series.at(-1).date&&db.goal.end>=series[0].date));
-  return `${topbar('Progress')}<section class="card change-goal-card"><div class="row between"><b>Weight</b><button class="quiet-link" data-action="chartSettings">Customize</button></div><div class="range-controls" role="group" aria-label="Chart range">${[['goal','Goal'],['30','30D'],['90','90D'],['all','All']].map(([v,label])=>`<button class="pill ${range===v?'on':''}" data-range="${v}" aria-pressed="${range===v}">${label}</button>`).join('')}</div><div class="legend"><span><span class="legend-line actual-line"></span>Weight</span><span><span class="legend-line average-line"></span>7-day avg</span>${targetVisible?'<span><span class="legend-line goal-line"></span>Target</span>':''}${showForecast?'<span><span class="legend-line forecast-line"></span>Estimate</span>':''}</div><div class="chart-wrap">${renderChart(series,showForecast?f:null)}</div><div class="chart-bottom"><button class="quiet-link" data-action="toggleForecast" aria-pressed="${showForecast}">${showForecast?'Hide':'Show'} estimate</button><details class="chart-info-wrap"><summary aria-label="Chart information">i</summary><div class="chart-info-popover">Goal includes the previous 7 days. Longer views start at the first available reading. Missing stretches stay open. An average needs 3 readings. Dots show previous-day context, not causes.</div></details></div>${showForecast&&!f.ready?'<div class="small">Not enough recent data.</div>':''}</section>${db.goal.status!=='idle'?`<section class="card progress-behavior-card">${weeklyBehaviorProgress(db.goal)}</section>`:''}<section class="card other-signals-card">${weeklyWinHtml()}${otherSignals(db.goal)}</section><button class="wins-progress-link" data-action="openWins">Small wins & collection <span>→</span></button>`;
+  const series=chartData();
+  const lw=latestWeight(today()); const f=goalForecast(), deadline=goalDeadlineCard(f);
+  const desc=lw?`${tr('actualWeight')} ${fmt(lw.weight)} kg`:tr('noRecord');
+  return `${topbar(tr('weightChange'))}
+    <section class="card change-goal-card">
+      <div class="row between"><div><b>${escapeHtml(db.goal.name)}</b><div class="small">${fmtDate(db.goal.start)} → ${fmtDate(db.goal.end)}</div></div><div class="small">${tr('goalLine')} ${fmt(db.goal.target)} kg</div></div>
+      <div class="small" style="margin-top:8px">${desc}</div>
+      <div class="chart-heading-row"><div class="legend"><span><span class="legend-line actual-line"></span>${tr('actualWeight')}</span><span><span class="legend-line goal-line"></span>${tr('goalLine')}</span><span><span class="legend-line forecast-line"></span>Forecast</span></div><button class="quiet-link chart-customize" data-action="chartSettings">⚙ Customize</button></div>
+      <div class="chart-wrap">${renderChart(series,f)}</div>
+    </section>
+    <section class="forecast-grid compact-forecast">
+      <div class="forecast-card pink"><div class="small">${deadline.label}</div><div class="forecast-value">${deadline.value}</div></div>
+      <div class="forecast-card green"><div class="small">Reach ${fmt(db.goal.target)}</div><div class="forecast-text">${f.ready&&f.targetDate?fmtDate(f.targetDate,'en'):f.ready?(f.reachStatus==='beyond'?'> 120 days':'No date yet'):'—'}</div></div>
+    </section>
+    <div class="insight forecast-insight">${forecastMessage(f)}</div>
+    <div class="section-title">Weekly behavior</div>
+    <section class="card progress-behavior-card">${weeklyBehaviorProgress(db.goal)}</section>
+    <div class="section-title">Weekly review</div>
+    <section class="card">${weeklyReviewText()}</section>`;
 }
-
 function chartData(){
-  return latestWeights().filter(x=>x.date>=chartWindowStart()).map(x=>({date:x.date,weight:+x.weight,avg:trendStats(x.date).value,averageCount:trendStats(x.date).count}));
+  // Show real, previously logged weight readings before a new goal begins.
+  // Prefer the preceding 30 days (up to 14 points). If that window is sparse,
+  // include the last two older readings instead. No synthetic day/weight is
+  // written to db.days; earlier readings never enter this goal's adherence.
+  const all=latestWeights(today());
+  const earlier=all.filter(x=>x.date<db.goal.start);
+  const inGoal=all.filter(x=>x.date>=db.goal.start);
+  const recentEarlier=earlier.filter(x=>x.date>=addDays(db.goal.start,-30));
+  const context=(recentEarlier.length>=2?recentEarlier:earlier.slice(-2)).slice(-14);
+  return [...context,...inGoal].map(x=>({date:x.date,weight:+x.weight,
+    preGoal:x.date<db.goal.start,avg:x.date<db.goal.start?movingAverage(x.date):goalMovingAverage(x.date)}));
 }
-
 function smoothSvgPath(points){
   if(!points.length) return '';
   if(points.length===1) return `M ${points[0][0].toFixed(1)} ${points[0][1].toFixed(1)}`;
@@ -763,46 +928,44 @@ function smoothSvgPath(points){
 }
 function readDay(s){ return mergeDay({...((db.days||{})[s]||{}),date:s}); }
 const CHART_GROUPS=[{id:'food',name:'Diet',dot:'social'},{id:'hunger',name:'Bedtime hunger',dot:'hunger'},{id:'exercise',name:'Exercise',dot:'exercise'},{id:'other',name:'Other context',dot:'other'}];
-const CHART_FOOD=[['eating_out','Eating out'],['alcohol','Alcohol'],['snacks','Snacks · from daily log']];
+const CHART_FOOD=[['eating_out','Eating out'],['alcohol','Alcohol'],['snacks','Snacks · from daily log'],['more_than_intended','More than intended · from daily log']];
 const CHART_EXERCISE=[['steps','10k steps'],['cardio','Cardio'],['strength','Strength']];
 const CHART_OTHER=[['period','Period'],['travel','Travel'],['party','Party'],['vacation','Vacation'],['poor_sleep','Poor sleep'],['sick','Sick'],['short_sleep','Short sleep · <6h']];
 function weightPointContext(weightDate){
   const prevDate=addDays(weightDate,-1);
   const prev=readDay(prevDate), same=readDay(weightDate), settings=db.chartSettings;
   const events=prev.events.map(eventId);
-  const eatingOut=events.includes('eating_out')||prev.eveningOut===true;
+  const eatingOut=events.includes('eating_out');
   const alcohol=prev.alcohol==null?null:+prev.alcohol;
-  const hadSnacks=snackValue(prev)===false; // D-1 explicit Had snacks ONLY; true, null and N/A do not match.
-  const hunger=prev.skips.bedtimeHunger||prev.food.bedtimeHunger==null?null:+prev.food.bedtimeHunger;
-  const steps=prev.skips.steps||prev.move.steps==null?null:+prev.move.steps;
-  const cardio=prev.skips.cardio||prev.move.cardio==null?null:+prev.move.cardio;
-  const strength=prev.skips.strength||prev.move.strength==null?null:+prev.move.strength;
-  const sleep=same.skips.sleep||same.sleep==null?null:+same.sleep; // morning log for the same weigh-in
+  const hadSnacks=prev.food.noSnack===false && !prev.skips?.noSnack; // D-1 explicit Had snacks ONLY; true, null and N/A do not match.
+  const moreThanIntended=prev.food.moreThanIntended===true;
+  const hunger=prev.food.bedtimeHunger==null?null:+prev.food.bedtimeHunger;
+  const steps=prev.move.steps==null?null:+prev.move.steps;
+  const cardio=prev.move.cardio==null?null:+prev.move.cardio;
+  const strength=prev.move.strength==null?null:+prev.move.strength;
+  const sleep=same.sleep==null?null:+same.sleep; // morning log for the same weigh-in
   const exerciseAvailable={steps:steps!=null&&steps>=10000,cardio:cardio!=null&&cardio>0,strength:strength!=null&&strength>0};
   const exerciseNotable=Object.values(exerciseAvailable).some(Boolean);
   const sleepNotable=sleep!=null&&sleep<6;
   const custom=db.customEvents.filter(e=>e.active&&settings.custom.includes(e.id)&&events.includes(e.id));
-  const foodMatch=(eatingOut&&settings.food.includes('eating_out')) || (alcohol>0&&settings.food.includes('alcohol')) || (hadSnacks&&settings.food.includes('snacks')) || custom.some(e=>e.category==='food');
+  const foodMatch=(eatingOut&&settings.food.includes('eating_out')) || (alcohol>0&&settings.food.includes('alcohol')) || (hadSnacks&&settings.food.includes('snacks')) || (moreThanIntended&&settings.food.includes('more_than_intended')) || custom.some(e=>e.category==='food');
   const otherMatch=events.some(id=>settings.other.includes(id)) || (sleepNotable&&settings.other.includes('short_sleep')) || custom.some(e=>e.category==='other');
   const exerciseMatch=settings.exercise.some(key=>exerciseAvailable[key]);
-  const prevDetails=events.filter(id=>!(id==='eating_out'&&prev.eveningOut)).map(eventLabel);
-  if(prev.eveningOut===true)prevDetails.push('Dinner out');
+  const prevDetails=events.map(eventLabel);
   if(alcohol>0)prevDetails.push(`Alcohol ${alcohol>=2?'2+':alcohol}`);
-  if(hadSnacks)prevDetails.push(usesEveningPlan(prevDate)?'Extra snacks':'Snacks');
-  else if(snackValue(prev)===true)prevDetails.push(usesEveningPlan(prevDate)?'No extra snacks':'No snacks');
-  if(prev.eveningFood==='had')prevDetails.push(`Planned evening food: ${eveningPlanFor(prevDate)}`);
-  if(prev.eveningFood==='not-needed')prevDetails.push('Evening food not needed');
+  if(hadSnacks)prevDetails.push('Snacks');
+  else if(prev.food.noSnack===true&&!prev.skips?.noSnack)prevDetails.push('No snacks');
+  if(moreThanIntended)prevDetails.push('More than intended');
   if(hunger!=null)prevDetails.push(`Hunger ${hunger}/5`);
-  if(steps>0||cardio>0||strength>0||(!prev.skips.stretch&&prev.move.stretch===true)){
+  if(exerciseNotable){
     const exercise=[];
-    if(steps>0)exercise.push(`${steps>=1000?(steps/1000).toFixed(1).replace('.0','')+'k':Math.round(steps)} steps`);
+    if(exerciseAvailable.steps)exercise.push(`${steps>=1000?(steps/1000).toFixed(1).replace('.0','')+'k':Math.round(steps)} steps`);
     if(exerciseAvailable.cardio)exercise.push(`Cardio ${Math.round(cardio)}m`);
     if(exerciseAvailable.strength)exercise.push(`Strength ${Math.round(strength)}m`);
-    if(!prev.skips.stretch&&prev.move.stretch===true)exercise.push('Stretch');
     if(exercise.length)prevDetails.push(exercise.join(' · '));
   }
   // Sleep is logged on the weigh-in morning, not on the previous calendar day.
-  return {prevDate,eatingOut,alcohol,hadSnacks,hunger,steps,cardio,strength,sleep,exerciseNotable,sleepNotable,prevDetails,
+  return {prevDate,eatingOut,alcohol,hadSnacks,moreThanIntended,hunger,steps,cardio,strength,sleep,exerciseNotable,sleepNotable,prevDetails,
     markers:{food:foodMatch,hunger:hunger!=null&&hunger>=settings.hungerMin,exercise:exerciseMatch,other:otherMatch}};
 }
 function contextMarkersSvg(d,x,markerTop,rowGap){
@@ -816,63 +979,96 @@ function contextLegendHtml(){
 }
 
 function renderChart(data,forecast){
-  if(!data.length) return '<div class="empty">No weigh-ins in this range. Choose All to see earlier history.</div>';
-  const W=340,H=264,L=44,R=14,Tp=24,axisY=228,plotBottom=204;
-  const last=data.at(-1), ready=forecast?.ready&&forecast.lastDate===last.date;
-  const bounds=chartBounds(data,ready);
-  const start=bounds.start, end=bounds.end;
-  const days=Math.max(1,(parseDate(end)-parseDate(start))/86400000);
-  const x=date=>L+((parseDate(date)-parseDate(start))/86400000)/days*(W-L-R);
-  const goalVisible=db.goal.status!=='idle'&&db.goal.end>=start&&db.goal.start<=end;
-  const targetVisible=goalVisible&&db.goal.mode!=='record'&&Number.isFinite(+db.goal.target);
-  const values=data.flatMap(d=>d.avg==null?[d.weight]:[d.weight,d.avg]);
-  if(targetVisible)values.push(+db.goal.target);
-  const horizon=ready?Math.min(14,Math.round((parseDate(end)-parseDate(last.date))/86400000)):0;
-  if(ready)values.push(forecast.forecastValue(horizon));
-  let min=Math.floor((Math.min(...values)-.3)*2)/2, max=Math.ceil((Math.max(...values)+.3)*2)/2;
-  if(max-min<1){min-=.5;max+=.5;}
-  const y=v=>Tp+(max-v)/(max-min)*(plotBottom-Tp), step=max-min<=3?.5:Math.ceil((max-min)/5);
+  if(!data.length) return `<div class="empty">No weigh-ins yet. When you log your weight, it will appear here, even before the goal starts.</div>`;
+  const W=340,H=264,L=48,R=16,Tp=24,labelBand=26,axisGap=10,markerRows=Math.max(1,db.chartSettings.categories.length),markerRowGap=9,markerBand=markerRows*markerRowGap;
+  const axisY=H-labelBand-axisGap;
+  const markerTop=axisY-markerBand+2;
+  const plotBottom=markerTop-6;
+  const last=data[data.length-1], lastDate=last.date;
+  // Extend the x-axis only when the deadline is reached/passed. Future projections
+  // must appear to the right of the last real weigh-in, never inside historical dates.
+  const daysUntilTarget=forecast?.targetDate ? Math.round((parseDate(forecast.targetDate)-parseDate(lastDate))/86400000) : null;
+  const extraDays=forecast?.ready && db.goal.end<=lastDate ? Math.min(30,Math.max(14,daysUntilTarget||14)) : 0;
+  const chartEnd=[db.goal.end,lastDate,addDays(lastDate,extraDays)].sort().at(-1);
+  const futureDays=Math.max(0,Math.round((parseDate(chartEnd)-parseDate(lastDate))/86400000));
+  const vals=data.map(d=>d.weight).filter(v=>v!=null); vals.push(+db.goal.target);
+  if(forecast?.ready){
+    vals.push(forecast.projectedEnd);
+    if(futureDays>0) vals.push(forecast.forecastValue(futureDays));
+    const pastSamples=Math.min(20,Math.max(6,forecast.elapsed+1));
+    for(let i=0;i<pastSamples;i++) vals.push(forecast.backcastValue(forecast.elapsed*i/(pastSamples-1)));
+  }
+  let min=Math.floor(Math.min(...vals)-.35), max=Math.ceil(Math.max(...vals)+.35); if(max-min<3){min-=1;max+=1;}
+  const span=max-min, tickStep=span<=6?1:2;
+  const chartStart=data[0].date<db.goal.start?data[0].date:db.goal.start;
+  const startD=parseDate(chartStart), endD=parseDate(chartEnd), totalDays=Math.max(1,(endD-startD)/86400000);
+  const xDate=date=>L+clamp((parseDate(date)-startD)/86400000/totalDays,0,1)*(W-L-R);
+  const y=v=>Tp+(max-v)/(max-min)*(plotBottom-Tp);
   let grid='';
-  for(let v=Math.ceil(min/step)*step;v<=max+.001;v+=step)grid+=`<line class="grid" x1="${L}" y1="${y(v)}" x2="${W-R}" y2="${y(v)}"/><text class="y-label" x="${L-7}" y="${y(v)+3}" text-anchor="end">${Number(v.toFixed(1))}</text>`;
-  const segmentPath=key=>{
-    let previous=null;
-    return data.map(d=>{
-      if(d[key]==null){previous=null;return '';}
-      const gap=previous?(parseDate(d.date)-parseDate(previous.date))/86400000:Infinity;
-      const command=gap>3?'M':'L';previous=d;
-      return `${command} ${x(d.date).toFixed(1)} ${y(d[key]).toFixed(1)}`;
-    }).join(' ');
-  };
-  const ticks=Array.from({length:5},(_,i)=>addDays(start,Math.round(days*i/4)));
-  const labels=[...new Set(ticks)].map((date,i,a)=>`<text x="${x(date)}" y="254" text-anchor="${i===0?'start':i===a.length-1?'end':'middle'}">${fmtShortDate(date)}</text>`).join('');
-  let annotation='';
-  if(goalVisible){
-    const left=x(db.goal.start<start?start:db.goal.start), right=x(db.goal.end>end?end:db.goal.end);
-    annotation=`<rect class="goal-interval" x="${left}" y="${Tp}" width="${Math.max(1,right-left)}" height="${plotBottom-Tp}"/><text class="goal-date-label" x="${left}" y="15">Goal</text>`;
-    if(targetVisible)annotation+=`<line class="goal" x1="${left}" y1="${y(+db.goal.target)}" x2="${right}" y2="${y(+db.goal.target)}"/>`;
-  }
-  let projection='';
-  if(ready){
-    const points=Array.from({length:horizon+1},(_,i)=>[x(addDays(last.date,i)),y(forecast.forecastValue(i))]);
-    projection=`<path class="forecast" d="${smoothSvgPath(points)}"/>`;
-  }
-  const circles=data.map(d=>`<circle class="point" cx="${x(d.date)}" cy="${y(d.weight)}" r="2.3"/>`).join('');
-  const hits=data.map((d,i)=>{
-    const left=i===0?L:(x(data[i-1].date)+x(d.date))/2;
-    const right=i===data.length-1?W-R:(x(d.date)+x(data[i+1].date))/2;
-    return `<rect class="point-hit" data-chart-index="${i}" x="${left}" y="${Tp}" width="${Math.max(1,right-left)}" height="${axisY-Tp}" tabindex="0" role="button" aria-label="Show weight for ${fmtDate(d.date)}"/>`;
+  for(let v=Math.ceil(min/tickStep)*tickStep;v<=max+.001;v+=tickStep){const yy=y(v);grid+=`<line class="grid" x1="${L}" y1="${yy}" x2="${W-R}" y2="${yy}"/><line class="tick" x1="${L-4}" y1="${yy}" x2="${L}" y2="${yy}"/><text class="y-label" x="${L-9}" y="${yy+3}" text-anchor="end">${v}</text>`;}
+  // X-axis labels use one fixed calendar-day interval, so both the dates and their pixel spacing are truly even.
+  // We intentionally do not force the goal end date to be a tick when it would break the interval.
+  const xTickStep=Math.max(1,Math.ceil(totalDays/6));
+  const xDates=[];
+  for(let off=0;off<=totalDays;off+=xTickStep) xDates.push(addDays(chartStart,off));
+  const xLabels=xDates.map((s,i)=>{
+    const xx=xDate(s);
+    const anchor=i===0?'start':(i===xDates.length-1?'end':'middle');
+    return `<text x="${xx.toFixed(1)}" y="${H-10}" text-anchor="${anchor}">${fmtShortDate(s)}</text>`;
   }).join('');
-  const marks=data.map(d=>contextMarkersSvg(d,x(d.date),215,8)).join('');
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Continuous weight history. Green points are measurements, pink is the 7-day average. Missing stretches are not connected."><text x="4" y="14" class="axis-unit">kg</text>${annotation}${grid}<line class="axis" x1="${L}" y1="${axisY}" x2="${W-R}" y2="${axisY}"/><path class="actual" d="${segmentPath('weight')}"/><path class="smooth" d="${segmentPath('avg')}"/>${projection}<line id="chartGuide" class="guide" x1="${x(last.date)}" y1="${Tp}" x2="${x(last.date)}" y2="${axisY}"/>${circles}${marks}${hits}${labels}</svg>${contextLegendHtml()}<div id="chartTip" class="tooltip" aria-live="polite">${chartTipHtml(last,false)}</div>`;
-}
+  const trace=rows=>rows.map((d,i)=>`${i?'L':'M'} ${xDate(d.date).toFixed(1)} ${y(d.weight).toFixed(1)}`).join(' ');
+  const earlierPoints=data.filter(d=>d.preGoal), goalPoints=data.filter(d=>!d.preGoal);
+  const earlierPath=trace(earlierPoints), actualPath=trace(goalPoints);
+  const bridgePath=earlierPoints.length&&goalPoints.length?trace([earlierPoints.at(-1),goalPoints[0]]):'';
+  const goalY=y(+db.goal.target);
+  const pointCoords=data.map(d=>({x:xDate(d.date),y:y(d.weight)}));
+  const points=data.map((d,i)=>`<circle class="point${d.preGoal?' pre-goal-point':''}" cx="${pointCoords[i].x}" cy="${pointCoords[i].y}" r="2"></circle>`).join('');
+  const hitBands=data.map((d,i)=>{
+    const left=i===0?L:(pointCoords[i-1].x+pointCoords[i].x)/2;
+    const right=i===pointCoords.length-1?W-R:(pointCoords[i].x+pointCoords[i+1].x)/2;
+    return `<rect class="point-hit" data-chart-index="${i}" x="${left.toFixed(1)}" y="${Tp}" width="${Math.max(0,right-left).toFixed(1)}" height="${(axisY-Tp+8).toFixed(1)}" tabindex="0" role="button" aria-label="Show weight for ${fmtDate(d.date)}"></rect>`;
+  }).join('');
+  const contextMarks=data.map((d,i)=>contextMarkersSvg(d,pointCoords[i].x,markerTop,markerRowGap)).join('');
 
-function chartTipHtml(d,showContext=true){
+  // V9.3: restore the V9.1 visual language: one continuous pink trend from
+  // goal start, through observed dates, and then toward the visible horizon.
+  // Past fit and future projection share a curve but are not actual measurements.
+  // The robust estimator and date/result cards are unchanged.
+  let projectionPath='';
+  if(forecast?.ready){
+    const trajectory=[];
+    const pastCount=Math.min(20,Math.max(6,forecast.elapsed+1));
+    for(let i=0;i<pastCount;i++){
+      const d=Math.round(forecast.elapsed*i/(pastCount-1));
+      trajectory.push({date:addDays(forecast.modelStart,d),value:forecast.backcastValue(d)});
+    }
+    const horizon=Math.max(0,Math.round((parseDate(chartEnd)-parseDate(forecast.lastDate))/86400000));
+    const step=Math.max(1,Math.round(horizon/14));
+    for(let d=step;d<=horizon;d+=step) trajectory.push({date:addDays(forecast.lastDate,d),value:forecast.forecastValue(d)});
+    if(horizon>0 && trajectory.at(-1)?.date!==chartEnd) trajectory.push({date:chartEnd,value:forecast.forecastValue(horizon)});
+    const pts=trajectory.filter((p,i,a)=>i===0||p.date!==a[i-1].date).map(p=>[xDate(p.date),y(p.value)]);
+    projectionPath=`<path class="forecast" d="${smoothSvgPath(pts)}"/>`;
+  }
+  const guideX=xDate(lastDate), goalDateX=xDate(db.goal.end);
+  const goalStartX=xDate(db.goal.start);
+  const goalStartMark=earlierPoints.length?`<line class="goal-start-marker" x1="${goalStartX}" y1="${Tp}" x2="${goalStartX}" y2="${axisY}"/><text class="goal-start-label" x="${goalStartX+4}" y="${Tp+10}">Goal start</text>`:'';
+  const goalDateLabel=goalDateX>W-R-67?goalDateX-5:goalDateX+5;
+  const goalDateAnchor=goalDateX>W-R-67?'end':'start';
+  const goalDateMark=`<line class="goal-date-marker" x1="${goalDateX}" y1="${Tp}" x2="${goalDateX}" y2="${axisY}"/><path class="goal-date-flag" d="M ${goalDateX} ${Tp} l 0 -6 l 7 3 z"/><text class="goal-date-label" x="${goalDateLabel}" y="${Tp-9}" text-anchor="${goalDateAnchor}">Goal · ${fmtShortDate(db.goal.end)}</text>`;
+  // Mention sleep only when the user has actually enabled short sleep in Other.
+  const showSleepNote=db.chartSettings.categories.includes('other')&&db.chartSettings.other.includes('short_sleep');
+  const sleepNote=showSleepNote?'<br>Short sleep uses the sleep logged on the same morning.':'';
+  const info=`<div class="chart-context-row">${contextLegendHtml()}<details class="chart-info-wrap"><summary aria-label="About chart markers" title="About chart markers">ⓘ</summary><div class="chart-info-popover"><b>About the dots</b><br>Dots show selected logs from the previous day. They are context, not proven causes.${sleepNote}</div></details></div>`;
+  const historyCaption=earlierPoints.length?`<div class="pre-goal-caption">Earlier weigh-ins · context only, not part of this Goal's score.</div>`:'';
+  const singlePointNote=data.length===1?'<div class="pre-goal-caption">One weigh-in is shown. A projection needs at least two spaced readings.</div>':'';
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Weight chart. Muted line indicates pre-goal history. Pink dashed line is a trend estimate. Goal start and end are marked. Tap a weigh-in for its logs"><text x="4" y="13" class="axis-unit">kg</text>${grid}<line class="axis" x1="${L}" y1="${Tp}" x2="${L}" y2="${axisY}"/><line class="axis" x1="${L}" y1="${axisY}" x2="${W-R}" y2="${axisY}"/><line class="goal" x1="${L}" y1="${goalY}" x2="${W-R}" y2="${goalY}"/><line id="chartGuide" class="guide" x1="${guideX}" y1="${Tp}" x2="${guideX}" y2="${axisY}"/>${projectionPath}${goalStartMark}${goalDateMark}<path class="pre-goal-actual" d="${earlierPath}"/><path class="pre-goal-bridge" d="${bridgePath}"/><path class="actual" d="${actualPath}"/>${contextMarks}${points}${hitBands}${xLabels}</svg>${info}${historyCaption}${singlePointNote}<div id="chartTip" class="tooltip" aria-live="polite">${chartTipHtml(last)}</div>`;
+}
+function chartTipHtml(d){
   if(!d) return '';
   const c=weightPointContext(d.date);
-  const context=showContext&&c.prevDetails.length?`<span class="tip-context-inline">· ${fmtShortDate(c.prevDate)} logs · ${escapeHtml(c.prevDetails.join(' · '))}</span>`:'';
-  const sleepContext=showContext&&c.sleep!=null?`<span class="tip-context-inline">· Last night sleep ${fmt(c.sleep)}h</span>`:'';
-  const emptyContext=showContext&&!c.prevDetails.length&&c.sleep==null?'<span class="tip-context-inline">No context logged.</span>':'';
-  return `<b>${fmtShortDate(d.date)}</b><span>${fmt(d.weight)} kg${d.avg==null?'':` · avg ${fmt(d.avg)}`}</span>${context}${sleepContext}${emptyContext}`;
+  const context=c.prevDetails.length?`<span class="tip-context-inline">· ${fmtShortDate(c.prevDate)} logs · ${escapeHtml(c.prevDetails.join(' · '))}</span>`:'';
+  const sleepContext=c.sleepNotable?`<span class="tip-context-inline">· Last night sleep ${fmt(c.sleep)}h</span>`:'';
+  return `<b>${fmtShortDate(d.date)}${d.date<db.goal.start?' · Before Goal':''}</b><span>${fmt(d.weight)} kg</span>${context}${sleepContext}`;
 }
 function weeklyTargetFor(g,id){
   const p=planForGoal(g);
@@ -896,9 +1092,9 @@ function goalBehaviorMetrics(g,from,to){
         if(date===today()&&!e.recorded&&!e.met) continue; // do not fail an unfinished current day
         eligible++;
         if(e.recorded) recorded++;
-        if(e.met) met++; else if(e.recorded&&date<today()) missDates.push(date);
+        if(e.met) met++; else if(date<today()) missDates.push(date);
       }
-      daily[id]={eligible,met,skipped,recorded,missDates,unknown:eligible-recorded,rate:recorded?met/recorded:null};
+      daily[id]={eligible,met,skipped,recorded,missDates,rate:eligible?met/eligible:null};
     }else{
       const value=dates.filter(x=>x<=today()).reduce((sum,date)=>sum+weeklyTrackerContribution(id,day(date),g),0);
       weekly[id]={value,target:weeklyTargetFor(g,id),met:weeklyTargetFor(g,id)>0?value>=weeklyTargetFor(g,id):null};
@@ -910,20 +1106,20 @@ function weeklyReviewText(){
   const dates=weekDates(), monday=dates[0], through=today()<dates[6]?today():dates[6], metrics=goalBehaviorMetrics(db.goal,monday,through);
   const behavior=[];
   for(const [id,m] of Object.entries(metrics.daily)){
-    if(m.eligible) behavior.push(`${TRACKER_DEFS[id].label}: ${m.met} of ${m.recorded} logged days · ${m.unknown} unknown`);
+    if(m.eligible) behavior.push(`${TRACKER_DEFS[id].label}: ${m.met} of ${m.eligible} eligible days`);
   }
   for(const [id,m] of Object.entries(metrics.weekly)){
     const unit=id==='cardio'?' min':id==='steps'||id==='strength'||id==='stretch'?'×':'';
     behavior.push(`${TRACKER_DEFS[id].label}: ${m.value}${unit} toward ${m.target}${unit}`);
   }
-  const missed=Object.entries(metrics.daily).filter(([,m])=>m.recorded>=2&&m.rate!=null&&m.rate<.8).sort((a,b)=>a[1].rate-b[1].rate);
+  const missed=Object.entries(metrics.daily).filter(([,m])=>m.eligible>=2&&m.rate!=null&&m.rate<.8).sort((a,b)=>a[1].rate-b[1].rate);
   let pattern='No clear multi-day execution pattern yet.';
   if(missed.length) pattern=`The main Goal behavior to watch is ${TRACKER_DEFS[missed[0][0]].label.toLowerCase()}; this is based on repeated Goal misses, not Bonus activity.`;
   else {
     const track=trackOnlyWeekSummaryText(db.goal);
     if(track) pattern=track;
   }
-  const avgNow=trendStats(today()).value, avgPrev=trendStats(addDays(today(),-7)).value;
+  const avgNow=movingAverage(today()), avgPrev=movingAverage(addDays(today(),-7));
   const weight=avgNow==null?'Not enough weight data yet.':`7-day average ${fmt(avgNow)} kg${avgPrev==null?'':` · ${avgNow-avgPrev>0?'+':''}${(avgNow-avgPrev).toFixed(1)} kg vs 7 days ago`}.`;
   let next='Keep the current plan steady and judge the week as a whole.';
   if(missed.length) next=`Next: make ${TRACKER_DEFS[missed[0][0]].label.toLowerCase()} the simplest behavior to protect this week.`;
@@ -994,7 +1190,6 @@ function trackerWeekCellState(g,id,date){
     const e=dailyTrackerEval(g,id,d);
     if(e.na) return 'na';
     if(e.met) return 'done';
-    if(!e.recorded) return 'unknown';
     if(date===today()) return 'today';
     return 'missed';
   }
@@ -1003,7 +1198,7 @@ function trackerWeekCellState(g,id,date){
 }
 function trackerGridRow(g,id){
   const dates=weekDates();
-  const cells=dates.map(date=>{const st=trackerWeekCellState(g,id,date);return `<span class="week-cell ${st}" title="${fmtShortDate(date)} · ${st==='done'?'done':st==='missed'?'not met':st==='unknown'?'not logged':st==='future'?'future':st==='skip'||st==='na'?'N/A':'weekly goal'}">${st==='skip'||st==='na'?'–':''}</span>`;}).join('');
+  const cells=dates.map(date=>{const st=trackerWeekCellState(g,id,date);return `<span class="week-cell ${st}" title="${fmtShortDate(date)} · ${st==='done'?'done':st==='missed'?'not met':st==='future'?'future':st==='skip'||st==='na'?'N/A':'weekly goal'}">${st==='skip'||st==='na'?'–':''}</span>`;}).join('');
   return `<div class="behavior-row"><div class="behavior-label">${escapeHtml(trackerRuleLabel(g,id,day(today())))}</div><div class="seven-grid">${cells}</div></div>`;
 }
 function bonusWeekSummary(g){
@@ -1055,7 +1250,7 @@ function goalTrackingSummary(g,id,through){
       if(id==='water'){const vals=[];for(let date=start;date<=end;date=addDays(date,1)){if(!trackerActiveOn(g,id,date)||day(date).skips?.[id])continue;const v=day(date).food.water;if(v!=null)vals.push(+v);}return vals.length?`${avg(vals).toFixed(1)}L avg · ${vals.length} logged`:'No entries yet';}
       return recorded?`${recorded} days logged`:'No entries yet';
     }
-    return eligible?`${met} / ${recorded} logged days · ${eligible-recorded} unknown${skipped?` · ${skipped} N/A`:''}`:'No eligible days yet';
+    return eligible?`${met} / ${eligible} days${skipped?` · ${skipped} N/A`:''}`:'No eligible days yet';
   }
   let value=0;
   for(let date=start;date<=end;date=addDays(date,1)) value+=weeklyTrackerContribution(id,day(date),g);
@@ -1068,7 +1263,7 @@ function goalTrackingRecord(g){
   const groups=[['goal','Goal'],['bonus','Bonus'],['track','Track only']];
   const blocks=[];
   for(const [role,label] of groups){
-    const ids=TRACKER_IDS.filter(id=>trackerRole(g,id)===role&&!(id==='stop6'&&g===db.goal));
+    const ids=TRACKER_IDS.filter(id=>trackerRole(g,id)===role);
     const rows=ids.map(id=>{const summary=goalTrackingSummary(g,id,through);return summary?`<div class="goal-record-row ${role}"><div><span>${escapeHtml(trackerRuleLabel(g,id,day(through)))}</span>${role!=='goal'?`<em>${label}</em>`:''}</div><b>${escapeHtml(summary)}</b></div>`:'';}).filter(Boolean);
     if(rows.length) blocks.push(`${role==='goal'?'<div class="goal-record-heading">Goal tracking · to date</div>':`<div class="goal-record-subheading">${label}</div>`}${rows.join('')}`);
   }
@@ -1076,22 +1271,72 @@ function goalTrackingRecord(g){
 }
 
 function weeklyBehaviorProgress(g){
-  const ids=TRACKER_IDS.filter(id=>trackerRole(g,id)==='goal'&&id!=='stop6');
-  return `<div class="weekly-behavior"><div class="row between behavior-heading"><b>Goal tracking</b><span class="small">This week</span></div>${weekGridHeader()}${ids.map(id=>trackerGridRow(g,id)).join('')||'<div class="small">No goal trackers.</div>'}</div>`;
+  const ids=TRACKER_IDS.filter(id=>trackerRole(g,id)==='goal');
+  return `<div class="weekly-behavior"><div class="row between behavior-heading"><b>Weekly behavior</b><span class="small">Goal trackers only</span></div>${ids.length?ids.map(id=>trackerGridRow(g,id)).join(''):'<div class="small">No behavior trackers are set as Goal.</div>'}${bonusWeekSummary(g)}${trackOnlyWeekSummary(g)}</div>`;
 }
-
 function roleEditorGroup(g,group){
   const ids=TRACKER_IDS.filter(id=>TRACKER_DEFS[id].group===group&&id!=='stop6');
-  return `<div class="tracker-role-list">${ids.map(id=>{const role=trackerRole(g,id);return `<div class="tracker-role-row"><div><b>${id==='noSnack'?'No extra snacks':TRACKER_DEFS[id].label}</b><span>${TRACKER_DEFS[id].cadence==='daily'?'Daily':'Weekly'}</span></div><div class="role-segment">${['goal','bonus','track'].map(r=>`<button class="${role===r?'on':''}" data-tracker-role="${id}" data-role="${r}">${ROLE_LABELS[r]}</button>`).join('')}</div></div>`;}).join('')}</div>`;
+  return `<div class="tracker-role-list">${ids.map(id=>{const role=trackerRole(g,id);return `<div class="tracker-role-row"><div><b>${TRACKER_DEFS[id].label}</b><span>${TRACKER_DEFS[id].cadence==='daily'?'Daily':'Weekly'}</span></div><div class="role-segment">${['goal','bonus','track'].map(r=>`<button class="${role===r?'on':''}" data-tracker-role="${id}" data-role="${r}">${ROLE_LABELS[r]}</button>`).join('')}</div></div>`;}).join('')}</div>`;
 }
 function goalsPage(){
-  const g=db.goal;
-  return `${topbar('Goals')}${flashHtml()}${g.status==='idle'?nextStepChoices():`${todayGoalCard()}${localGoalReview(g)}<div class="goal-actions"><button class="btn secondary" data-action="editGoal">Edit goal</button><button class="btn ghost" data-review-goal="${escapeHtml(g.id)}">Review →</button></div><details class="card"><summary>Tracking details</summary>${goalTrackingRecord(g)}</details>`}<div class="section-title">Past goals</div><div class="goal-history-grid">${db.goals.length?db.goals.slice().reverse().map(goalHistoryItem).join(''):'<div class="small">No past goals.</div>'}</div>`;
+  const lw=latestWeight(today()), avgNow=movingAverage(today()), avgPrev=movingAverage(addDays(today(),-7)), avgDelta=(avgNow!=null&&avgPrev!=null)?avgNow-avgPrev:null;
+  return `${topbar(tr('goals'))}
+    ${flashHtml()}
+    <div class="section-title" style="margin-top:2px">${tr('goalJourney')}</div>
+    <section class="card soft">
+      <div class="row between"><div><div class="brand" style="font-size:18px;letter-spacing:0">${escapeHtml(db.goal.name)}</div><div class="small">${db.goal.start} → ${db.goal.end}</div></div><span class="status active">${tr('active')}</span></div>
+      <div class="metric-row" style="margin-top:10px"><div class="metric"><div class="label">${tr('start')}</div><div class="value">${fmt(activeGoalStartWeight())} <span class="small">kg</span></div></div><div class="metric" style="text-align:right"><div class="label">${tr('target')}</div><div class="value">${fmt(db.goal.target)} <span class="small">kg</span></div></div></div>
+      <div class="goal-weight-context"><span>Current ${fmt(lw?.weight??activeGoalStartWeight())} kg</span><span>7-day avg ${fmt(avgNow)} kg${avgDelta==null?'':` · ${avgDelta>0?'+':''}${avgDelta.toFixed(1)}`}</span></div>
+      <div class="progress"><i style="width:${goalProgress(lw?.weight??db.goal.startWeight)}%"></i></div>
+      ${goalTrackingRecord(db.goal)}
+      <div class="goal-actions"><button class="btn secondary" data-action="editGoal">Edit goal</button><button class="btn ghost" data-review-goal="${escapeHtml(db.goal.id)}">Review goal</button></div>
+      ${activeGoalLearning()}
+    </section>
+    <div class="section-title">${tr('pastGoals')}</div>
+    <section class="card"><div class="goal-list">${db.goals.length?db.goals.slice().reverse().map(goalHistoryItem).join(''):`<div class="empty">No past goals yet.</div>`}</div></section>`;
+}
+function snapshotContextForDate(weightDate,settings){
+  const prev=readDay(addDays(weightDate,-1)), same=readDay(weightDate), events=prev.events.map(eventId);
+  const hadSnacks=prev.food.noSnack===false&&!prev.skips?.noSnack, more=prev.food.moreThanIntended===true, alcohol=+prev.alcohol||0;
+  const food=(events.includes('eating_out')&&settings.food.includes('eating_out'))||(alcohol>0&&settings.food.includes('alcohol'))||(hadSnacks&&settings.food.includes('snacks'))||(more&&settings.food.includes('more_than_intended'));
+  const hunger=prev.food.bedtimeHunger!=null&&+prev.food.bedtimeHunger>=settings.hungerMin;
+  const exercise=(settings.exercise.includes('steps')&&(+prev.move.steps||0)>=10000)||(settings.exercise.includes('cardio')&&(+prev.move.cardio||0)>0)||(settings.exercise.includes('strength')&&(+prev.move.strength||0)>0);
+  const other=(settings.other||[]).some(id=>events.includes(id))||(settings.other||[]).includes('short_sleep')&&same.sleep!=null&&+same.sleep<6;
+  return {food,hunger,exercise,other};
+}
+function buildProgressSnapshot(g,endDate=today()){
+  const settings=JSON.parse(JSON.stringify(db.chartSettings));
+  const weights=latestWeights(endDate).filter(x=>x.date>=g.start&&x.date<=endDate).map(x=>({date:x.date,weight:+x.weight,markers:snapshotContextForDate(x.date,settings)}));
+  return {createdAt:new Date().toISOString(),start:g.start,end:endDate,target:+g.target,chartSettings:settings,weights};
+}
+function goalProgressSnapshot(g){
+  if(g.progressSnapshot&&Array.isArray(g.progressSnapshot.weights))return g.progressSnapshot;
+  return buildProgressSnapshot(g,g.ended||g.end);
+}
+function renderProgressSnapshot(g){
+  const snap=goalProgressSnapshot(g), data=snap.weights||[]; if(!data.length)return '<div class="empty">No weigh-ins were recorded during this goal.</div>';
+  const W=320,H=142,L=30,R=10,Tp=18,B=32, bottom=H-B;
+  const start=parseDate(snap.start), end=parseDate(snap.end), total=Math.max(1,(end-start)/86400000);
+  const vals=data.map(d=>+d.weight).concat([+snap.target]), min=Math.floor((Math.min(...vals)-.4)*2)/2,max=Math.ceil((Math.max(...vals)+.4)*2)/2;
+  const x=d=>L+clamp((parseDate(d)-start)/86400000/total,0,1)*(W-L-R), y=v=>Tp+(max-v)/(max-min||1)*(bottom-Tp);
+  const path=data.map((d,i)=>`${i?'L':'M'} ${x(d.date).toFixed(1)} ${y(d.weight).toFixed(1)}`).join(' '), gy=y(+snap.target);
+  const selected=snap.chartSettings?.categories||[];
+  const markerDots=data.map(d=>selected.map((cat,i)=>d.markers?.[cat]?`<circle class="ctx-marker ${CHART_GROUPS.find(g=>g.id===cat)?.dot||'other'}" cx="${x(d.date).toFixed(1)}" cy="${(bottom+9+i*7).toFixed(1)}" r="2.2"></circle>`:'').join('')).join('');
+  const pts=data.map(d=>`<circle class="point" cx="${x(d.date).toFixed(1)}" cy="${y(d.weight).toFixed(1)}" r="2"></circle>`).join('');
+  return `<div class="snapshot-chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Final weight progress for archived goal"><line class="goal" x1="${L}" y1="${gy}" x2="${W-R}" y2="${gy}"/><line class="snapshot-date" x1="${L}" y1="${Tp}" x2="${L}" y2="${bottom}"/><line class="snapshot-date" x1="${W-R}" y1="${Tp}" x2="${W-R}" y2="${bottom}"/><path class="actual" d="${path}"/>${pts}${markerDots}<text class="snapshot-label" x="${L}" y="${H-2}">${fmtShortDate(snap.start)}</text><text class="snapshot-label" x="${W-R}" y="${H-2}" text-anchor="end">${fmtShortDate(snap.end)}</text><text class="snapshot-target" x="${W-R}" y="${gy-4}" text-anchor="end">Target ${fmt(snap.target)}</text></svg></div>`;
 }
 
 function goalHistoryItem(g){
-  const e=goalEvidence(g), theme=goalTheme(g);
-  return `<button class="goal-history-tile tone-${theme.tone}" data-review-goal="${escapeHtml(g.id)}"><div class="history-status">${theme.symbol} ${theme.label}</div><b>${escapeHtml(g.name)}</b>${goalMiniChart(g)}<div class="history-foot"><span>${fmtShortDate(g.start)}–${fmtShortDate(g.ended||g.end)}</span><span>${e.last&&!e.stale&&!e.discrepancy?`${e.delta>0?'+':''}${fmt(e.delta)} kg`:'Review ›'}</span></div></button>`;
+  const end=g.endWeight??null; const status=goalStatus(g,end); const labels={reached:tr('reached'),close:tr('close'),ended:tr('ended')};
+  const lost=end==null?null:g.startWeight-end;
+  const total=g.startWeight-g.target; const achieved=(end!=null&&total>0)?clamp((g.startWeight-end)/total*100,0,100):null;
+  const process=[];
+  if(g.planDays!=null) process.push(`Food on plan ${g.planDays} days`);
+  if(g.strengthMinutes!=null) process.push(`${tr('strength')} ${g.strengthMinutes}${tr('minutes')}`);
+  if(g.cardioMinutes!=null) process.push(`${tr('cardio')} ${g.cardioMinutes}${tr('minutes')}`);
+  if(g.eventCount) process.push(`${g.eventCount} life events`);
+  const reviewCount=normalizeReviews(g).length;
+  return `<div class="goal-item"><div class="row between"><div class="name">${escapeHtml(g.name)}</div><span class="status ${status==='reached'?'done':status==='close'?'close':'ended'}">${labels[status]}</span></div><div class="numbers">${fmt(g.startWeight)} → ${fmt(end)} kg <span class="muted">· target ${fmt(g.target)}</span></div>${achieved!=null?`<div class="progress compact"><i style="width:${achieved}%"></i></div><div class="small">${Math.round(achieved)}% of target change</div>`:''}<div class="meta">${g.start} → ${g.ended||g.end}${lost==null?'':` · ${lost>=0?'-':'+'}${Math.abs(lost).toFixed(1)} kg`}${process.length?`<br>${process.join(' · ')}`:''}</div><button class="review-link" data-review-goal="${escapeHtml(g.id)}">${reviewCount?`Review history · ${reviewCount}`:'Goal review'}</button></div>`;
 }
 
 function goalStatus(g,end){
@@ -1105,17 +1350,16 @@ function goalStatus(g,end){
 
 function goalEditPage(){
   const g=db.goal;
-  return `${topbar('Edit goal','',`<button class="btn ghost" data-action="cancelGoalEdit">Cancel</button>`)}
-    <section class="card"><label>Goal name</label><input id="goalName" value="${escapeHtml(g.name)}">${g.mode==='record'?'':`<div class="two"><label>${tr('start')} kg<input id="goalStartWeight" type="number" step="0.1" value="${activeGoalStartWeight()??''}"></label><label>${g.mode==='maintain'?'Maintenance weight':'Weight direction'} kg<input id="goalTarget" type="number" step="0.1" value="${g.target}"></label></div>`}<div class="two"><label>${tr('start')}<input id="goalStart" type="date" value="${g.start}"></label><label>Review date<input id="goalEnd" type="date" value="${g.end}"></label></div></section>
+  return `${topbar('Edit goal','',`<button class="btn ghost save-top" data-action="cancelGoalEdit">Cancel</button>`)}
+    <section class="card"><label>Goal name</label><input id="goalName" value="${escapeHtml(g.name)}"><div class="two"><label>${tr('start')} kg<input id="goalStartWeight" type="number" step="0.1" value="${activeGoalStartWeight()}"></label><label>${tr('target')} kg<input id="goalTarget" type="number" step="0.1" value="${g.target}"></label></div><div class="compact-dates"><label>${tr('start')}<input id="goalStart" type="date" value="${g.start}"></label><label>End date<input id="goalEnd" type="date" value="${g.end}"></label></div></section>
     <section class="card"><div class="actual-label">Diet targets</div>${planInputsFood()}<label class="effective-date-setting">Calendar scoring effective from<input id="goalEffectiveFrom" type="date" min="${today()}" value="${today()}"></label><div class="small plan-helper">Earlier Calendar days keep their original rules. Old records are never rewritten.</div></section>
     <section class="card"><div class="actual-label">Weekly exercise targets</div>${planInputsMove()}</section>
     <section class="card"><div class="row between"><div class="actual-label" style="margin:0">Diet trackers</div><span class="small">Role for this goal</span></div>${roleEditorGroup(g,'diet')}</section>
     <section class="card"><div class="row between"><div class="actual-label" style="margin:0">Exercise trackers</div><span class="small">Role for this goal</span></div>${roleEditorGroup(g,'exercise')}</section>
-    <div class="edit-goal-actions">${goalEditSnapshot?.goal.status==='idle'?'':'<button class="btn end-archive-safe" data-action="requestArchiveGoal">End & review</button>'}<button class="btn sky" data-action="saveGoal">Save</button></div>
-    <div class="archive-helper">Ending a goal requires a second confirmation. Your tracking history will be preserved.</div>`;
+    <div class="edit-goal-actions three-actions"><button class="btn ghost" data-action="cancelGoalEdit">Cancel</button><button class="btn end-archive-safe" data-action="requestArchiveGoal">End & Archive</button><button class="btn sky" data-action="saveGoal">Save</button></div>
+    <div class="archive-helper">Only Save commits edits. Cancel restores the goal exactly as it was when you opened this page.</div>`;
 }
-function planInputsFood(){return `<div class="two"><label>Vegetables ≥<input data-plan="veg" type="number" min="0" value="${db.plan.veg}"></label><label>Fruit ≤<input data-plan="fruit" type="number" min="0" value="${db.plan.fruit}"></label><label>Water ≥ L<input data-plan="water" type="number" min="0" step="0.1" value="${db.plan.water}"></label></div><p class="small">Planned evening food is allowed. Eating time is not scored.</p><button class="btn secondary" data-action="editEvening" data-evening-date="${today()}">Edit planned evening food</button><div class="small plan-helper">Bedtime hunger is a 1–5 observation, not a success score.</div>`;}
-
+function planInputsFood(){return `<div class="two"><label>Vegetables ≥<input data-plan="veg" type="number" value="${db.plan.veg}"></label><label>Fruit ≤<input data-plan="fruit" type="number" value="${db.plan.fruit}"></label><label>Water ≥ L<input data-plan="water" type="number" step="0.1" value="${db.plan.water}"></label></div><div class="small plan-helper">Protein and No snacks are yes/no trackers. Amount eaten and Bedtime hunger are context, not success scores.</div>`;}
 function planInputsMove(){return `<div class="two"><label>10k-step days / week<input data-plan="stepsDays" type="number" min="0" max="7" value="${db.plan.stepsDays}"></label><label>Stretch days / week<input data-plan="stretchDays" type="number" min="0" max="7" value="${db.plan.stretchDays}"></label><label>Cardio · min/week<input data-plan="cardio" type="number" min="0" value="${db.plan.cardio}"></label><label>Strength sessions / week<input data-plan="strengthSessions" type="number" min="0" max="7" value="${db.plan.strengthSessions||2}"></label></div>`;}
 function setGoalFocus(focus){
   if(!['diet','exercise','both','other'].includes(focus)) return;
@@ -1133,16 +1377,53 @@ function setGoalFocus(focus){
 }
 function setTrackerRole(id,role){
   if(!TRACKER_DEFS[id]||id==='stop6'||!['goal','bonus','track'].includes(role)) return;
-  saveGoalForm();
+  const editing=view==='goalEdit';
+  saveGoalForm(!editing);
   db.goal.trackers=normalizeTrackers(db.goal,false);
   const oldGoal=JSON.parse(JSON.stringify(db.goal)),oldPlan={...db.plan};
-  const prev=db.goal.trackers[id];
-  // A role change must never wipe or hide previously entered tracker data.
-  // Keep the tracker's existing activation date; new migrated trackers already start from their safe migration date.
-  const activeFrom=prev.activeFrom||db.goal.start;
+  const prev=db.goal.trackers[id]; const activeFrom=prev.activeFrom||db.goal.start;
   db.goal.trackers[id]={role,activeFrom,roleAuto:false};
-  recordCalendarRuleChange(oldGoal,oldPlan,calendarEffectiveDate());
-  persist();render();
+  if(editing){goalEditDirty=true;render();}
+  else {recordCalendarRuleChange(oldGoal,oldPlan,calendarEffectiveDate());persist();render();}
+}
+
+
+function beginGoalEdit(){
+  goalEditSnapshot={goal:JSON.parse(JSON.stringify(db.goal)),plan:{...db.plan},days:JSON.parse(JSON.stringify(db.days||{})),calendarRuleHistory:JSON.parse(JSON.stringify(db.calendarRuleHistory||[]))};
+  goalEditDirty=false; discardGoalEditOpen=false; view='goalEdit'; render();
+}
+function markGoalEditDirty(){ if(view==='goalEdit') goalEditDirty=true; }
+function restoreGoalEditSnapshot(){
+  if(!goalEditSnapshot)return;
+  db.goal=JSON.parse(JSON.stringify(goalEditSnapshot.goal)); db.plan={...goalEditSnapshot.plan}; db.days=JSON.parse(JSON.stringify(goalEditSnapshot.days||{})); db.calendarRuleHistory=JSON.parse(JSON.stringify(goalEditSnapshot.calendarRuleHistory));
+}
+function requestCancelGoalEdit(){
+  // Capture text fields into memory only so we can accurately detect a changed form.
+  const hasDomChange=goalEditFormChanged();
+  if(goalEditDirty||hasDomChange){discardGoalEditOpen=true;render();return;}
+  restoreGoalEditSnapshot(); goalEditSnapshot=null; view='goals'; render();
+}
+function goalEditFormChanged(){
+  if(!goalEditSnapshot)return false;
+  const g=goalEditSnapshot.goal,p=goalEditSnapshot.plan;
+  const vals={name:document.getElementById('goalName')?.value.trim()||g.name,target:+(document.getElementById('goalTarget')?.value||g.target),start:document.getElementById('goalStart')?.value||g.start,end:document.getElementById('goalEnd')?.value||g.end,startWeight:+(document.getElementById('goalStartWeight')?.value||g.startWeight)};
+  if(vals.name!==g.name||vals.target!==+g.target||vals.start!==g.start||vals.end!==g.end||vals.startWeight!==+g.startWeight)return true;
+  for(const el of document.querySelectorAll('[data-plan]')){let val=el.type==='number'?(el.value===''?0:+el.value):el.value;if(String(val)!==String(p[el.dataset.plan]??''))return true;}
+  return false;
+}
+function commitGoalEdit(){
+  if(!goalEditSnapshot){saveGoalForm();persist();view='goals';render();return;}
+  const original=goalEditSnapshot; const effectiveFrom=calendarEffectiveDate();
+  saveGoalForm(false);
+  recordCalendarRuleChange(original.goal,original.plan,effectiveFrom);
+  goalEditSnapshot=null; goalEditDirty=false; discardGoalEditOpen=false; persist(); view='goals'; flash=tr('saved'); render();
+}
+function discardGoalEdit(){
+  restoreGoalEditSnapshot(); goalEditSnapshot=null; goalEditDirty=false; discardGoalEditOpen=false; view='goals'; render();
+}
+function discardGoalEditModal(){
+  if(!discardGoalEditOpen)return '';
+  return `<div class="modal-backdrop" data-action="keepGoalEditing"><div class="archive-confirm-modal" role="dialog" aria-modal="true" aria-label="Discard unsaved goal changes"><div class="weight-modal-handle"></div><div class="archive-confirm-title">Discard unsaved changes?</div><div class="archive-confirm-copy">Your goal will return to exactly what it was before you opened Edit goal.</div><div class="archive-confirm-actions"><button class="btn ghost" data-action="keepGoalEditing">Keep editing</button><button class="btn archive-confirm-danger" data-action="discardGoalEdit">Discard</button></div></div></div>`;
 }
 
 
@@ -1150,27 +1431,30 @@ function findGoalById(id){
   if(db.goal?.id===id) return db.goal;
   return db.goals.find(g=>g.id===id)||null;
 }
-function goalAverageFor(g,date){ return trendStats(date).value; }
-
+function goalAverageFor(g,date,window=7){
+  const from=addDays(date,-(window-1)), start=from>g.start?from:g.start;
+  const rows=latestWeights(date).filter(x=>x.date>=start && x.date<=date).map(x=>+x.weight);
+  return avg(rows);
+}
 function goalReviewPack(g){
   const active=g===db.goal || !g.snapshot;
-  const through=goalEvidence(g).through;
+  const through=active ? (today()<g.end?today():g.end) : (g.ended||g.end);
   const records=[];
   for(let s=g.start;s<=through;s=addDays(s,1)){
     const rec=day(s);
-    const foodValues=Object.values(rec.food||{}).some(v=>v!==null&&v!=='');
-    const exerciseValues=Object.values(rec.move||{}).some(v=>v!==null&&v!=='');
+    const foodValues=Object.values(rec.food||{}).some(v=>v!==null&&v!==false&&v!=='');
+    const exerciseValues=Object.values(rec.move||{}).some(v=>v!==null&&v!==false&&v!=='');
     const hasData=rec.weight!=null || rec.sleep!=null || rec.alcohol!=null || foodValues || exerciseValues || Object.values(rec.skips||{}).some(Boolean) || rec.events.length || rec.note;
-    if(!hasData&&!rec.eveningFood&&rec.eveningOut==null) continue;
-    records.push({date:s,weight:rec.weight,sevenDayAverage:goalAverageFor(g,s),lastNightSleepHours:rec.sleep,alcohol:rec.alcohol==null?null:(+rec.alcohol>=2?'2+':+rec.alcohol===1?'1':'none'),eveningFood:{plan:eveningPlanFor(s),status:rec.eveningFood,dinnerOut:rec.eveningOut},returnPlanned:!!returnFor(s),backOnPlan:returnedOn(s),food:{extraSnacks:rec.food.extraSnacks,veg:rec.food.veg,protein:rec.food.protein,fruit:rec.food.fruit,noSnack:rec.food.noSnack,noFoodAfterCutoff:rec.food.stop6,waterLiters:rec.food.water,bedtimeHunger:rec.food.bedtimeHunger},exercise:{...rec.move},skipOrNA:{...rec.skips},lifeEvents:rec.events.map(eventLabel),note:rec.note||''});
+    if(!hasData) continue;
+    records.push({date:s,weight:rec.weight,sevenDayAverage:goalAverageFor(g,s),lastNightSleepHours:rec.sleep,alcohol:rec.alcohol==null?null:(+rec.alcohol>=2?'2+':+rec.alcohol===1?'1':'none'),food:{veg:rec.food.veg,protein:rec.food.protein,fruit:rec.food.fruit,noSnack:rec.food.noSnack,moreThanIntended:rec.food.moreThanIntended,legacyNoFoodAfterCutoff:rec.food.stop6,waterLiters:rec.food.water,bedtimeHunger:rec.food.bedtimeHunger},exercise:{...rec.move},skipOrNA:{...rec.skips},lifeEvents:rec.events.map(eventLabel),note:rec.note||''});
   }
-  const endWeight=active ? goalEvidence(g).last?.weight??null : g.endWeight??null;
+  const endWeight=active ? latestWeight(through)?.weight??null : g.endWeight??null;
   const startWeight=active ? activeGoalStartWeight() : +g.startWeight;
   const trackers=normalizeTrackers(g,!active);
-  const trackerConfig=TRACKER_IDS.map(id=>({id,label:TRACKER_DEFS[id].label,group:TRACKER_DEFS[id].group,cadence:TRACKER_DEFS[id].cadence,role:trackers[id].role,activeFrom:trackers[id].activeFrom,target:trackerRuleLabel(g,id,day(through))}));
+  const trackerConfig=TRACKER_IDS.filter(id=>id!=='stop6'||planForGoal(g).stop!=null).map(id=>({id,label:TRACKER_DEFS[id].label,group:TRACKER_DEFS[id].group,cadence:TRACKER_DEFS[id].cadence,role:trackers[id].role,activeFrom:trackers[id].activeFrom,target:trackerRuleLabel(g,id,day(through))}));
   return {
     READ_THIS_FIRST_FOR_CHATGPT:{
-      task:'The user is uploading this exported Tide goal data for a Goal review. Follow these embedded instructions without asking the user to supply an additional prompt. Produce a useful review now.',
+      task:'The user is uploading this exported Tide goal data for a Goal Review. Follow these embedded instructions without asking the user to supply an additional prompt. Produce a useful review now.',
       output:'Return ONLY one valid UTF-8 JSON object suitable for direct import into Tide. No explanation before/after, no markdown fences, no trailing commas, no extra keys. If you can create a downloadable file, supply tide-goal-review.json containing exactly this object; otherwise print the object alone so the user can paste it into Tide.',
       mandatorySchema:{goalId:g.id,preview:'string: 1-2 sentences synthesizing the trend, behavior and next steps',review:{summary:'string: concise overall interpretation grounded in this goal data',learnings:['string: specific supported insight (1-3 total)'],next:['string: realistic, actionable step (1-3 total)']}},
       strictValidation:[
@@ -1184,23 +1468,15 @@ function goalReviewPack(g){
         'Describe weight change using available readings and 7-day averages when sufficient; distinguish the dated result from any forecast. Do not invent missing weigh-ins or treat a single day as proof.',
         'Review Goal-role trackers as adherence only if logged and eligible. Bonus is optional and must never be labeled a failure; Track-only and weight are contextual rather than adherence metrics.',
         'Correct timing: weight on date D is a morning weigh-in. Eating out, alcohol, Snacks (food.noSnack is explicitly false), hunger, exercise, and events from D-1 are chart context for D. Never explain D with an event later on D.',
-        'Before snackPolicy.effectiveFrom, noSnack=true means NO snacks and false means Had snacks. From that date use food.extraSnacks instead: true means extra snacks, false means no extra snacks. Planned evening food is allowed. Null/unlogged/N/A stays unknown. Never recommend compensation or skipping meals.',
+        'No snacks=true means NO snacks, noSnack=false means Had snacks; null/unlogged/N/A are unknown or excluded, not proof of either outcome. Eating out does not automatically mean eating more.',
         'Bedtime hunger 1=low and 5=very hungry. Do not praise high hunger, restrictive behavior or excessive exercise; prioritize sustainable practices.',
         'If this export includes sleep data, lastNightSleepHours on D is the night immediately before morning D. If not logged or irrelevant, do not discuss sleep.',
         'Period and other events are optional context. Note repeated associations as tentative, never claim a single event caused next-day weight change.',
-        'Make 1-3 concrete observations supported by data and 1-3 practicable next actions; state important gaps in the summary if records are sparse.',
-        'Acknowledge one actual small win when present, including movement that is not a Goal tracker. Never invent success, reward hunger, or link a reward to weight loss. A return means the first actual on-plan snack log after extras, even after unlogged days; promises do not count.',
-        'Keep the review concise. Sleep/hunger/planned-evening-food associations are exploratory, not causes; do not compare original snack rules to the new extra-snack policy as equivalent outcomes.'
+        'Make 1-3 concrete observations supported by data and 1-3 practicable next actions; state important gaps in the summary if records are sparse.'
       ],
-      inTide:'Open Goals → Goal review → Add review. Use Import review JSON if you saved the generated file, or paste the generated JSON, Preview review, then Save Review. Do not import the original goal-data export as a completed review.'
+      inTide:'Open Goals → Goal Review → Add new review. Use Import review JSON if you saved the generated file, or paste the generated JSON, Preview review, then Save Review. Do not import the original goal-data export as a completed review.'
     },
-    tideGoalReviewVersion:7,
-    snackPolicy:{effectiveFrom:db.journey.effectiveFrom,meaning:'From this date food.extraSnacks is authoritative: true = extra snacks, false = no extra snacks, null = unknown. Planned evening food is allowed. Legacy noSnack and cutoff retain their original meanings. Cutoff is no longer scored.'},
-    priorWeightContext:latestWeights(addDays(g.start,-1)).filter(r=>r.date>=addDays(g.start,-21)).map(r=>({date:r.date,weight:r.weight})),
-    calendarRuleHistory:db.calendarRuleHistory.filter(r=>r.effectiveFrom<=through),
-    datedEvidence:goalEvidence(g),
-    smallWins:{...weeklyWin(through,g.snapshot?[g.start,addDays(through,-6)].sort().at(-1):addDays(through,-6)),lifetimeOnPlanDays:encouragementStats(db,through).days.length,lifetimeReturns:encouragementStats(db,through).returns.length},
-    localReview:reviewDigest(g),
+    tideGoalReviewVersion:6,
     goalId:g.id,
     exportedAt:new Date().toISOString(),
     goal:{name:g.name,start:g.start,end:g.end,startWeight,targetWeight:+g.target,currentOrEndWeight:endWeight,status:active?'active':goalStatus(g,endWeight),focus:g.focus||'both'},
@@ -1214,6 +1490,7 @@ function goalReviewPack(g){
       lastNightSleepHours:{meaning:'Sleep during the night immediately before the morning weight recorded on the same date.'},
       alcohol:{values:'none / 1 / 2+',meaning:'Alcohol consumed on that calendar day.'},
       snacks:{source:'food.noSnack === false, not marked N/A',meaning:'Shows a Diet marker on the next morning weigh-in after an explicitly logged Had snacks day. True, N/A, or missing never creates a Snacks marker. No duplicate event.'},
+      moreThanIntended:{source:'food.moreThanIntended === true',meaning:'Self-reported quantity context: the user felt they ate more than intended. false means About right; null means Not logged. This is not automatically a Goal failure.'},
       sevenDayAverage:{meaning:'Calendar-based 7-day weight average used for trend context, not adherence.'},
       period:{meaning:'Period is a life-event context tag, not an adherence metric.'}
     },
@@ -1228,7 +1505,8 @@ function goalReviewPack(g){
       'Review Goal-role behaviors first: these are the only adherence metrics and the only items that may be called execution gaps.',
       'Bonus items may only be mentioned as positive additions; not doing a Bonus is never a gap or failure.',
       'Track only items and Weight are context for patterns, not adherence scores.',
-      'Bedtime hunger uses a 1-5 scale: 1 = low hunger and 5 = very hungry. Do not treat high hunger as success; use it as context for sustainability and whether the diet may be too aggressive.',
+      'Bedtime hunger uses a 1-5 scale: 1 = low hunger and 5 = very hungry. Do not treat high hunger as success; use it as context for sustainability.',
+      'More than intended is a self-reported quantity signal, not a moral judgment and not automatically a Goal failure.',
       'Look for multi-day or lagged patterns. Do not attribute a morning weight to an event logged later on that same day.',
       'Analyze weight seriously using the 7-day average and trend; do not call the plan failed because of one flat or higher weigh-in.',
       'Keep the review concise and practical; return the exact import JSON described in READ_THIS_FIRST_FOR_CHATGPT.'
@@ -1254,24 +1532,24 @@ function fullReviewHtml(r){
   return `${r.summary?`<div class="checkpoint-block review-main-summary"><span>Summary</span><p>${escapeHtml(r.summary)}</p></div>`:''}${r.learnings.length?`<div class="checkpoint-block"><span>Learnings</span><ul>${r.learnings.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`:''}${r.next.length?`<div class="checkpoint-block"><span>Next</span><ul>${r.next.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`:''}`;
 }
 function goalReviewPage(){
-  const g=findGoalById(reviewGoalId); if(!g) return `${topbar('Goal review','',`<button class="btn ghost" data-action="backGoals">Done</button>`)}<div class="empty">Goal not found.</div>`;
-  const active=g===db.goal || !g.snapshot, end=active?(goalEvidence(g).last?.weight??null):(g.endWeight??null), start=active?activeGoalStartWeight():+g.startWeight;
-  const status=active?journeyGoalState(g):goalEvidence(g).outcome;
+  const g=findGoalById(reviewGoalId); if(!g) return `${topbar('Goal Review','',`<button class="btn ghost" data-action="backGoals">Done</button>`)}<div class="empty">Goal not found.</div>`;
+  const active=g===db.goal || !g.snapshot, end=active?(latestWeight(today())?.weight??activeGoalStartWeight()):(g.endWeight??null), start=active?activeGoalStartWeight():+g.startWeight;
+  const status=active?'Active':({reached:'Reached',close:'Nearly reached',ended:'Ended'}[goalStatus(g,end)]||'Ended');
   const rows=normalizeReviews(g).slice().reverse();
   const latest=rows[0]||null;
   const older=rows.slice(1);
   const draft=reviewDraft?.goalId===g.id?reviewDraft:null;
   const composer=reviewComposerOpen;
-  return `${topbar('Goal review','',`<button class="btn ghost" data-action="backGoals">Done</button>`)}
+  return `${topbar('Goal Review','',`<button class="btn ghost" data-action="backGoals">Done</button>`)}
     ${flashHtml()}
-    <section class="card review-heading"><b>${escapeHtml(g.name)}</b><span class="small">${fmtShortDate(g.start)}–${fmtShortDate(active?g.end:(g.ended||g.end))}</span></section>
-    ${localGoalReview(g)}${active&&g.status!=='idle'?'<button class="btn secondary full" data-action="requestArchiveGoal">Finish goal</button>':''}${db.goal.status==='idle'?nextStepChoices():''}
-    ${latest?`<details class="card latest-review-card"><summary>Saved review · ${fmtShortDate(latest.date)}</summary>${fullReviewHtml(latest)}</details>`:''}
-    ${!composer?`<button class="btn secondary full review-add-button" data-action="openReviewComposer">Add review</button>`:''}
-    ${composer?`<section class="card review-composer"><div class="row between"><div class="actual-label" style="margin:0">Add review</div><button class="review-inline-link review-cancel-inline" data-action="closeReviewComposer">Cancel</button></div><p class="small review-copy"><b>1.</b> Export goal data and upload the file to ChatGPT. The file already contains the complete review instructions and Tide import format—no extra prompt needed. <b>2.</b> Import the resulting review JSON file or paste the JSON below. <b>3.</b> Preview, then Save.</p><div class="review-actions"><button class="btn secondary" data-action="exportReviewGoal">Export Goal Data + Instructions</button><label class="btn secondary file-btn">Import review JSON<input id="reviewImportFile" type="file" accept=".json,application/json" hidden></label></div><label class="review-paste-label">Or paste ChatGPT JSON<textarea id="reviewPaste" rows="7" placeholder='{"goalId":"COPY_EXACT_GOAL_ID","preview":"...","review":{"summary":"...","learnings":["..."],"next":["..."]}}'>${escapeHtml(draft?.rawText||'')}</textarea></label><button class="btn secondary full" data-action="previewGoalReview">Preview review</button></section>`:''}
+    <section class="card soft review-summary"><div class="row between"><div><b>${escapeHtml(g.name)}</b><div class="small">${fmtShortDate(g.start)} → ${fmtShortDate(active?g.end:(g.ended||g.end))}</div></div><span class="status ${active?'active':goalStatus(g,end)==='reached'?'done':goalStatus(g,end)==='close'?'close':'ended'}">${status}</span></div><div class="review-metrics"><div><span>Start</span><b>${fmt(start)} kg</b></div><div><span>${active?'Current':'End'}</span><b>${fmt(end)} kg</b></div><div><span>Target</span><b>${fmt(g.target)} kg</b></div></div></section>
+    ${!active?`<div class="section-title">Final progress</div><section class="card final-progress-card"><div class="row between"><div class="actual-label" style="margin:0">Final Progress Snapshot</div><span class="small">${g.progressSnapshot?'Frozen at goal end':'Reconstructed from saved records'}</span></div>${renderProgressSnapshot(g)}</section>`:''}
+    ${latest?`<div class="section-title">Latest review</div><section class="card latest-review-card"><div class="row between"><div class="actual-label" style="margin:0">${fmtShortDate(latest.date)}${latest.day?` · Day ${latest.day}`:''}</div></div>${fullReviewHtml(latest)}</section>`:`<section class="card"><div class="empty">No reviews yet.</div></section>`}
+    ${!composer?`<button class="btn secondary full review-add-button" data-action="openReviewComposer">Add new review</button>`:''}
+    ${composer?`<section class="card review-composer"><div class="row between"><div class="actual-label" style="margin:0">Add new review</div><button class="review-inline-link review-cancel-inline" data-action="closeReviewComposer">Cancel</button></div><p class="small review-copy"><b>1.</b> Export goal data and upload the file to ChatGPT. The file already contains the complete review instructions and Tide import format—no extra prompt needed. <b>2.</b> Import the resulting review JSON file or paste the JSON below. <b>3.</b> Preview, then Save.</p><div class="review-actions"><button class="btn secondary" data-action="exportReviewGoal">Export Goal Data + Instructions</button><label class="btn secondary file-btn">Import review JSON<input id="reviewImportFile" type="file" accept=".json,application/json" hidden></label></div><label class="review-paste-label">Or paste ChatGPT JSON<textarea id="reviewPaste" rows="7" placeholder='{"goalId":"COPY_EXACT_GOAL_ID","preview":"...","review":{"summary":"...","learnings":["..."],"next":["..."]}}'>${escapeHtml(draft?.rawText||'')}</textarea></label><button class="btn secondary full" data-action="previewGoalReview">Preview review</button></section>`:''}
     ${draft&&composer?`<section class="card review-preview"><div class="row between"><div class="actual-label" style="margin:0">Ready to save</div><span class="small">Review the result first</span></div>${draft.checkpoint.preview?`<div class="draft-preview-summary"><span>Goals preview</span><p>${escapeHtml(draft.checkpoint.preview)}</p></div>`:''}<div class="full-review-label">Full review</div>${fullReviewHtml(draft.checkpoint)}<button class="btn sky full review-save-final" data-action="saveGoalReviewDraft">Save Review</button></section>`:''}
     ${older.length?`<div class="section-title">Earlier reviews</div><section class="card review-history">${older.map(checkpointHtml).join('')}</section>`:''}
-    `;
+    <button class="btn ghost full" data-action="backGoals">Back to Goals</button>`;
 }
 function parseReviewJSON(text){
   let cleaned=String(text||'').trim().replace(/^```(?:json)?\s*/i,'').replace(/```$/,'').trim();
@@ -1348,7 +1626,7 @@ function chartSettingsPage(){
     <div class="insight chart-hint">Choose up to two categories to show under each weigh-in. Selecting a third replaces the first selected category; daily logs and Goals stay unchanged.</div>
     <section class="card chart-settings-card"><div class="row between"><div class="actual-label">Context markers</div><span class="small">${selected.length}/2</span></div>
       ${CHART_GROUPS.map(g=>`<div class="chart-group"><button data-chart-category="${g.id}" class="chart-group-row ${selected.includes(g.id)?'on':''}" aria-pressed="${selected.includes(g.id)}"><span class="ctx-dot ${g.dot}"></span><span>${g.name}</span><span class="chart-select-indicator">${selected.includes(g.id)?'✓':selected.length>=2?'Replace':'○'}</span></button>${sourcePanel(g.id,g.id==='food'?CHART_FOOD:g.id==='exercise'?CHART_EXERCISE:g.id==='other'?CHART_OTHER:[])}</div>`).join('')}
-    </section><div class="small chart-footnote">Snacks dot = Had snacks explicitly recorded the previous day. No snacks, Not logged and N/A do not trigger it. Eating out does not mean “ate more.” Period is optional context, not a weight correction or proof of causation.</div>`;
+    </section><div class="small chart-footnote">Diet markers use only the sources you select. Snacks and More than intended are separate signals.</div>`;
 }
 function customEventsPage(){
   const active=db.customEvents.filter(e=>e.active),removed=db.customEvents.filter(e=>!e.active);
@@ -1412,7 +1690,7 @@ function settingsPage(){
 }
 
 function planEditPage(){
-  return `${topbar('Default Plan','',`<button class="btn sky save-top" data-action="savePlan">${tr('save')}</button>`)}<section class="card"><div class="actual-label">Food goals</div>${planInputsFood()}<label class="effective-date-setting">Calendar scoring effective from<input id="planEffectiveFrom" type="date" min="${today()}" value="${today()}"></label><div class="small plan-helper">Earlier Calendar days keep their original rules.</div></section><section class="card"><div class="actual-label">Weekly exercise goals</div>${planInputsMove()}</section><button class="btn sky full" data-action="savePlanBottom">${tr('done')}</button>`;
+  return `${topbar('Default Plan','',`<button class="btn sky save-top" data-action="savePlan">${tr('save')}</button>`)}<section class="card"><div class="actual-label">Diet goals</div>${planInputsFood()}<label class="effective-date-setting">Calendar scoring effective from<input id="planEffectiveFrom" type="date" min="${today()}" value="${today()}"></label><div class="small plan-helper">Earlier Calendar days keep their original rules.</div></section><section class="card"><div class="actual-label">Weekly exercise goals</div>${planInputsMove()}</section><button class="btn sky full" data-action="savePlanBottom">${tr('done')}</button>`;
 }
 
 function weekStats(){
@@ -1446,16 +1724,17 @@ function saveInputsFromDOM(recordRuleHistory=true){
   if(recordRuleHistory)recordCalendarRuleChange(beforeGoal,beforePlan,effectiveFrom);
 }
 function setFood(key,val){ const d=day(view==='day'?selected:today()); d.food[key]=val; d.skips[key]=false; save(); }
-function setNoSnack(value){const before=encouragementStats(),d=day(view==='day'?selected:today());if(d.date>today())return;const v=value==='null'?null:value==='true';if(usesEveningPlan(d.date)){d.food.extraSnacks=v==null?null:!v;snapshotEveningPlan(d);}else d.food.noSnack=v;d.skips.noSnack=false;celebrateSnackLog(before,d.date);save();}
+function setNoSnack(value){const d=day(view==='day'?selected:today());d.food.noSnack=value==='null'?null:value==='true';d.skips.noSnack=false;save();}
+function setMoreThanIntended(value){const d=day(view==='day'?selected:today());d.food.moreThanIntended=value==='null'?null:value==='true';persist();render();}
 function toggleFood(key){ const d=day(view==='day'?selected:today()); d.food[key]=d.food[key]===true?false:true; d.skips[key]=false; save(); }
 function toggleMove(key){ const d=day(view==='day'?selected:today()); d.move[key]=d.move[key]===true?false:true; d.skips[key]=false; save(); }
 function toggleSkip(id){ const d=day(view==='day'?selected:today()); d.skips[id]=!d.skips[id]; save(); }
 function toggleCustom(key){ const d=day(selected); if(key==='allowSnack') d.customPlan.noSnack=d.customPlan.noSnack===false?true:false; else d.customPlan[key]=d.customPlan[key]===true?false:true; save(); }
 function togglePlannedMove(key){ const d=day(selected); d.plannedMove[key]=d.plannedMove[key]===true?false:true; save(); }
-function toggleEvent(e){ const d=day(selected); d.events=d.events.includes(e)?d.events.filter(x=>x!==e):[...d.events,e]; save(); }
-function cycleAlcohol(){ const d=day(selected),v=d.alcohol==null?0:+d.alcohol; d.alcohol=v<=0?1:v===1?2:null; save(); }
+function toggleEvent(e,button){ const d=day(selected); d.events=d.events.includes(e)?d.events.filter(x=>x!==e):[...d.events,e]; persist(); if(button)button.classList.toggle('on',d.events.includes(e)); }
+function cycleAlcohol(button){ const d=day(selected),v=d.alcohol==null?0:+d.alcohol; d.alcohol=v<=0?1:v===1?2:null; persist(); if(button){const a=+d.alcohol||0;button.classList.toggle('on',a>0);button.textContent=a>=2?'Alcohol · 2+':a===1?'Alcohol · 1':'Alcohol';} }
 function shiftMonth(n){ const d=parseDate(calendarMonth); d.setMonth(d.getMonth()+n); calendarMonth=iso(new Date(d.getFullYear(),d.getMonth(),1,12)); selected=calendarMonth; render(); }
-function saveGoalForm(){
+function saveGoalForm(recordRuleHistory=true){
   const beforeGoal=JSON.parse(JSON.stringify(db.goal)), beforePlan={...db.plan};
   const effectiveFrom=calendarEffectiveDate();
   const oldStart=db.goal.start;
@@ -1470,23 +1749,27 @@ function saveGoalForm(){
   const entered=document.getElementById('goalStartWeight')?.value;
   if(entered!==undefined&&entered!=='' && Number.isFinite(+entered)) {
     // Changing a goal start date must not invent a historical weigh-in.
+    if(+entered!==activeGoalStartWeight() && newStart===oldStart)day(newStart).weight=+entered;
     db.goal.startWeight=+entered;
   }
   saveInputsFromDOM(false);
-  recordCalendarRuleChange(beforeGoal,beforePlan,effectiveFrom);
+  if(recordRuleHistory)recordCalendarRuleChange(beforeGoal,beforePlan,effectiveFrom);
 }
 function archiveGoal(){
-  if(db.goal.status==='idle') return;
   saveGoalForm();
-  const oldGoal=JSON.parse(JSON.stringify(db.goal)), oldPlan={...db.plan}, e=goalEvidence(db.goal);
-  const snapshot={...db.goal,trackers:normalizeTrackers(db.goal),reviews:normalizeReviews(db.goal),planSnapshot:{...db.plan},ended:e.through,archivedAt:new Date().toISOString(),endWeight:e.last?.weight??null,endWeightDate:e.last?.date??null,snapshot:true,schemaVersion:SCHEMA_VERSION};
-  snapshot.resultStatus=goalStatus(snapshot,snapshot.endWeight);
-  db.goals.push(snapshot);
-  db.goal={...db.goal,id:newGoalId(),status:'idle',start:today(),end:addDays(today(),28),reviews:[],review:blankReview()};
+  const oldGoal=JSON.parse(JSON.stringify(db.goal)),oldPlan={...db.plan};
+  const end=latestWeight(today())?.weight??null; const startSnapshot=activeGoalStartWeight(); const status=goalStatus({...db.goal,startWeight:startSnapshot,snapshot:true},end);
+  let planDays=0, strengthMinutes=0, cardioMinutes=0, eventCount=0;
+  for(let s=db.goal.start;s<=today()&&s<=db.goal.end;s=addDays(s,1)){
+    const rec=day(s), fs=foodStatus(rec);
+    if(fs.enough&&fs.score>=.8) planDays++;
+    strengthMinutes+=(+rec.move.strength||0); cardioMinutes+=(+rec.move.cardio||0); eventCount+=rec.events.length;
+  }
+  const snapshot={...db.goal,id:db.goal.id||newGoalId(),trackers:normalizeTrackers(db.goal,false),review:blankReview(),reviews:normalizeReviews(db.goal),planSnapshot:{...db.plan},startWeight:startSnapshot,ended:today(),endWeight:end,resultStatus:status,planDays,strengthMinutes,cardioMinutes,eventCount,progressSnapshot:buildProgressSnapshot(db.goal,today()),snapshot:true,schemaVersion:SCHEMA_VERSION}; db.goals.push(snapshot);
+  db.goal={id:newGoalId(),name:'New goal',start:today(),end:addDays(today(),30),startWeight:end??db.goal.target,target:Math.max(35,(end??db.goal.target)-2),status:'active',focus:'both',trackers:defaultTrackersForFocus('both',today()),review:blankReview(),reviews:[]};
   recordCalendarRuleChange(oldGoal,oldPlan,today());
-  goalEditSnapshot=null;reviewGoalId=snapshot.id;view='goalReview';save('Chapter saved. Your history continues.');
+  view='goals'; save(db.language==='zh'?'当前目标已归档。':'Goal archived.');
 }
-
 function exportData(){
   const blob=new Blob([JSON.stringify(db,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`tide-backup-${today()}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 }
@@ -1501,7 +1784,7 @@ function archiveGoalModal(){
     <div class="archive-confirm-modal" role="dialog" aria-modal="true" aria-label="End and archive goal">
       <div class="weight-modal-handle"></div>
       <div class="archive-confirm-title">End this goal?</div>
-      <div class="archive-confirm-copy">This freezes the current goal and its tracking record, then lets you choose your next step. Nothing you logged will be deleted.</div>
+      <div class="archive-confirm-copy">This freezes the current goal and its tracking record, then starts a new goal. Nothing you logged will be deleted.</div>
       <div class="archive-confirm-actions"><button class="btn ghost" data-action="cancelArchiveGoal">Cancel</button><button class="btn archive-confirm-danger" data-action="confirmArchiveGoal">Yes, end & archive</button></div>
     </div>
   </div>`;
@@ -1525,7 +1808,6 @@ function bind(){
   document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>{view=b.dataset.view; render();}));
   document.querySelectorAll('[data-action]').forEach(b=>b.addEventListener('click',()=>{
     const a=b.dataset.action;
-    if(handleJourneyAction(a,b)) return;
     if(a==='saveToday'||a==='saveTodayBottom'){saveInputsFromDOM();save(tr('saved'));}
     if(a==='editToday'){selected=today();view='day';render();}
     if(a==='openEndGoal'){view='endGoal';render();}
@@ -1542,9 +1824,12 @@ function bind(){
     if(a==='backFromCustom'){view=customReturnView||'day';render();}
     if(a==='cancelRemoveEvent'){removeCustomId=null;render();}
     if(a==='confirmRemoveEvent')removeCustomEvent(removeCustomId);
-    if(a==='editGoal'){beginGoalEdit();view='goalEdit';render();}
-    if(a==='saveGoal'){if(!validateGoalForm())return;saveGoalForm();finishGoalEdit();view='goals';save(tr('saved'));}
-    if(a==='requestArchiveGoal'){if(view==='goalEdit'&&!validateGoalForm())return;saveGoalForm();archiveConfirmOpen=true;render();}
+    if(a==='editGoal')beginGoalEdit();
+    if(a==='saveGoal')commitGoalEdit();
+    if(a==='cancelGoalEdit')requestCancelGoalEdit();
+    if(a==='keepGoalEditing'){discardGoalEditOpen=false;render();}
+    if(a==='discardGoalEdit')discardGoalEdit();
+    if(a==='requestArchiveGoal'){saveGoalForm();archiveConfirmOpen=true;render();}
     if(a==='cancelArchiveGoal'){archiveConfirmOpen=false;render();}
     if(a==='confirmArchiveGoal'){archiveConfirmOpen=false;archiveGoal();}
     if(a==='editPlan'){view='planEdit';render();}
@@ -1561,6 +1846,7 @@ function bind(){
   document.querySelectorAll('[data-set-food]').forEach(b=>b.addEventListener('click',()=>setFood(b.dataset.setFood,+b.dataset.value)));
   document.querySelectorAll('[data-toggle-food]').forEach(b=>b.addEventListener('click',()=>toggleFood(b.dataset.toggleFood)));
   document.querySelectorAll('[data-no-snack]').forEach(b=>b.addEventListener('click',()=>setNoSnack(b.dataset.noSnack)));
+  document.querySelectorAll('[data-more-than]').forEach(b=>b.addEventListener('click',()=>setMoreThanIntended(b.dataset.moreThan)));
   document.querySelectorAll('[data-toggle-move]').forEach(b=>b.addEventListener('click',()=>toggleMove(b.dataset.toggleMove)));
   document.querySelectorAll('[data-toggle-skip]').forEach(b=>b.addEventListener('click',()=>toggleSkip(b.dataset.toggleSkip)));
   document.querySelectorAll('[data-tracker-role]').forEach(b=>b.addEventListener('click',()=>setTrackerRole(b.dataset.trackerRole,b.dataset.role)));
@@ -1568,17 +1854,18 @@ function bind(){
   document.querySelectorAll('[data-toggle-planned-move]').forEach(b=>b.addEventListener('click',()=>togglePlannedMove(b.dataset.togglePlannedMove)));
   document.querySelectorAll('[data-date]').forEach(b=>b.addEventListener('click',()=>{selected=b.dataset.date;render();}));
   document.querySelectorAll('[data-month]').forEach(b=>b.addEventListener('click',()=>shiftMonth(+b.dataset.month)));
-  document.querySelectorAll('[data-event]').forEach(b=>b.addEventListener('click',()=>toggleEvent(b.dataset.event)));
+  document.querySelectorAll('[data-event]').forEach(b=>b.addEventListener('click',()=>toggleEvent(b.dataset.event,b)));
   document.querySelectorAll('[data-chart-category]').forEach(b=>b.addEventListener('click',()=>toggleChartCategory(b.dataset.chartCategory)));
   document.querySelectorAll('[data-chart-source]').forEach(b=>b.addEventListener('change',()=>toggleChartSource(b.dataset.chartSource,b.dataset.sourceId,b.checked)));
   document.querySelectorAll('[data-hunger-min]').forEach(b=>b.addEventListener('click',()=>{db.chartSettings.hungerMin=+b.dataset.hungerMin;save();}));
   document.querySelectorAll('[data-custom-category]').forEach(el=>el.addEventListener('change',()=>changeCustomCategory(el.dataset.customCategory,el.value)));
   document.querySelectorAll('[data-archive-event]').forEach(b=>b.addEventListener('click',()=>{removeCustomId=b.dataset.archiveEvent;render();}));
   document.querySelectorAll('[data-restore-event]').forEach(b=>b.addEventListener('click',()=>restoreCustomEvent(b.dataset.restoreEvent)));
-  document.querySelectorAll('[data-cycle-alcohol]').forEach(b=>b.addEventListener('click',cycleAlcohol));
+  document.querySelectorAll('[data-cycle-alcohol]').forEach(b=>b.addEventListener('click',()=>cycleAlcohol(b)));
   document.querySelectorAll('[data-range]').forEach(b=>b.addEventListener('click',()=>{range=b.dataset.range;render();}));
   document.querySelectorAll('[data-day-field]').forEach(el=>el.addEventListener('change',()=>{saveInputsFromDOM();persist();}));
-  document.querySelectorAll('[data-plan]').forEach(el=>el.addEventListener('change',()=>{saveInputsFromDOM();persist();}));
+  document.querySelectorAll('[data-plan]').forEach(el=>el.addEventListener('change',()=>{if(view==='goalEdit'){goalEditDirty=true;return;}saveInputsFromDOM();persist();}));
+  if(view==='goalEdit') document.querySelectorAll('#goalName,#goalStartWeight,#goalTarget,#goalStart,#goalEnd,#goalEffectiveFrom').forEach(el=>el.addEventListener('input',markGoalEditDirty));
   const f=document.getElementById('importFile'); if(f) f.addEventListener('change',()=>importData(f.files[0]));
   const reviewFile=document.getElementById('reviewImportFile'); if(reviewFile) reviewFile.addEventListener('change',()=>importGoalReview(reviewFile.files[0]));
   document.querySelectorAll('[data-review-goal]').forEach(b=>b.addEventListener('click',()=>{reviewGoalId=b.dataset.reviewGoal;reviewDraft=null;reviewComposerOpen=false;view='goalReview';render();}));
@@ -1644,26 +1931,20 @@ function render(){
   else if(view==='customEvents')content=customEventsPage();
   else if(view==='endGoal')content=endGoalPage();
   else if(view==='planEdit')content=planEditPage();
-  else if(view==='eveningEdit')content=eveningEditPage();
-  else if(view==='wins')content=winsPage();
-  lastRenderDate=today();
-  document.getElementById('app').innerHTML=`<main class="shell">${content}${['today','calendar','change','goals','settings'].includes(view)?nav():''}</main>${quickWeightModal()}${archiveGoalModal()}${customRemoveModal()}${encouragementToast()}`;
+  document.getElementById('app').innerHTML=`<main class="shell">${content}${['today','calendar','change','goals','settings'].includes(view)?nav():''}</main>${quickWeightModal()}${archiveGoalModal()}${customRemoveModal()}${discardGoalEditModal()}`;
   bind();
-  const notice=document.querySelector('.win-toast');
-  if(notice){const timer=setTimeout(()=>{notice.remove();document.querySelectorAll('.win-dot.is-new').forEach(dot=>dot.classList.remove('is-new'));},3200);timer.unref?.();}
   document.querySelector('.weight-modal')?.addEventListener('click',e=>e.stopPropagation());
   document.querySelector('.archive-confirm-modal')?.addEventListener('click',e=>e.stopPropagation());
   document.querySelector('.custom-confirm')?.addEventListener('click',e=>e.stopPropagation());
+  if(discardGoalEditOpen) document.querySelectorAll('.archive-confirm-modal').forEach(x=>x.addEventListener('click',e=>e.stopPropagation()));
   const q=document.getElementById('quickWeightInput'); if(q) q.addEventListener('keydown',e=>{if(e.key==='Enter')document.querySelector('[data-action=\"saveQuickWeight\"]')?.click();});
 }
 
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState==='hidden'){ thoughtHiddenAt=Date.now(); return; }
-  if(lastRenderDate!==today()){dailyThought=chooseDailyThought();render();return;}
   if(thoughtHiddenAt && Date.now()-thoughtHiddenAt>=10*60*1000){ dailyThought=chooseDailyThought(); thoughtHiddenAt=0; if(view==='today') render(); }
 });
 document.addEventListener('gesturestart',e=>e.preventDefault());
 document.addEventListener('dblclick',e=>e.preventDefault(),{passive:false});
 if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').then(r=>r.update()).catch(()=>{}); }
-persist();
 render();
