@@ -1,11 +1,11 @@
-# Tide Private V9.4.1 — Progress polish
+# Tide Private V9.4.2 — Compact Progress + Close-to-goal status
 
-**Private Tide only; Beta unchanged.** V9.4.1 is a visual cleanup of Progress and Archived Goals on top of V9.4. Data and forecast logic are unchanged.
+**Private Tide only; Beta unchanged.** V9.4.2 is a small visual/result-status update on top of V9.4.1. Data and forecast logic are unchanged.
 
 ## Upgrade safely
 1. In your current private Tide, export a JSON backup from Settings before updating.
 2. Unzip this package and upload the eight files flat to the root of the original `Tide` GitHub repository, **not** `Tide-Beta`.
-3. After GitHub Pages deploys, refresh Safari once. Settings should show version `9.4.1`.
+3. After GitHub Pages deploys, refresh Safari once. Settings should show version `9.4.2`.
 
 ## Daily Log: lower friction
 - The current **No food after 6 PM / evening cutoff** tracker is retired from new/current Goal and Daily Log screens. Existing historical cutoff records and dated Calendar scoring revisions are preserved so old Calendar evaluations are not rewritten.
@@ -48,3 +48,8 @@ Exactly eight flat files: `index.html`, `app.js`, `styles.css`, `manifest.json`,
 - Removed the visible “Earlier weigh-ins…” caption; historical points remain in the chart.
 - Archived Goals are condensed and always show a clear colored outcome: Goal reached / Goal not reached / No final weight.
 - Removed archived-goal process clutter and percentage bars; detailed history remains in Review.
+
+## V9.4.2 changes
+- Progress header shows Weight and Target together on one compact line.
+- Archived Goals add a warm `Close to goal` state when the final weight is within 0.5 kg of target but does not meet the reached threshold.
+- The close state shows the remaining distance in kg.

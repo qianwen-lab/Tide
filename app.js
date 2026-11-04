@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'tide.v1';
-const VERSION = '9.4.1';
+const VERSION = '9.4.2';
 const SCHEMA_VERSION = 15; // Retire eating cutoff going forward; preserve historical scoring and add richer daily context.
 
 const COLORS = { sage:'#5E836F', sageDeep:'#244C3E', pink:'#C98994', pinkSoft:'#EBCFD4', blue:'#8C918D', ink:'#1F2823' };
@@ -884,8 +884,8 @@ function changePage(){
   const desc=lw?`${tr('actualWeight')} ${fmt(lw.weight)} kg`:tr('noRecord');
   return `${topbar(tr('weightChange'))}
     <section class="card change-goal-card">
-      <div class="row between"><div><b>${escapeHtml(db.goal.name)}</b><div class="small">${fmtDate(db.goal.start)} → ${fmtDate(db.goal.end)}</div></div><div class="small">${tr('goalLine')} ${fmt(db.goal.target)} kg</div></div>
-      <div class="small" style="margin-top:8px">${desc}</div>
+      <div><b>${escapeHtml(db.goal.name)}</b><div class="small">${fmtDate(db.goal.start)} → ${fmtDate(db.goal.end)}</div></div>
+      <div class="progress-weight-summary"><span>${desc}</span><span class="summary-sep">·</span><span>${tr('goalLine')} ${fmt(db.goal.target)} kg</span></div>
       <div class="chart-heading-row"><div class="legend"><span><span class="legend-line actual-line"></span>${tr('actualWeight')}</span><span><span class="legend-line goal-line"></span>${tr('goalLine')}</span><span><span class="legend-line forecast-line"></span>Forecast</span></div><button class="quiet-link chart-customize" data-action="chartSettings">⚙ Customize</button></div>
       <div class="chart-wrap">${renderChart(series,f)}</div>
     </section>
@@ -1334,8 +1334,11 @@ function goalMet(g,end){
 }
 function goalHistoryItem(g){
   const end=g.endWeight??null, met=goalMet(g,end), reviewCount=normalizeReviews(g).length;
-  const outcome=met===true?'Goal reached':met===false?'Goal not reached':'No final weight';
-  const outcomeClass=met===true?'reached':met===false?'not-reached':'unknown';
+  const hasEnd=end!=null&&Number.isFinite(+end);
+  const away=hasEnd?Math.abs(+end-(+g.target)):null;
+  const close=met===false&&away<=0.5+1e-9;
+  const outcome=met===true?'Goal reached':close?`Close to goal · ${fmt(away)} kg away`:met===false?'Goal not reached':'No final weight';
+  const outcomeClass=met===true?'reached':close?'close':met===false?'not-reached':'unknown';
   const endDate=g.ended||g.end;
   return `<div class="goal-item archived-goal-summary"><div class="row between archived-goal-head"><div><div class="name">${escapeHtml(g.name)}</div><div class="meta">${fmtDate(g.start,'en')} → ${fmtDate(endDate,'en')} · Ended</div></div><span class="archive-outcome ${outcomeClass}">${outcome}</span></div><div class="archived-weight-line"><b>${fmt(g.startWeight)}</b><span>→</span><b>${end==null?'—':fmt(end)} kg</b><span class="muted">Target ${fmt(g.target)}</span></div><button class="review-link" data-review-goal="${escapeHtml(g.id)}">${reviewCount?`Review · ${reviewCount}`:'Review'}</button></div>`;
 }
