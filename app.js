@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'tide.v1';
-const VERSION = '9.4';
+const VERSION = '9.4.1';
 const SCHEMA_VERSION = 15; // Retire eating cutoff going forward; preserve historical scoring and add richer daily context.
 
 const COLORS = { sage:'#5E836F', sageDeep:'#244C3E', pink:'#C98994', pinkSoft:'#EBCFD4', blue:'#8C918D', ink:'#1F2823' };
@@ -876,7 +876,7 @@ function goalDeadlineCard(f){
   const hasActual=end<=now && recorded.weight!=null && Number.isFinite(+recorded.weight);
   if(end<now) return {label:`${fmtDate(end,'en')} · ${hasActual?'Actual':'No weigh-in'}`, value:hasActual?`${fmt(recorded.weight)} kg`:'No weigh-in recorded'};
   if(end===now) return {label:hasActual?'Today · Actual':'Today · No weigh-in',value:hasActual?`${fmt(recorded.weight)} kg`:'No weigh-in yet'};
-  return {label:`By ${fmtDate(end,'en')} · Forecast`, value:f.ready?`${fmt(f.projectedEnd)} kg`:'—'};
+  return {label:`By ${fmtDate(end,'en')}`, value:f.ready?`${fmt(f.projectedEnd)} kg`:'—'};
 }
 function changePage(){
   const series=chartData();
@@ -1059,9 +1059,8 @@ function renderChart(data,forecast){
   const showSleepNote=db.chartSettings.categories.includes('other')&&db.chartSettings.other.includes('short_sleep');
   const sleepNote=showSleepNote?'<br>Short sleep uses the sleep logged on the same morning.':'';
   const info=`<div class="chart-context-row">${contextLegendHtml()}<details class="chart-info-wrap"><summary aria-label="About chart markers" title="About chart markers">ⓘ</summary><div class="chart-info-popover"><b>About the dots</b><br>Dots show selected logs from the previous day. They are context, not proven causes.${sleepNote}</div></details></div>`;
-  const historyCaption=earlierPoints.length?`<div class="pre-goal-caption">Earlier weigh-ins · context only, not part of this Goal's score.</div>`:'';
   const singlePointNote=data.length===1?'<div class="pre-goal-caption">One weigh-in is shown. A projection needs at least two spaced readings.</div>':'';
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Weight chart. Muted line indicates pre-goal history. Pink dashed line is a trend estimate. Goal start and end are marked. Tap a weigh-in for its logs"><text x="4" y="13" class="axis-unit">kg</text>${grid}<line class="axis" x1="${L}" y1="${Tp}" x2="${L}" y2="${axisY}"/><line class="axis" x1="${L}" y1="${axisY}" x2="${W-R}" y2="${axisY}"/><line class="goal" x1="${L}" y1="${goalY}" x2="${W-R}" y2="${goalY}"/><line id="chartGuide" class="guide" x1="${guideX}" y1="${Tp}" x2="${guideX}" y2="${axisY}"/>${projectionPath}${goalStartMark}${goalDateMark}<path class="pre-goal-actual" d="${earlierPath}"/><path class="pre-goal-bridge" d="${bridgePath}"/><path class="actual" d="${actualPath}"/>${contextMarks}${points}${hitBands}${xLabels}</svg>${info}${historyCaption}${singlePointNote}<div id="chartTip" class="tooltip" aria-live="polite">${chartTipHtml(last)}</div>`;
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Weight chart. Muted line indicates pre-goal history. Pink dashed line is a trend estimate. Goal start and end are marked. Tap a weigh-in for its logs"><text x="4" y="13" class="axis-unit">kg</text>${grid}<line class="axis" x1="${L}" y1="${Tp}" x2="${L}" y2="${axisY}"/><line class="axis" x1="${L}" y1="${axisY}" x2="${W-R}" y2="${axisY}"/><line class="goal" x1="${L}" y1="${goalY}" x2="${W-R}" y2="${goalY}"/><line id="chartGuide" class="guide" x1="${guideX}" y1="${Tp}" x2="${guideX}" y2="${axisY}"/>${projectionPath}${goalStartMark}${goalDateMark}<path class="pre-goal-actual" d="${earlierPath}"/><path class="pre-goal-bridge" d="${bridgePath}"/><path class="actual" d="${actualPath}"/>${contextMarks}${points}${hitBands}${xLabels}</svg>${info}${singlePointNote}<div id="chartTip" class="tooltip" aria-live="polite">${chartTipHtml(last)}</div>`;
 }
 function chartTipHtml(d){
   if(!d) return '';
@@ -1326,17 +1325,19 @@ function renderProgressSnapshot(g){
   return `<div class="snapshot-chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Final weight progress for archived goal"><line class="goal" x1="${L}" y1="${gy}" x2="${W-R}" y2="${gy}"/><line class="snapshot-date" x1="${L}" y1="${Tp}" x2="${L}" y2="${bottom}"/><line class="snapshot-date" x1="${W-R}" y1="${Tp}" x2="${W-R}" y2="${bottom}"/><path class="actual" d="${path}"/>${pts}${markerDots}<text class="snapshot-label" x="${L}" y="${H-2}">${fmtShortDate(snap.start)}</text><text class="snapshot-label" x="${W-R}" y="${H-2}" text-anchor="end">${fmtShortDate(snap.end)}</text><text class="snapshot-target" x="${W-R}" y="${gy-4}" text-anchor="end">Target ${fmt(snap.target)}</text></svg></div>`;
 }
 
+function goalMet(g,end){
+  if(end==null||!Number.isFinite(+end)) return null;
+  const start=Number.isFinite(+g.startWeight)?+g.startWeight:+end, target=+g.target, value=+end;
+  if(target<start) return value<=target+.1;
+  if(target>start) return value>=target-.1;
+  return Math.abs(value-target)<=.1;
+}
 function goalHistoryItem(g){
-  const end=g.endWeight??null; const status=goalStatus(g,end); const labels={reached:tr('reached'),close:tr('close'),ended:tr('ended')};
-  const lost=end==null?null:g.startWeight-end;
-  const total=g.startWeight-g.target; const achieved=(end!=null&&total>0)?clamp((g.startWeight-end)/total*100,0,100):null;
-  const process=[];
-  if(g.planDays!=null) process.push(`Food on plan ${g.planDays} days`);
-  if(g.strengthMinutes!=null) process.push(`${tr('strength')} ${g.strengthMinutes}${tr('minutes')}`);
-  if(g.cardioMinutes!=null) process.push(`${tr('cardio')} ${g.cardioMinutes}${tr('minutes')}`);
-  if(g.eventCount) process.push(`${g.eventCount} life events`);
-  const reviewCount=normalizeReviews(g).length;
-  return `<div class="goal-item"><div class="row between"><div class="name">${escapeHtml(g.name)}</div><span class="status ${status==='reached'?'done':status==='close'?'close':'ended'}">${labels[status]}</span></div><div class="numbers">${fmt(g.startWeight)} → ${fmt(end)} kg <span class="muted">· target ${fmt(g.target)}</span></div>${achieved!=null?`<div class="progress compact"><i style="width:${achieved}%"></i></div><div class="small">${Math.round(achieved)}% of target change</div>`:''}<div class="meta">${g.start} → ${g.ended||g.end}${lost==null?'':` · ${lost>=0?'-':'+'}${Math.abs(lost).toFixed(1)} kg`}${process.length?`<br>${process.join(' · ')}`:''}</div><button class="review-link" data-review-goal="${escapeHtml(g.id)}">${reviewCount?`Review history · ${reviewCount}`:'Goal review'}</button></div>`;
+  const end=g.endWeight??null, met=goalMet(g,end), reviewCount=normalizeReviews(g).length;
+  const outcome=met===true?'Goal reached':met===false?'Goal not reached':'No final weight';
+  const outcomeClass=met===true?'reached':met===false?'not-reached':'unknown';
+  const endDate=g.ended||g.end;
+  return `<div class="goal-item archived-goal-summary"><div class="row between archived-goal-head"><div><div class="name">${escapeHtml(g.name)}</div><div class="meta">${fmtDate(g.start,'en')} → ${fmtDate(endDate,'en')} · Ended</div></div><span class="archive-outcome ${outcomeClass}">${outcome}</span></div><div class="archived-weight-line"><b>${fmt(g.startWeight)}</b><span>→</span><b>${end==null?'—':fmt(end)} kg</b><span class="muted">Target ${fmt(g.target)}</span></div><button class="review-link" data-review-goal="${escapeHtml(g.id)}">${reviewCount?`Review · ${reviewCount}`:'Review'}</button></div>`;
 }
 
 function goalStatus(g,end){

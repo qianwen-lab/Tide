@@ -1,11 +1,11 @@
-# Tide Private V9.4 — Less logging, more useful feedback
+# Tide Private V9.4.1 — Progress polish
 
-**Private Tide only; Beta unchanged.** V9.4 builds on V9.3.2 and keeps the existing Progress forecast, historical-weight context, Snacks marker, and dated Calendar scoring fixes.
+**Private Tide only; Beta unchanged.** V9.4.1 is a visual cleanup of Progress and Archived Goals on top of V9.4. Data and forecast logic are unchanged.
 
 ## Upgrade safely
 1. In your current private Tide, export a JSON backup from Settings before updating.
 2. Unzip this package and upload the eight files flat to the root of the original `Tide` GitHub repository, **not** `Tide-Beta`.
-3. After GitHub Pages deploys, refresh Safari once. Settings should show version `9.4`.
+3. After GitHub Pages deploys, refresh Safari once. Settings should show version `9.4.1`.
 
 ## Daily Log: lower friction
 - The current **No food after 6 PM / evening cutoff** tracker is retired from new/current Goal and Daily Log screens. Existing historical cutoff records and dated Calendar scoring revisions are preserved so old Calendar evaluations are not rewritten.
@@ -41,3 +41,10 @@
 
 ## Package
 Exactly eight flat files: `index.html`, `app.js`, `styles.css`, `manifest.json`, `sw.js`, `icon-192.png`, `icon-512.png`, `README.md`.
+
+
+## V9.4.1 changes
+- Progress deadline card now keeps `By <date>` and `<weight> kg` on one line and removes the redundant `Forecast` word.
+- Removed the visible “Earlier weigh-ins…” caption; historical points remain in the chart.
+- Archived Goals are condensed and always show a clear colored outcome: Goal reached / Goal not reached / No final weight.
+- Removed archived-goal process clutter and percentage bars; detailed history remains in Review.
