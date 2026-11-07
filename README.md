@@ -1,11 +1,24 @@
-# Tide Private V9.4.2 — Compact Progress + Close-to-goal status
+# Tide Private V9.5 — Meal calories + diet quality
 
-**Private Tide only; Beta unchanged.** V9.4.2 is a small visual/result-status update on top of V9.4.1. Data and forecast logic are unchanged.
+**Private Tide only; Beta unchanged.** V9.5 adds very low-friction meal calorie estimates and per-meal diet quality while preserving the existing private Tide data, goals, Calendar scoring, Progress forecast and archived goals.
 
 ## Upgrade safely
 1. In your current private Tide, export a JSON backup from Settings before updating.
 2. Unzip this package and upload the eight files flat to the root of the original `Tide` GitHub repository, **not** `Tide-Beta`.
-3. After GitHub Pages deploys, refresh Safari once. Settings should show version `9.4.2`.
+3. After GitHub Pages deploys, refresh Safari once. Settings should show version `9.5.0`.
+
+## Calories & diet quality
+- Daily Log now has four fixed rows: **Breakfast, Lunch, Dinner, Other**. Enter only an estimated kcal number; no food description is stored.
+- Each row can be marked **Healthy / Mixed / Unhealthy**. Tapping the selected label again clears it.
+- Tide automatically sums the entered kcal values. Blank meals are unknown, not zero.
+- Daily diet quality is automatic: two or more Unhealthy meals → Unhealthy; one Unhealthy or any Mixed → Mixed; all logged qualities Healthy → Healthy.
+- Progress aligns calorie information to the **next morning weigh-in**: food logged on Nov 6 is shown with the Nov 7 morning weight. A slim kcal band stays inside the chart; exact total and daily quality appear when that weigh-in is selected.
+- Exercise calories are intentionally not tracked or subtracted from food calories; Tide does not show net calories.
+- Goal Review exports now include meal calorie estimates, meal quality, the daily total and the daily roll-up with embedded interpretation instructions.
+
+## Morning response tone
+- Morning response is more direct: good progress is explicitly encouraged; a real upward 7-day trend is called out clearly and points back to calories, snacks and activity rather than dismissing it as noise.
+- It still avoids claiming that one higher morning weight proves fat gain.
 
 ## Daily Log: lower friction
 - The current **No food after 6 PM / evening cutoff** tracker is retired from new/current Goal and Daily Log screens. Existing historical cutoff records and dated Calendar scoring revisions are preserved so old Calendar evaluations are not rewritten.

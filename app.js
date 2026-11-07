@@ -1,6 +1,6 @@
 const STORAGE_KEY = 'tide.v1';
-const VERSION = '9.4.2';
-const SCHEMA_VERSION = 15; // Retire eating cutoff going forward; preserve historical scoring and add richer daily context.
+const VERSION = '9.5.0';
+const SCHEMA_VERSION = 16; // Add meal calorie + quality logging while preserving all earlier Tide data.
 
 const COLORS = { sage:'#5E836F', sageDeep:'#244C3E', pink:'#C98994', pinkSoft:'#EBCFD4', blue:'#8C918D', ink:'#1F2823' };
 const iso = d => {
@@ -198,6 +198,37 @@ const EVENTS=[
   {id:'period',zh:'Period',en:'Period'},
   {id:'sick',zh:'Sick',en:'Sick'}
 ];
+const MEAL_DEFS=[
+  {id:'breakfast',label:'Breakfast'},
+  {id:'lunch',label:'Lunch'},
+  {id:'dinner',label:'Dinner'},
+  {id:'other',label:'Other'}
+];
+const MEAL_QUALITIES=['healthy','mixed','unhealthy'];
+const mealQualityLabel=q=>q==='healthy'?'Healthy':q==='mixed'?'Mixed':q==='unhealthy'?'Unhealthy':'—';
+function normalizeMeal(x={}){
+  const kcal=x?.kcal==null||x.kcal===''?null:+x.kcal;
+  const quality=MEAL_QUALITIES.includes(x?.quality)?x.quality:null;
+  return {kcal:Number.isFinite(kcal)&&kcal>=0?kcal:null,quality};
+}
+function mealSummary(d){
+  const meals=d?.meals||{};
+  const rows=MEAL_DEFS.map(m=>({id:m.id,label:m.label,...normalizeMeal(meals[m.id])}));
+  const logged=rows.filter(r=>r.kcal!=null);
+  const total=logged.length?Math.round(logged.reduce((sum,r)=>sum+r.kcal,0)):null;
+  const qualities=rows.map(r=>r.quality).filter(Boolean);
+  let quality=null;
+  if(qualities.length){
+    const unhealthy=qualities.filter(q=>q==='unhealthy').length;
+    const mixed=qualities.filter(q=>q==='mixed').length;
+    const healthy=qualities.filter(q=>q==='healthy').length;
+    if(unhealthy>=2) quality='unhealthy';
+    else if(unhealthy===1 || mixed>0) quality='mixed';
+    else if(healthy===qualities.length) quality='healthy';
+  }
+  return {rows,total,quality,loggedCount:logged.length,qualityCount:qualities.length};
+}
+function previousDayMealSummary(weighDate){ return mealSummary(readDay(addDays(weighDate,-1))); }
 const LEGACY_EVENT_TO_ID={
   'Dinner out':'eating_out','Eating out':'eating_out','dinner':'eating_out','Travel':'travel','Party':'party','Long flight':'flight','Vacation':'vacation','Poor sleep':'poor_sleep','Period':'period','Sick':'sick'
 };
@@ -251,6 +282,7 @@ function mergeDay(x={}){
     },
     plannedMove:{steps:x.plannedMove?.steps??null,stretch:x.plannedMove?.stretch??null,cardio:x.plannedMove?.cardio??null,strength:x.plannedMove?.strength??null},
     food:{veg:x.food?.veg??null,protein:x.food?.protein??null,fruit:x.food?.fruit??null,noSnack:x.food?.noSnack??null,moreThanIntended:x.food?.moreThanIntended??null,stop6:x.food?.stop6??null,water:x.food?.water??null,bedtimeHunger:x.food?.bedtimeHunger??null,satiety:x.food?.satiety??null},
+    meals:Object.fromEntries(MEAL_DEFS.map(m=>[m.id,normalizeMeal(x.meals?.[m.id])])),
     skips:(x.skips&&typeof x.skips==='object')?{...x.skips}:{},
     move:{steps:x.move?.steps??null,stretch:x.move?.stretch??null,cardio:x.move?.cardio??null,strength:x.move?.strength??null},
     close:x.close??null,note:x.note??''
@@ -510,25 +542,30 @@ function morningResponse(){
   const trend=(avgNow!=null&&avgWeekAgo!=null)?avgNow-avgWeekAgo:null;
   const change=prev?current-(+prev.weight):null;
   const changeText=change==null?'':`${Math.abs(change).toFixed(1)} kg`;
+  const yesterday=previousDayMealSummary(today());
+  const foodCue=yesterday.total!=null?` 昨天记录了约 ${yesterday.total.toLocaleString()} kcal${yesterday.quality?`，整体是 ${mealQualityLabel(yesterday.quality)}`:''}。`:'';
   if(change!=null && change<=-.2 && trend!=null && trend<=-.1){
-    return `今天比上一次称重轻了 ${changeText}，而且 7 日平均也比一周前低了 ${Math.abs(trend).toFixed(1)} kg。单日数字和短期趋势同时往下，比只看到某一天更值得高兴。先保持现在的节奏，不需要因为今天漂亮就把计划再收紧。`;
+    return `今天比上一次轻了 ${changeText}，7 日平均也比一周前低了 ${Math.abs(trend).toFixed(1)} kg。很好，这才是值得高兴的下降：今天的数字和短期趋势在同一个方向。${foodCue}别因为今天漂亮就乱改计划，把最近做对的事情继续复制。`;
   }
   if(change!=null && change<=-.2){
-    return `今天轻了 ${changeText}，可以开心一下。不过 7 日平均还没有出现同样明显的变化，所以先把它当成一个好信号，而不是新的结论。再看几天，真正有意义的是这个方向能不能慢慢留下来。`;
+    return `今天轻了 ${changeText}，这个数字值得开心。${foodCue}但真正有价值的是把这次下降留下来：今天照常把 Diet 和活动量做好，不要因为一个好数字就放松，也不要为了追更低的数字突然收得更紧。`;
+  }
+  if(change!=null && change>=.3 && trend!=null && trend>=.15){
+    return `今天又高了 ${changeText}，而且 7 日平均已经比一周前高 ${trend.toFixed(1)} kg。这个方向不对。前面好不容易减下来的进度，不值得一点点还回去。${foodCue}别再把连续上涨都归成波动：今天把 calories、snacks 和活动量看清楚，找出最明显的问题，马上把执行拉回来。`;
   }
   if(change!=null && change>=.3 && trend!=null && trend<=-.1){
-    return `今天比上一次高了 ${changeText}，但 7 日平均仍然比一周前低 ${Math.abs(trend).toFixed(1)} kg。一天的反弹没有改变目前的方向，不需要追着今天的数字去补偿或重新设计计划。`;
+    return `今天高了 ${changeText}，数字不好看就是不好看。好在 7 日平均仍然比一周前低 ${Math.abs(trend).toFixed(1)} kg，说明前面的进度还在。${foodCue}今天别补偿、也别摆烂，把该做的事情做扎实，不要让一次上涨变成连续上涨。`;
   }
   if(change!=null && change>=.3){
-    return `今天的数字高了 ${changeText}。这值得留意，但还不足以说明趋势发生了变化。先继续按平常的方式记录两三天，再看 7 日平均是否真的往上；没有必要为了一个早晨立刻调整整个计划。`;
+    return `今天高了 ${changeText}。这不是你想看到的结果。${foodCue}单日上涨不等于脂肪真的长回来了，但也别用“只是波动”把它完全放过去。回看昨天的 calories、snacks 和活动量，今天把执行做好，别让这个方向继续。`;
   }
   if(trend!=null && trend<=-.1){
-    return `今天和上一次差别不大，但 7 日平均比一周前低了 ${Math.abs(trend).toFixed(1)} kg。趋势在慢慢移动，而不是靠某一个特别低的数字制造进展；这种变化通常更值得信任。`;
+    return `今天变化不大，但 7 日平均比一周前低了 ${Math.abs(trend).toFixed(1)} kg。很好，真正的进展正在趋势里，而不是靠某一个特别低的数字。${foodCue}继续把最近有效的节奏复制下去。`;
   }
   if(trend!=null && trend>=.15){
-    return `今天本身没有特别大的变化，但最近一周的平均值比前一周高了 ${trend.toFixed(1)} kg。先把它当成需要继续观察的信号，而不是失败。看看接下来几天 Diet、活动量和晚间饥饿有没有形成连续模式，再决定是否值得调整。`;
+    return `今天本身变化不大，但 7 日平均已经比一周前高 ${trend.toFixed(1)} kg。别忽略这个信号：趋势正在往错误的方向走。${foodCue}现在就回看最近几天的 calories、snacks 和活动量，找出最明显的偏差，今天开始纠正。`;
   }
-  return `今天的体重仍然在最近的波动区间里，没有出现需要马上反应的新信号。继续记录就好；当几天的数据开始朝同一个方向移动时，Tide 再把它当成真正的趋势。`;
+  return `今天的数字没有明显突破最近的区间。${foodCue}这不是“什么都不用管”，而是暂时没有理由乱改计划。把今天该做的事情做完整，让接下来的几天给出更清楚的方向。`;
 }
 function morningResponseBlock(){
   const text=morningResponse();
@@ -672,9 +709,35 @@ function todayPlanChips(d){
   const chips=ids.map(id=>trackerRuleLabel(dated,id,d));
   return `<div class="rule-grid compact-rules">${chips.length?chips.map(x=>`<div class="rule">${escapeHtml(x)}</div>`).join(''):'<div class="small">No daily behavior goals set.</div>'}</div>${d.events.length?`<div class="life-events compact-events">${d.events.map(e=>`<span class="event-chip on">${escapeHtml(eventLabel(e))}</span>`).join('')}</div>`:''}`;
 }
+function mealSummaryHtml(summary){
+  if(summary.total==null && !summary.quality) return `<span>Total</span><b>Not logged</b>`;
+  return `<span>Total</span><b>${summary.total==null?'—':`${summary.total.toLocaleString()} kcal`}${summary.quality?` · <em class="diet-quality ${summary.quality}">${mealQualityLabel(summary.quality)}</em>`:''}</b>`;
+}
+function mealCaloriesControls(d){
+  const summary=mealSummary(d);
+  const rows=MEAL_DEFS.map(m=>{
+    const meal=normalizeMeal(d.meals?.[m.id]);
+    return `<div class="meal-row"><div class="meal-name">${m.label}</div><label class="meal-kcal"><input data-day-field="meals.${m.id}.kcal" data-meal-kcal="${m.id}" type="number" inputmode="numeric" min="0" step="10" value="${meal.kcal??''}" placeholder="—"><span>kcal</span></label><div class="meal-quality" role="group" aria-label="${m.label} diet quality">${MEAL_QUALITIES.map(q=>`<button type="button" class="quality-chip ${q} ${meal.quality===q?'on':''}" data-meal-quality="${m.id}" data-quality="${q}">${mealQualityLabel(q)}</button>`).join('')}</div></div>`;
+  }).join('');
+  return `<div class="meal-log"><div class="row between meal-log-head"><div><div class="actual-label">Calories</div><div class="small">Estimate only · no food description needed</div></div></div>${rows}<div id="mealTotal" class="meal-total">${mealSummaryHtml(summary)}</div></div><hr class="sep">`;
+}
+function setMealQuality(mealId,quality){
+  if(!MEAL_DEFS.some(m=>m.id===mealId)||!MEAL_QUALITIES.includes(quality))return;
+  const d=day(view==='day'?selected:today());
+  d.meals[mealId].quality=d.meals[mealId].quality===quality?null:quality;
+  persist();
+  document.querySelectorAll('[data-meal-quality]').forEach(b=>{if(b.dataset.mealQuality===mealId)b.classList.toggle('on',d.meals[mealId].quality===b.dataset.quality);});
+  refreshMealTotal();
+}
+function refreshMealTotal(){
+  const el=document.getElementById('mealTotal'); if(!el)return;
+  const d=day(view==='day'?selected:today());
+  el.innerHTML=mealSummaryHtml(mealSummary(d));
+}
+
 function actualFoodControls(d){
   const veg=[0,1,2,3,4], fruit=[0,1,2,3], hunger=[1,2,3,4,5];
-  return `
+  return `${mealCaloriesControls(d)}
   <div class="actual-row tracker-row ${d.skips?.veg?'is-skip':''}">${trackerHead('veg',d)}<div class="chip-row">${veg.map(v=>`<button class="pill ${d.food.veg!==null && +d.food.veg===v?'on':''}" data-set-food="veg" data-value="${v}">${v===4?'4+':v}</button>`).join('')}</div></div>
   <div class="actual-row tracker-row ${d.skips?.protein?'is-skip':''}">${trackerHead('protein',d)}<div class="switch-row compact-switch"><span>${d.food.protein===true?'Target met':'Mark when met'}</span><button class="toggle ${d.food.protein===true?'on':''}" data-toggle-food="protein" aria-label="Protein"></button></div></div>
   <div class="actual-row tracker-row ${d.skips?.fruit?'is-skip':''}">${trackerHead('fruit',d)}<div class="chip-row">${fruit.map(v=>`<button class="pill ${d.food.fruit!==null && +d.food.fruit===v?'on':''}" data-set-food="fruit" data-value="${v}">${v===3?'3+':v}</button>`).join('')}</div></div>
@@ -934,6 +997,7 @@ const CHART_OTHER=[['period','Period'],['travel','Travel'],['party','Party'],['v
 function weightPointContext(weightDate){
   const prevDate=addDays(weightDate,-1);
   const prev=readDay(prevDate), same=readDay(weightDate), settings=db.chartSettings;
+  const meal=mealSummary(prev);
   const events=prev.events.map(eventId);
   const eatingOut=events.includes('eating_out');
   const alcohol=prev.alcohol==null?null:+prev.alcohol;
@@ -965,7 +1029,7 @@ function weightPointContext(weightDate){
     if(exercise.length)prevDetails.push(exercise.join(' · '));
   }
   // Sleep is logged on the weigh-in morning, not on the previous calendar day.
-  return {prevDate,eatingOut,alcohol,hadSnacks,moreThanIntended,hunger,steps,cardio,strength,sleep,exerciseNotable,sleepNotable,prevDetails,
+  return {prevDate,eatingOut,alcohol,hadSnacks,moreThanIntended,hunger,steps,cardio,strength,sleep,exerciseNotable,sleepNotable,prevDetails,meal,
     markers:{food:foodMatch,hunger:hunger!=null&&hunger>=settings.hungerMin,exercise:exerciseMatch,other:otherMatch}};
 }
 function contextMarkersSvg(d,x,markerTop,rowGap){
@@ -980,9 +1044,10 @@ function contextLegendHtml(){
 
 function renderChart(data,forecast){
   if(!data.length) return `<div class="empty">No weigh-ins yet. When you log your weight, it will appear here, even before the goal starts.</div>`;
-  const W=340,H=264,L=48,R=16,Tp=24,labelBand=26,axisGap=10,markerRows=Math.max(1,db.chartSettings.categories.length),markerRowGap=9,markerBand=markerRows*markerRowGap;
+  const W=340,H=278,L=48,R=16,Tp=24,labelBand=26,axisGap=10,calorieBand=16,markerRows=Math.max(1,db.chartSettings.categories.length),markerRowGap=9,markerBand=markerRows*markerRowGap;
   const axisY=H-labelBand-axisGap;
-  const markerTop=axisY-markerBand+2;
+  const calorieBaseY=axisY-3;
+  const markerTop=axisY-markerBand-calorieBand+2;
   const plotBottom=markerTop-6;
   const last=data[data.length-1], lastDate=last.date;
   // Extend the x-axis only when the deadline is reached/passed. Future projections
@@ -1029,6 +1094,11 @@ function renderChart(data,forecast){
     return `<rect class="point-hit" data-chart-index="${i}" x="${left.toFixed(1)}" y="${Tp}" width="${Math.max(0,right-left).toFixed(1)}" height="${(axisY-Tp+8).toFixed(1)}" tabindex="0" role="button" aria-label="Show weight for ${fmtDate(d.date)}"></rect>`;
   }).join('');
   const contextMarks=data.map((d,i)=>contextMarkersSvg(d,pointCoords[i].x,markerTop,markerRowGap)).join('');
+  const caloriePoints=data.map((d,i)=>({x:pointCoords[i].x,summary:previousDayMealSummary(d.date),date:d.date}));
+  const calorieBars=caloriePoints.filter(p=>p.summary.total!=null).map(p=>{const h=clamp((p.summary.total/2500)*10,2,10);return `<rect class="calorie-bar ${p.summary.quality||''}" x="${(p.x-1.3).toFixed(1)}" y="${(calorieBaseY-h).toFixed(1)}" width="2.6" height="${h.toFixed(1)}" rx="1.2"></rect>`;}).join('');
+  let lastCalLabelX=Infinity; const calorieLabels=[];
+  for(let i=caloriePoints.length-1;i>=0;i--){const p=caloriePoints[i];if(p.summary.total==null)continue;if(lastCalLabelX-p.x>=28||lastCalLabelX===Infinity){calorieLabels.push(`<text class="calorie-label" x="${p.x.toFixed(1)}" y="${(axisY-5).toFixed(1)}" text-anchor="middle">${(p.summary.total/1000).toFixed(1)}k</text>`);lastCalLabelX=p.x;}}
+  const calorieBandSvg=calorieBars+calorieLabels.join('')+(calorieBars?`<text class="calorie-unit" x="${L-8}" y="${(axisY-5).toFixed(1)}" text-anchor="end">kcal</text>`:'');
 
   // V9.3: restore the V9.1 visual language: one continuous pink trend from
   // goal start, through observed dates, and then toward the visible horizon.
@@ -1058,16 +1128,17 @@ function renderChart(data,forecast){
   // Mention sleep only when the user has actually enabled short sleep in Other.
   const showSleepNote=db.chartSettings.categories.includes('other')&&db.chartSettings.other.includes('short_sleep');
   const sleepNote=showSleepNote?'<br>Short sleep uses the sleep logged on the same morning.':'';
-  const info=`<div class="chart-context-row">${contextLegendHtml()}<details class="chart-info-wrap"><summary aria-label="About chart markers" title="About chart markers">ⓘ</summary><div class="chart-info-popover"><b>About the dots</b><br>Dots show selected logs from the previous day. They are context, not proven causes.${sleepNote}</div></details></div>`;
+  const info=`<div class="chart-context-row">${contextLegendHtml()}<details class="chart-info-wrap"><summary aria-label="About chart markers" title="About chart markers">ⓘ</summary><div class="chart-info-popover"><b>About the dots</b><br>Dots show selected logs from the previous day. Calories also use the previous day's total. They are context, not proven causes.${sleepNote}</div></details></div>`;
   const singlePointNote=data.length===1?'<div class="pre-goal-caption">One weigh-in is shown. A projection needs at least two spaced readings.</div>':'';
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Weight chart. Muted line indicates pre-goal history. Pink dashed line is a trend estimate. Goal start and end are marked. Tap a weigh-in for its logs"><text x="4" y="13" class="axis-unit">kg</text>${grid}<line class="axis" x1="${L}" y1="${Tp}" x2="${L}" y2="${axisY}"/><line class="axis" x1="${L}" y1="${axisY}" x2="${W-R}" y2="${axisY}"/><line class="goal" x1="${L}" y1="${goalY}" x2="${W-R}" y2="${goalY}"/><line id="chartGuide" class="guide" x1="${guideX}" y1="${Tp}" x2="${guideX}" y2="${axisY}"/>${projectionPath}${goalStartMark}${goalDateMark}<path class="pre-goal-actual" d="${earlierPath}"/><path class="pre-goal-bridge" d="${bridgePath}"/><path class="actual" d="${actualPath}"/>${contextMarks}${points}${hitBands}${xLabels}</svg>${info}${singlePointNote}<div id="chartTip" class="tooltip" aria-live="polite">${chartTipHtml(last)}</div>`;
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Weight chart. Muted line indicates pre-goal history. Pink dashed line is a trend estimate. Goal start and end are marked. Tap a weigh-in for its logs"><text x="4" y="13" class="axis-unit">kg</text>${grid}<line class="axis" x1="${L}" y1="${Tp}" x2="${L}" y2="${axisY}"/><line class="axis" x1="${L}" y1="${axisY}" x2="${W-R}" y2="${axisY}"/><line class="goal" x1="${L}" y1="${goalY}" x2="${W-R}" y2="${goalY}"/><line id="chartGuide" class="guide" x1="${guideX}" y1="${Tp}" x2="${guideX}" y2="${axisY}"/>${projectionPath}${goalStartMark}${goalDateMark}<path class="pre-goal-actual" d="${earlierPath}"/><path class="pre-goal-bridge" d="${bridgePath}"/><path class="actual" d="${actualPath}"/>${contextMarks}${calorieBandSvg}${points}${hitBands}${xLabels}</svg>${info}${singlePointNote}<div id="chartTip" class="tooltip" aria-live="polite">${chartTipHtml(last)}</div>`;
 }
 function chartTipHtml(d){
   if(!d) return '';
   const c=weightPointContext(d.date);
+  const calorieContext=c.meal?.total!=null?`<span class="tip-context-inline calorie-tip">· ${fmtShortDate(c.prevDate)} · ${c.meal.total.toLocaleString()} kcal${c.meal.quality?` · ${mealQualityLabel(c.meal.quality)}`:''}</span>`:'';
   const context=c.prevDetails.length?`<span class="tip-context-inline">· ${fmtShortDate(c.prevDate)} logs · ${escapeHtml(c.prevDetails.join(' · '))}</span>`:'';
   const sleepContext=c.sleepNotable?`<span class="tip-context-inline">· Last night sleep ${fmt(c.sleep)}h</span>`:'';
-  return `<b>${fmtShortDate(d.date)}${d.date<db.goal.start?' · Before Goal':''}</b><span>${fmt(d.weight)} kg</span>${context}${sleepContext}`;
+  return `<b>${fmtShortDate(d.date)}${d.date<db.goal.start?' · Before Goal':''}</b><span>${fmt(d.weight)} kg</span>${calorieContext}${context}${sleepContext}`;
 }
 function weeklyTargetFor(g,id){
   const p=planForGoal(g);
@@ -1447,10 +1518,12 @@ function goalReviewPack(g){
   for(let s=g.start;s<=through;s=addDays(s,1)){
     const rec=day(s);
     const foodValues=Object.values(rec.food||{}).some(v=>v!==null&&v!==false&&v!=='');
+    const meal=mealSummary(rec);
+    const mealValues=meal.total!=null||meal.quality!=null||meal.rows.some(r=>r.quality!=null);
     const exerciseValues=Object.values(rec.move||{}).some(v=>v!==null&&v!==false&&v!=='');
-    const hasData=rec.weight!=null || rec.sleep!=null || rec.alcohol!=null || foodValues || exerciseValues || Object.values(rec.skips||{}).some(Boolean) || rec.events.length || rec.note;
+    const hasData=rec.weight!=null || rec.sleep!=null || rec.alcohol!=null || foodValues || mealValues || exerciseValues || Object.values(rec.skips||{}).some(Boolean) || rec.events.length || rec.note;
     if(!hasData) continue;
-    records.push({date:s,weight:rec.weight,sevenDayAverage:goalAverageFor(g,s),lastNightSleepHours:rec.sleep,alcohol:rec.alcohol==null?null:(+rec.alcohol>=2?'2+':+rec.alcohol===1?'1':'none'),food:{veg:rec.food.veg,protein:rec.food.protein,fruit:rec.food.fruit,noSnack:rec.food.noSnack,moreThanIntended:rec.food.moreThanIntended,legacyNoFoodAfterCutoff:rec.food.stop6,waterLiters:rec.food.water,bedtimeHunger:rec.food.bedtimeHunger},exercise:{...rec.move},skipOrNA:{...rec.skips},lifeEvents:rec.events.map(eventLabel),note:rec.note||''});
+    records.push({date:s,weight:rec.weight,sevenDayAverage:goalAverageFor(g,s),lastNightSleepHours:rec.sleep,alcohol:rec.alcohol==null?null:(+rec.alcohol>=2?'2+':+rec.alcohol===1?'1':'none'),food:{veg:rec.food.veg,protein:rec.food.protein,fruit:rec.food.fruit,noSnack:rec.food.noSnack,moreThanIntended:rec.food.moreThanIntended,legacyNoFoodAfterCutoff:rec.food.stop6,waterLiters:rec.food.water,bedtimeHunger:rec.food.bedtimeHunger},meals:Object.fromEntries(meal.rows.map(r=>[r.id,{estimatedCalories:r.kcal,quality:r.quality}])),dailyEstimatedCalories:meal.total,dailyDietQuality:meal.quality,exercise:{...rec.move},skipOrNA:{...rec.skips},lifeEvents:rec.events.map(eventLabel),note:rec.note||''});
   }
   const endWeight=active ? latestWeight(through)?.weight??null : g.endWeight??null;
   const startWeight=active ? activeGoalStartWeight() : +g.startWeight;
@@ -1473,6 +1546,7 @@ function goalReviewPack(g){
         'Review Goal-role trackers as adherence only if logged and eligible. Bonus is optional and must never be labeled a failure; Track-only and weight are contextual rather than adherence metrics.',
         'Correct timing: weight on date D is a morning weigh-in. Eating out, alcohol, Snacks (food.noSnack is explicitly false), hunger, exercise, and events from D-1 are chart context for D. Never explain D with an event later on D.',
         'No snacks=true means NO snacks, noSnack=false means Had snacks; null/unlogged/N/A are unknown or excluded, not proof of either outcome. Eating out does not automatically mean eating more.',
+        'Meal calories are user-entered estimates, not laboratory measurements. Use them for broad patterns and comparisons, not false precision. Healthy/Mixed/Unhealthy is a qualitative meal label; dailyDietQuality is Tide’s automatic daily roll-up.',
         'Bedtime hunger 1=low and 5=very hungry. Do not praise high hunger, restrictive behavior or excessive exercise; prioritize sustainable practices.',
         'If this export includes sleep data, lastNightSleepHours on D is the night immediately before morning D. If not logged or irrelevant, do not discuss sleep.',
         'Period and other events are optional context. Note repeated associations as tentative, never claim a single event caused next-day weight change.',
@@ -1480,7 +1554,7 @@ function goalReviewPack(g){
       ],
       inTide:'Open Goals → Goal Review → Add new review. Use Import review JSON if you saved the generated file, or paste the generated JSON, Preview review, then Save Review. Do not import the original goal-data export as a completed review.'
     },
-    tideGoalReviewVersion:6,
+    tideGoalReviewVersion:7,
     goalId:g.id,
     exportedAt:new Date().toISOString(),
     goal:{name:g.name,start:g.start,end:g.end,startWeight,targetWeight:+g.target,currentOrEndWeight:endWeight,status:active?'active':goalStatus(g,endWeight),focus:g.focus||'both'},
@@ -1495,12 +1569,15 @@ function goalReviewPack(g){
       alcohol:{values:'none / 1 / 2+',meaning:'Alcohol consumed on that calendar day.'},
       snacks:{source:'food.noSnack === false, not marked N/A',meaning:'Shows a Diet marker on the next morning weigh-in after an explicitly logged Had snacks day. True, N/A, or missing never creates a Snacks marker. No duplicate event.'},
       moreThanIntended:{source:'food.moreThanIntended === true',meaning:'Self-reported quantity context: the user felt they ate more than intended. false means About right; null means Not logged. This is not automatically a Goal failure.'},
+      meals:{meaning:'Breakfast, Lunch, Dinner and Other can each contain estimatedCalories and quality (healthy/mixed/unhealthy). No food description is stored.'},
+      dailyEstimatedCalories:{meaning:'Sum of the calorie estimates entered for that calendar day. Missing meals are not assumed to be zero.'},
+      dailyDietQuality:{meaning:'Automatic roll-up of logged meal quality. Two or more Unhealthy meals = Unhealthy; one Unhealthy or any Mixed = Mixed; all logged qualities Healthy = Healthy.'},
       sevenDayAverage:{meaning:'Calendar-based 7-day weight average used for trend context, not adherence.'},
       period:{meaning:'Period is a life-event context tag, not an adherence metric.'}
     },
     timingGuide:{
       morningWeight:'Weight is recorded in the morning.',
-      previousDayContext:'Selected logs for eating out, alcohol, snacks (Had snacks), bedtime hunger, exercise and events on D-1 appear below morning weight D. Sleep from the night D-1 to D belongs to morning D. These are context, not causes.',
+      previousDayContext:'Selected logs for eating out, alcohol, snacks (Had snacks), bedtime hunger, exercise, events and dailyEstimatedCalories on D-1 align with morning weight D. Sleep from the night D-1 to D belongs to morning D. These are context, not causes.',
       sleepAlignment:'lastNightSleepHours on date D refers to the sleep during D-1 → D, immediately before that morning weight.',
       interpretation:'Context may help explain patterns but is not proof of causation. Prefer repeated or multi-day patterns over one-day explanations.'
     },
@@ -1851,6 +1928,8 @@ function bind(){
   document.querySelectorAll('[data-toggle-food]').forEach(b=>b.addEventListener('click',()=>toggleFood(b.dataset.toggleFood)));
   document.querySelectorAll('[data-no-snack]').forEach(b=>b.addEventListener('click',()=>setNoSnack(b.dataset.noSnack)));
   document.querySelectorAll('[data-more-than]').forEach(b=>b.addEventListener('click',()=>setMoreThanIntended(b.dataset.moreThan)));
+  document.querySelectorAll('[data-meal-quality]').forEach(b=>b.addEventListener('click',()=>setMealQuality(b.dataset.mealQuality,b.dataset.quality)));
+  document.querySelectorAll('[data-meal-kcal]').forEach(el=>el.addEventListener('input',()=>{const d=day(view==='day'?selected:today());const meal=d.meals[el.dataset.mealKcal];if(meal){const v=el.value===''?null:+el.value;meal.kcal=Number.isFinite(v)?Math.max(0,v):null;persist();refreshMealTotal();}}));
   document.querySelectorAll('[data-toggle-move]').forEach(b=>b.addEventListener('click',()=>toggleMove(b.dataset.toggleMove)));
   document.querySelectorAll('[data-toggle-skip]').forEach(b=>b.addEventListener('click',()=>toggleSkip(b.dataset.toggleSkip)));
   document.querySelectorAll('[data-tracker-role]').forEach(b=>b.addEventListener('click',()=>setTrackerRole(b.dataset.trackerRole,b.dataset.role)));

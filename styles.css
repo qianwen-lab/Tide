@@ -772,3 +772,17 @@ input:focus,select:focus,textarea:focus{border-color:var(--lab-mid);box-shadow:0
 .archive-outcome.close{background:#F1E5C7;color:#7B6230}
 @media(max-width:350px){.progress-weight-summary{font-size:11px;gap:5px}.archive-outcome.close{font-size:9.5px}}
 @media(max-width:390px){.archived-goal-head{flex-wrap:wrap}.archived-goal-head .archive-outcome{margin-left:0}}
+
+
+/* V9.5 — meal calories + direct diet-quality logging. */
+.meal-log{margin-bottom:2px}.meal-log-head{align-items:flex-start;margin-bottom:7px}
+.meal-row{display:grid;grid-template-columns:64px 78px minmax(0,1fr);align-items:center;gap:7px;padding:7px 0;border-top:1px solid rgba(64,88,74,.08)}
+.meal-row:first-of-type{border-top:0}.meal-name{font-size:12px;font-weight:720;color:var(--lab-text)}
+.meal-kcal{display:flex;align-items:center;gap:3px;margin:0}.meal-kcal input{width:52px;min-width:0;padding:7px 5px;text-align:right;font-size:13px}.meal-kcal span{font-size:9px;color:var(--muted)}
+.meal-quality{display:flex;justify-content:flex-end;gap:4px;min-width:0}.quality-chip{border:1px solid var(--lab-border);background:transparent;color:var(--muted);border-radius:999px;padding:5px 6px;font-size:8.5px;line-height:1;font-weight:720;white-space:nowrap}
+.quality-chip.healthy.on{background:#DCE9DE;border-color:#C8DCCB;color:#365744}.quality-chip.mixed.on{background:#F1E5C7;border-color:#E6D6AE;color:#7B6230}.quality-chip.unhealthy.on{background:#F1D6DA;border-color:#E8BEC6;color:#8C5260}
+.meal-total{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding-top:9px;margin-top:2px;border-top:1px solid rgba(64,88,74,.10);font-size:11px;color:var(--muted)}.meal-total b{font-size:13px;color:var(--lab-text);font-weight:760}.meal-total em{font-style:normal}.diet-quality.healthy{color:#365744}.diet-quality.mixed{color:#7B6230}.diet-quality.unhealthy{color:#8C5260}
+.chart .calorie-bar{fill:#B8ADA4;opacity:.66;pointer-events:none}.chart .calorie-label{fill:#756C66;font-size:6.6px;font-weight:650;pointer-events:none}.chart .calorie-unit{fill:#8B847E;font-size:6.4px;pointer-events:none}.calorie-tip{font-weight:650}
+@media(max-width:370px){.meal-row{grid-template-columns:57px 70px minmax(0,1fr);gap:5px}.quality-chip{font-size:7.8px;padding:5px}.meal-kcal input{width:47px}.meal-name{font-size:11px}}
+@media(max-width:330px){.meal-row{grid-template-columns:52px 66px minmax(0,1fr)}.quality-chip{font-size:7.3px;padding:4px}.meal-kcal span{display:none}}
+.chart .calorie-bar.healthy{fill:#6F967A;opacity:.75}.chart .calorie-bar.mixed{fill:#C8A85E;opacity:.72}.chart .calorie-bar.unhealthy{fill:#C98591;opacity:.78}
