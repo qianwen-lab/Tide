@@ -1,68 +1,57 @@
-# Tide Private V9.5 — Meal calories + diet quality
+# Tide Private V9.6 — Trend-first weight management
 
-**Private Tide only; Beta unchanged.** V9.5 adds very low-friction meal calorie estimates and per-meal diet quality while preserving the existing private Tide data, goals, Calendar scoring, Progress forecast and archived goals.
+**Private Tide only; Beta unchanged.** V9.6 deliberately narrows Tide back to weight management: fewer required inputs, stronger trend interpretation, and one new eating-control signal. Legacy calorie/meal data are preserved in backups but are no longer part of the active UI, chart, or Goal Review analysis.
 
 ## Upgrade safely
-1. In your current private Tide, export a JSON backup from Settings before updating.
-2. Unzip this package and upload the eight files flat to the root of the original `Tide` GitHub repository, **not** `Tide-Beta`.
-3. After GitHub Pages deploys, refresh Safari once. Settings should show version `9.5.0`.
+1. Export a JSON backup from the current private Tide first.
+2. Upload the eight files from this package flat to the root of the original `Tide` GitHub repository, not `Tide-Beta`.
+3. After GitHub Pages deploys, refresh Safari once. Settings should show `9.6.0`.
 
-## Calories & diet quality
-- Daily Log now has four fixed rows: **Breakfast, Lunch, Dinner, Other**. Enter only an estimated kcal number; no food description is stored.
-- Each row can be marked **Healthy / Mixed / Unhealthy**. Tapping the selected label again clears it.
-- Tide automatically sums the entered kcal values. Blank meals are unknown, not zero.
-- Daily diet quality is automatic: two or more Unhealthy meals → Unhealthy; one Unhealthy or any Mixed → Mixed; all logged qualities Healthy → Healthy.
-- Progress aligns calorie information to the **next morning weigh-in**: food logged on Nov 6 is shown with the Nov 7 morning weight. A slim kcal band stays inside the chart; exact total and daily quality appear when that weigh-in is selected.
-- Exercise calories are intentionally not tracked or subtracted from food calories; Tide does not show net calories.
-- Goal Review exports now include meal calorie estimates, meal quality, the daily total and the daily roll-up with embedded interpretation instructions.
+## Today: trend first
+- The main weight number is now the recent **7-day average**, with comparison against the previous seven-day window when available.
+- Today’s raw scale weight remains visible and editable, but it is no longer the only headline number.
+- Morning response is intentionally direct. It distinguishes a bad-looking single weigh-in from a genuinely rising trend, and gives stronger feedback when the trend or eating-control pattern is actually worsening.
+- Morning response never treats one higher morning as proof of fat gain and does not recommend compensatory restriction or excessive exercise.
 
-## Morning response tone
-- Morning response is more direct: good progress is explicitly encouraged; a real upward 7-day trend is called out clearly and points back to calories, snacks and activity rather than dismissing it as noise.
-- It still avoids claiming that one higher morning weight proves fat gain.
+## Three core daily signals
+The prominent daily inputs are now:
+- **吃到停不下来** — already intended to stop eating, but continued / felt unable to stop.
+- **吃得比计划多** — overall amount was more than intended, without implying loss of control.
+- **睡前饥饿 1–5** — context for sustainability; high hunger is not success.
 
-## Daily Log: lower friction
-- The current **No food after 6 PM / evening cutoff** tracker is retired from new/current Goal and Daily Log screens. Existing historical cutoff records and dated Calendar scoring revisions are preserved so old Calendar evaluations are not rewritten.
-- New **Amount eaten** context records `About right`, `More than intended`, or `Not logged`. It is context only: it does not automatically count as a Goal failure or adherence failure.
-- **Events & Notes** is moved higher in Daily Log. Event chips save in place instead of rerendering the whole Daily page, so the section stays open while you use it.
-- Diet chart context can include **More than intended** alongside Snacks, Eating out and Alcohol. Existing `No snacks` input remains the source for the Snacks chart signal.
+Tapping a selected Yes/No or hunger value again clears it. Older food trackers (No snacks, vegetables, protein, fruit, water) remain available under **More context** so existing data and optional use are preserved without dominating the daily flow.
 
-## A more responsive Today page
-- **Morning response** is a short Chinese interpretation shown after a weigh-in. It distinguishes a one-day change from a sustained recent trend and avoids treating normal daily movement as a proven cause-and-effect result.
-- **Daily Thought / 今日一想** is separate from weight feedback. It is written in Chinese, stays stable for the day, and rotates through body, mindset, relationships, life and growth rather than focusing only on weight loss.
-- **Recent progress / Small Wins** now looks only at recent data and shows at most a few meaningful items. Old wins no longer linger indefinitely.
-- **Weekly pulse** gives a compact seven-day view of weight trend, no-snacks days, 10K-step days and bedtime-hunger context when those data exist.
+## Calories retired from the active product
+- Breakfast/Lunch/Dinner/Other calorie entry and Healthy/Mixed/Unhealthy meal labels are removed from active screens.
+- The calorie band is removed from Progress.
+- Calories are removed from Goal Review exports and interpretation instructions.
+- Previously recorded `meals` data remain untouched inside the local database / full backup so upgrading does not destroy history.
 
-## Move standard
-- A day counts as **Move** only when it reaches **10,000 steps**, or has at least **20 minutes of Cardio or Strength**.
-- Lower step counts are still recorded and displayed, but do not receive Move completion credit.
+## Progress
+- Progress now shows **Scale** (lighter raw line) and **Trend** (darker 7-day line) at the same time.
+- Existing pre-goal history, Goal start/end markers, Target, and the pink estimate line remain.
+- Context dots still map previous-day logs to the following morning weigh-in; this is context, not proof of causation.
+- `吃到停不下来` and `吃得比计划多` are available as Diet context sources.
+- The target-date card uses an **estimate window** rather than pretending the trend can predict one exact future day.
 
-## Goal editing
-- **Edit Goal** now has **Cancel**. If there are unsaved changes, Tide asks whether to discard them or keep editing. Discard restores the entire edit snapshot, including hidden state affected by tracker-role edits.
-- Goal Start and End date inputs are more compact and sit side-by-side where screen width allows.
-- The retired evening-cutoff tracker is not offered in current Goal editing.
+## Weekly review
+- Separate Recent Wins / Small Wins and Weekly Pulse cards are removed from Today.
+- One weekly review summarizes: recent 7-day average, `吃到停不下来`, `吃得比计划多`, and average bedtime hunger.
+- It provides one concise interpretation and one next action. Repeated loss-of-control eating is prioritized over snacks, minor exercise misses, or cosmetic tracker completion.
+- Progress no longer repeats the old “Weekly behavior” block before the weekly review; detailed Goal tracker history remains available in Goals / Review.
 
-## Past Goal Review
-- Past Goal Review includes a **Final Progress Snapshot** with weight history, Goal boundaries, target and selected context markers.
-- Newly archived goals save a frozen snapshot at archive time. Older archived goals without a saved snapshot reconstruct one from the historical records and label it accordingly.
-- Goal Review export instructions and JSON schema include the new `moreThanIntended` context so an analysis JSON can be imported back into Tide without additional prompt-writing.
+## Goal Review export
+- Export keeps the exact direct-import JSON contract.
+- New `food.uncontrolledEating` is documented as the highest-priority eating-control signal.
+- Review instructions explicitly prohibit compensatory restriction or excessive exercise after an episode.
+- Meal calories and diet-quality fields are no longer exported for analysis.
 
-## Preserved behavior from V9.3.x
-- Progress uses earlier real weigh-ins instead of showing a blank chart at the start of a new Goal.
-- Two suitably spaced readings can produce an explicitly provisional early forecast; the established robust forecast remains for richer histories.
-- Previous-day context mapping, including Snacks, remains attached to the following morning weigh-in.
-- Calendar scoring uses dated rule revisions so later Goal edits do not retroactively rewrite prior-day evaluations.
+## Preserved behavior
+- Existing data use the same `tide.v1` storage key and migrate forward; no historical field is deleted.
+- Calendar rule history remains dated so later Goal edits do not rewrite older Calendar evaluations.
+- Earlier weigh-ins can support a new Goal’s chart/forecast without being counted as current-Goal adherence.
+- Forecast robust-estimation logic is preserved; only the target-date presentation becomes a range.
+- Archived Goal snapshots, custom events, Events & Notes, Goal Review import, and Edit Goal cancellation remain intact.
 
 ## Package
 Exactly eight flat files: `index.html`, `app.js`, `styles.css`, `manifest.json`, `sw.js`, `icon-192.png`, `icon-512.png`, `README.md`.
-
-
-## V9.4.1 changes
-- Progress deadline card now keeps `By <date>` and `<weight> kg` on one line and removes the redundant `Forecast` word.
-- Removed the visible “Earlier weigh-ins…” caption; historical points remain in the chart.
-- Archived Goals are condensed and always show a clear colored outcome: Goal reached / Goal not reached / No final weight.
-- Removed archived-goal process clutter and percentage bars; detailed history remains in Review.
-
-## V9.4.2 changes
-- Progress header shows Weight and Target together on one compact line.
-- Archived Goals add a warm `Close to goal` state when the final weight is within 0.5 kg of target but does not meet the reached threshold.
-- The close state shows the remaining distance in kg.

@@ -1,6 +1,6 @@
 const STORAGE_KEY = 'tide.v1';
-const VERSION = '9.5.0';
-const SCHEMA_VERSION = 16; // Add meal calorie + quality logging while preserving all earlier Tide data.
+const VERSION = '9.6.0';
+const SCHEMA_VERSION = 17; // Weight-management reset: eating-control signal + trend-first UI; preserve legacy fields/data.
 
 const COLORS = { sage:'#5E836F', sageDeep:'#244C3E', pink:'#C98994', pinkSoft:'#EBCFD4', blue:'#8C918D', ink:'#1F2823' };
 const iso = d => {
@@ -243,7 +243,7 @@ const defaults = {
   days:{},
   calendarRuleHistory:[], // Dated rule revisions preserve past Calendar evaluations.
   customEvents:[],
-  chartSettings:{categories:['food','hunger'],food:['eating_out','alcohol','snacks','more_than_intended'],exercise:['steps','cardio','strength'],other:['period','travel','party','vacation','poor_sleep','sick','short_sleep'],custom:[],hungerMin:4},
+  chartSettings:{categories:['food','hunger'],food:['eating_out','alcohol','snacks','more_than_intended','uncontrolled_eating'],exercise:['steps','cardio','strength'],other:['period','travel','party','vacation','poor_sleep','sick','short_sleep'],custom:[],hungerMin:4},
   plan:{veg:3,fruit:2,noSnack:true,stop:null,satiety:7,water:2,stepsTarget:10000,stepsDays:5,stretchDays:5,cardio:90,strength:60,strengthSessions:2},
   goals:[]
 };
@@ -281,7 +281,7 @@ function mergeDay(x={}){
       steps:x.customPlan?.steps??null, stretch:x.customPlan?.stretch??null, cardio:x.customPlan?.cardio??null, strength:x.customPlan?.strength??null
     },
     plannedMove:{steps:x.plannedMove?.steps??null,stretch:x.plannedMove?.stretch??null,cardio:x.plannedMove?.cardio??null,strength:x.plannedMove?.strength??null},
-    food:{veg:x.food?.veg??null,protein:x.food?.protein??null,fruit:x.food?.fruit??null,noSnack:x.food?.noSnack??null,moreThanIntended:x.food?.moreThanIntended??null,stop6:x.food?.stop6??null,water:x.food?.water??null,bedtimeHunger:x.food?.bedtimeHunger??null,satiety:x.food?.satiety??null},
+    food:{veg:x.food?.veg??null,protein:x.food?.protein??null,fruit:x.food?.fruit??null,noSnack:x.food?.noSnack??null,moreThanIntended:x.food?.moreThanIntended??null,uncontrolledEating:x.food?.uncontrolledEating??null,stop6:x.food?.stop6??null,water:x.food?.water??null,bedtimeHunger:x.food?.bedtimeHunger??null,satiety:x.food?.satiety??null},
     meals:Object.fromEntries(MEAL_DEFS.map(m=>[m.id,normalizeMeal(x.meals?.[m.id])])),
     skips:(x.skips&&typeof x.skips==='object')?{...x.skips}:{},
     move:{steps:x.move?.steps??null,stretch:x.move?.stretch??null,cardio:x.move?.cardio??null,strength:x.move?.strength??null},
@@ -329,8 +329,9 @@ function migrate(raw){
   // V9.2 restores the intended 'Snacks = ate snacks' source. Preserve selections
   // made in V9.1 ('no_snacks') and older V9.0 ('snacks') without changing logs.
   const foodSources=Array.isArray(cs.food)?cs.food.map(x=>x==='no_snacks'?'snacks':x):null;
-  out.chartSettings={categories:groups,food:opts(foodSources,['eating_out','alcohol','snacks','more_than_intended'],defaults.chartSettings.food),exercise:opts(cs.exercise,['steps','cardio','strength'],defaults.chartSettings.exercise),other:opts(cs.other,['period','travel','party','vacation','poor_sleep','sick','short_sleep'],defaults.chartSettings.other),custom:opts(cs.custom,activeCustom,[]),hungerMin:[3,4,5].includes(+cs.hungerMin)?+cs.hungerMin:4};
+  out.chartSettings={categories:groups,food:opts(foodSources,['eating_out','alcohol','snacks','more_than_intended','uncontrolled_eating'],defaults.chartSettings.food),exercise:opts(cs.exercise,['steps','cardio','strength'],defaults.chartSettings.exercise),other:opts(cs.other,['period','travel','party','vacation','poor_sleep','sick','short_sleep'],defaults.chartSettings.other),custom:opts(cs.custom,activeCustom,[]),hungerMin:[3,4,5].includes(+cs.hungerMin)?+cs.hungerMin:4};
   if(previousSchema<15 && !out.chartSettings.food.includes('more_than_intended')) out.chartSettings.food.push('more_than_intended');
+  if(previousSchema<17 && !out.chartSettings.food.includes('uncontrolled_eating')) out.chartSettings.food.push('uncontrolled_eating');
   // V9.4 retires the eating-cutoff tracker for new/current use without rewriting
   // any historical day or historical Calendar evaluation. The old rule remains
   // available inside dated rule snapshots and archived goals.
@@ -533,39 +534,27 @@ function plannedMoveControls(d){
 function morningResponse(){
   const d=readDay(today());
   if(d.weight==null) return '';
-  const weights=latestWeights(today());
-  const idx=weights.findIndex(x=>x.date===today());
-  const prev=idx>0?weights[idx-1]:null;
-  const current=+d.weight;
-  const avgNow=movingAverage(today());
-  const avgWeekAgo=movingAverage(addDays(today(),-7));
+  const weights=latestWeights(today()), idx=weights.findIndex(x=>x.date===today()), prev=idx>0?weights[idx-1]:null;
+  const current=+d.weight, avgNow=movingAverage(today()), avgWeekAgo=movingAverage(addDays(today(),-7));
   const trend=(avgNow!=null&&avgWeekAgo!=null)?avgNow-avgWeekAgo:null;
-  const change=prev?current-(+prev.weight):null;
-  const changeText=change==null?'':`${Math.abs(change).toFixed(1)} kg`;
-  const yesterday=previousDayMealSummary(today());
-  const foodCue=yesterday.total!=null?` 昨天记录了约 ${yesterday.total.toLocaleString()} kcal${yesterday.quality?`，整体是 ${mealQualityLabel(yesterday.quality)}`:''}。`:'';
-  if(change!=null && change<=-.2 && trend!=null && trend<=-.1){
-    return `今天比上一次轻了 ${changeText}，7 日平均也比一周前低了 ${Math.abs(trend).toFixed(1)} kg。很好，这才是值得高兴的下降：今天的数字和短期趋势在同一个方向。${foodCue}别因为今天漂亮就乱改计划，把最近做对的事情继续复制。`;
-  }
-  if(change!=null && change<=-.2){
-    return `今天轻了 ${changeText}，这个数字值得开心。${foodCue}但真正有价值的是把这次下降留下来：今天照常把 Diet 和活动量做好，不要因为一个好数字就放松，也不要为了追更低的数字突然收得更紧。`;
-  }
-  if(change!=null && change>=.3 && trend!=null && trend>=.15){
-    return `今天又高了 ${changeText}，而且 7 日平均已经比一周前高 ${trend.toFixed(1)} kg。这个方向不对。前面好不容易减下来的进度，不值得一点点还回去。${foodCue}别再把连续上涨都归成波动：今天把 calories、snacks 和活动量看清楚，找出最明显的问题，马上把执行拉回来。`;
-  }
-  if(change!=null && change>=.3 && trend!=null && trend<=-.1){
-    return `今天高了 ${changeText}，数字不好看就是不好看。好在 7 日平均仍然比一周前低 ${Math.abs(trend).toFixed(1)} kg，说明前面的进度还在。${foodCue}今天别补偿、也别摆烂，把该做的事情做扎实，不要让一次上涨变成连续上涨。`;
+  const change=prev?current-(+prev.weight):null, changeText=change==null?'':`${Math.abs(change).toFixed(1)} kg`;
+  const y=readDay(addDays(today(),-1));
+  const recent=recentWindow(7,addDays(today(),-1));
+  const lossDays=recent.filter(r=>r.food.uncontrolledEating===true).length;
+  const moreDays=recent.filter(r=>r.food.moreThanIntended===true).length;
+  const cue=y.food.uncontrolledEating===true?'昨天有一次「吃到停不下来」。':y.food.moreThanIntended===true?'昨天吃得比计划多。':(+y.food.bedtimeHunger||0)>=4?`昨晚睡前饥饿 ${y.food.bedtimeHunger}/5。`:'';
+  if(trend!=null && trend>=.15){
+    if(lossDays>=2) return `7 日平均已经比一周前高 ${trend.toFixed(1)} kg，而且最近 7 天有 ${lossDays} 天吃到停不下来。这个方向不对，别再把重点放在某一个早晨的波动上：真正的问题是同一个进食 pattern 在重复。${cue?` ${cue}`:''} 今天不要靠挨饿或加倍运动补偿，先把下一次“已经想停却又继续吃”的那个时刻截断。`;
+    return `7 日平均已经比一周前高 ${trend.toFixed(1)} kg。这不是一个早晨的噪音了，前面好不容易压下来的趋势正在被还回去。${cue?` ${cue}`:''} 最近 7 天有 ${moreDays} 天吃得比计划多；找最明显的一件事今天就收回来，但不要用极端少吃补偿。`;
   }
   if(change!=null && change>=.3){
-    return `今天高了 ${changeText}。这不是你想看到的结果。${foodCue}单日上涨不等于脂肪真的长回来了，但也别用“只是波动”把它完全放过去。回看昨天的 calories、snacks 和活动量，今天把执行做好，别让这个方向继续。`;
+    if(trend!=null&&trend<=-.1) return `今天高了 ${changeText}，数字不好看就是不好看；但 7 日平均仍比一周前低 ${Math.abs(trend).toFixed(1)} kg，所以还不能说“又胖回去了”。${cue?` ${cue}`:''} 今天别摆烂，也别惩罚自己，把吃饭的边界守住，不要让一次上涨变成连续上涨。`;
+    return `今天高了 ${changeText}。这不是你想看到的数字，也不用假装无所谓。${cue?` ${cue}`:''} 单日上涨还不能证明脂肪真的回来了，但今天要把进食边界做清楚：吃完就结束，别让“再吃一点”把一个早晨变成一串坏趋势。`;
   }
-  if(trend!=null && trend<=-.1){
-    return `今天变化不大，但 7 日平均比一周前低了 ${Math.abs(trend).toFixed(1)} kg。很好，真正的进展正在趋势里，而不是靠某一个特别低的数字。${foodCue}继续把最近有效的节奏复制下去。`;
-  }
-  if(trend!=null && trend>=.15){
-    return `今天本身变化不大，但 7 日平均已经比一周前高 ${trend.toFixed(1)} kg。别忽略这个信号：趋势正在往错误的方向走。${foodCue}现在就回看最近几天的 calories、snacks 和活动量，找出最明显的偏差，今天开始纠正。`;
-  }
-  return `今天的数字没有明显突破最近的区间。${foodCue}这不是“什么都不用管”，而是暂时没有理由乱改计划。把今天该做的事情做完整，让接下来的几天给出更清楚的方向。`;
+  if(change!=null && change<=-.2 && trend!=null && trend<=-.1) return `今天轻了 ${changeText}，而且 7 日平均也比一周前低 ${Math.abs(trend).toFixed(1)} kg。这个下降是真的值得高兴：单日数字和趋势在同一个方向。别因为有效就把计划收得更狠，把最近能持续的节奏继续复制。`;
+  if(change!=null && change<=-.2) return `今天轻了 ${changeText}，可以高兴一下。现在最重要的不是趁机再少吃，而是让这个数字有机会变成趋势：把今天正常地过好，尤其别在晚上因为“今天已经很好”就把边界放掉。`;
+  if(trend!=null&&trend<=-.1) return `今天变化不大，但 7 日平均已经比一周前低 ${Math.abs(trend).toFixed(1)} kg。真正的进展在趋势里。现在这套节奏在起作用，别为了追更快的下降去制造更强的饥饿或更难维持的规则。`;
+  return `7 日趋势现在基本没动。别等它自己变好，也不用再加一堆规则。最近 7 天吃到停不下来 ${lossDays} 天、吃得比计划多 ${moreDays} 天；如果其中一个在重复，那就是这周最值得处理的地方。`;
 }
 function morningResponseBlock(){
   const text=morningResponse();
@@ -576,50 +565,29 @@ function recentWindow(days=7, through=today()){
   const rows=[]; for(let d=from;d<=through;d=addDays(d,1)) rows.push(readDay(d));
   return rows;
 }
-function recentWins(){
-  const rows=recentWindow(14), last7=rows.slice(-7), wins=[];
-  const recentWeights=last7.filter(d=>d.weight!=null);
-  const previous7=rows.slice(0,7).filter(d=>d.weight!=null);
-  if(recentWeights.length>=3 && previous7.length>=3){
-    const a=avg(recentWeights.map(d=>+d.weight)), b=avg(previous7.map(d=>+d.weight));
-    if(a!=null&&b!=null&&a<=b-.15) wins.push(`最近 7 天的平均体重比前一周低了 ${(b-a).toFixed(1)} kg。`);
-  }
-  const snackLogged=last7.filter(d=>d.food.noSnack!=null&&!d.skips?.noSnack);
-  const noSnack=snackLogged.filter(d=>d.food.noSnack===true).length;
-  if(snackLogged.length>=4 && noSnack>=4) wins.push(`过去 7 天，有记录的 ${snackLogged.length} 天里 ${noSnack} 天没有吃零食。`);
-  const steps10=last7.filter(d=>(+d.move.steps||0)>=10000).length;
-  if(steps10>=2) wins.push(`过去 7 天有 ${steps10} 天走到 10K+ 步。`);
-  const workouts=last7.filter(d=>(+d.move.cardio||0)>=20 || (+d.move.strength||0)>=20).length;
-  if(workouts>=2) wins.push(`过去 7 天完成了 ${workouts} 天至少 20 分钟的 Cardio / Strength。`);
-  const amountLogged=last7.filter(d=>d.food.moreThanIntended!=null);
-  const aboutRight=amountLogged.filter(d=>d.food.moreThanIntended===false).length;
-  if(amountLogged.length>=4 && aboutRight>=4) wins.push(`过去 7 天，有记录的 ${amountLogged.length} 天里 ${aboutRight} 天的进食量在自己原本想要的范围内。`);
-  const weighCount=last7.filter(d=>d.weight!=null).length;
-  if(weighCount>=5) wins.push(`这一周已经有 ${weighCount} 次晨间称重，趋势判断会比单日数字可靠得多。`);
-  return wins.slice(0,3);
+function weeklyReviewData(){
+  const current=recentWindow(7), previous=recentWindow(7,addDays(today(),-7));
+  const curWeights=current.filter(d=>d.weight!=null).map(d=>+d.weight), prevWeights=previous.filter(d=>d.weight!=null).map(d=>+d.weight);
+  const curAvg=curWeights.length?avg(curWeights):null, prevAvg=prevWeights.length?avg(prevWeights):null, delta=(curAvg!=null&&prevAvg!=null)?curAvg-prevAvg:null;
+  const uncontrolled=current.filter(d=>d.food.uncontrolledEating===true).length;
+  const uncontrolledLogged=current.filter(d=>d.food.uncontrolledEating!==null).length;
+  const more=current.filter(d=>d.food.moreThanIntended===true).length;
+  const moreLogged=current.filter(d=>d.food.moreThanIntended!==null).length;
+  const hunger=current.map(d=>d.food.bedtimeHunger).filter(v=>v!=null).map(Number);
+  const steps10=current.filter(d=>(+d.move.steps||0)>=10000).length;
+  let interpretation='这周的数据还不够完整。先把三个核心 signal 记下来，别急着增加新的规则。';
+  let next='把「吃到停不下来 / 吃得比计划多 / 睡前饥饿」连续记录完整。';
+  if(delta!=null&&delta<=-.15&&uncontrolledLogged>=4&&uncontrolled<=1){interpretation=`7 日平均比前一周低 ${Math.abs(delta).toFixed(1)} kg，而且有记录的 ${uncontrolledLogged} 天里，吃到停不下来${uncontrolled===0?'没有出现':`只有 ${uncontrolled} 天`}。现在这套节奏有效，不需要进一步收紧。`;next='复制这一周，不要因为有效就加码。';}
+  else if(delta!=null&&delta<=-.15&&uncontrolledLogged<4){interpretation=`7 日平均比前一周低 ${Math.abs(delta).toFixed(1)} kg，这是明确的好方向；但「吃到停不下来」这一项记录还不够完整，所以现在不能判断 eating control 是否也同步改善。`;next='继续现在的节奏，同时把「吃到停不下来」连续记录完整。';}
+  else if(uncontrolled>=2){interpretation=`最近 7 天有 ${uncontrolled} 天吃到停不下来。这个问题比有没有吃零食、有没有多走几千步更值得优先处理${delta!=null?`；体重周平均${delta>0?'还上升了':'变化为'} ${delta>0?'+':''}${delta.toFixed(1)} kg`:''}。`;next='下一周只盯一个动作：已经想停的时候，不再开启下一轮续吃。';}
+  else if(delta!=null&&delta>=.15){interpretation=`7 日平均比前一周高 ${delta.toFixed(1)} kg，趋势已经值得处理。好消息是吃到停不下来没有频繁出现；先看「吃得比计划多」和其他 context，而不是立刻把饮食压得更狠。`;next='找出最近最重复的一个偏差，只改这一件。';}
+  else if(more>=3){interpretation=`体重趋势暂时没有明显恶化，但最近 7 天有 ${more} 天吃得比计划多。这个 signal 已经足够明显，不要等体重连续上涨以后才处理。`;next='把最容易“多吃一点”的那一顿先固定边界。';}
+  return {curAvg,prevAvg,delta,uncontrolled,uncontrolledLogged,more,moreLogged,hungerAvg:hunger.length?avg(hunger):null,steps10,interpretation,next};
 }
-function recentWinsBlock(){
-  const wins=recentWins(); if(!wins.length)return '';
-  return `<section class="card recent-wins"><div class="feedback-label">最近的进展</div>${wins.map(x=>`<div class="win-row"><span>•</span><div>${escapeHtml(x)}</div></div>`).join('')}</section>`;
-}
-function weeklyPulseBlock(){
-  const rows=recentWindow(7), weights=rows.filter(d=>d.weight!=null), snackLogged=rows.filter(d=>d.food.noSnack!=null&&!d.skips?.noSnack);
-  const noSnack=snackLogged.filter(d=>d.food.noSnack===true).length;
-  const steps10=rows.filter(d=>(+d.move.steps||0)>=10000).length;
-  const hungers=rows.map(d=>d.food.bedtimeHunger).filter(v=>v!=null).map(Number);
-  const avgNow=movingAverage(today()), avgAgo=movingAverage(addDays(today(),-7));
-  const trend=(avgNow!=null&&avgAgo!=null)?avgNow-avgAgo:null;
-  const enough=weights.length>=2||snackLogged.length>=3||steps10>=2||hungers.length>=3; if(!enough)return '';
-  const metrics=[];
-  metrics.push(`<div><span>7日趋势</span><b>${trend==null?'—':`${trend>0?'+':''}${trend.toFixed(1)} kg`}</b></div>`);
-  metrics.push(`<div><span>No snacks</span><b>${snackLogged.length?`${noSnack}/${snackLogged.length}`:'—'}</b></div>`);
-  metrics.push(`<div><span>10K+</span><b>${steps10} 天</b></div>`);
-  if(hungers.length) metrics.push(`<div><span>晚间饥饿</span><b>${avg(hungers).toFixed(1)}/5</b></div>`);
-  let note='这周的数据还在积累，先看方向，不急着给自己下结论。';
-  if(trend!=null&&trend<=-.15) note='最明显的是体重趋势在往下。保持能重复的做法，比为了加快速度再增加规则更重要。';
-  else if(steps10>=4) note='这一周活动量比较稳定。10K 是真正达到门槛的天数，低于 10K 的步数仍保留记录，但不会算成 Move day。';
-  else if(snackLogged.length>=4&&noSnack/snackLogged.length>=.75) note='这一周 No snacks 的执行比较稳定。继续观察它和整体进食量，而不是把零食当成唯一的 Diet 指标。';
-  return `<section class="card weekly-pulse"><div class="row between"><div class="feedback-label">最近 7 天</div><span class="small">Weekly pulse</span></div><div class="pulse-grid">${metrics.join('')}</div><div class="pulse-note">${escapeHtml(note)}</div></section>`;
+function weeklyReviewBlock(){
+  const w=weeklyReviewData();
+  const enough=(w.curAvg!=null)||(w.uncontrolledLogged>=3)||(w.moreLogged>=3)||(w.hungerAvg!=null); if(!enough)return '';
+  return `<section class="card weekly-review-card"><div class="row between"><div class="feedback-label">最近 7 天</div><span class="small">Weekly review</span></div><div class="weekly-core-grid"><div><span>7日平均</span><b>${w.curAvg==null?'—':`${fmt(w.curAvg)} kg`}</b><em>${w.delta==null?'':`${w.delta>0?'+':''}${w.delta.toFixed(1)} vs 前7天`}</em></div><div><span>吃到停不下来</span><b>${w.uncontrolledLogged?`${w.uncontrolled}/${w.uncontrolledLogged}`:'—'}</b></div><div><span>吃得比计划多</span><b>${w.moreLogged?`${w.more}/${w.moreLogged}`:'—'}</b></div><div><span>睡前饥饿</span><b>${w.hungerAvg==null?'—':`${w.hungerAvg.toFixed(1)}/5`}</b></div></div><div class="weekly-interpretation">${escapeHtml(w.interpretation)}</div><div class="weekly-next"><b>Next</b> ${escapeHtml(w.next)}</div></section>`;
 }
 
 function icons(name){
@@ -657,6 +625,31 @@ function dailyThoughtBlock(){
   const t=dailyThought||chooseDailyThought();
   return `<section class="daily-thought"><div class="daily-thought-label">今日一想 · ${escapeHtml(t.category)}</div><div class="daily-thought-copy">${escapeHtml(t.text)}</div></section>`;
 }
+
+function trendSummary(){
+  const currentRows=latestWeights(today()).filter(x=>x.date>=addDays(today(),-6));
+  const previousRows=latestWeights(addDays(today(),-7)).filter(x=>x.date>=addDays(today(),-13));
+  const current=currentRows.length?avg(currentRows.map(x=>+x.weight)):null;
+  const previous=previousRows.length?avg(previousRows.map(x=>+x.weight)):null;
+  return {current,previous,delta:(current!=null&&previous!=null)?current-previous:null,currentCount:currentRows.length,previousCount:previousRows.length};
+}
+function trendHeroCard(){
+  const t=trendSummary(), d=readDay(today()), latest=latestWeight(today());
+  const trend=t.current??latest?.weight??null;
+  const delta=t.delta;
+  const deltaText=delta==null?'继续记录，建立趋势':`${delta>0?'+':''}${delta.toFixed(1)} kg vs 前 7 天`;
+  const cls=delta==null?'':delta<=-.1?'down':delta>=.1?'up':'flat';
+  return `<section class="trend-hero"><div class="row between"><div><div class="trend-kicker">7-day trend</div><div class="trend-value">${fmt(trend)} <span>kg</span></div></div><div class="trend-delta ${cls}">${escapeHtml(deltaText)}</div></div><div class="trend-meta"><span>Today <b>${d.weight==null?'—':fmt(d.weight)} kg</b></span><span>Goal <b>${fmt(db.goal.target)} kg</b></span><span>${fmtDate(db.goal.end,'en')}</span></div></section>`;
+}
+function todayCoreSignals(d){
+  const complete=[d.food.uncontrolledEating,d.food.moreThanIntended,d.food.bedtimeHunger].filter(v=>v!==null).length;
+  return `<section class="card core-signals-card"><div class="row between"><div><div class="feedback-label">今晚 · 10 秒</div><div class="small">${complete}/3 logged</div></div></div>${coreEatingControls(d,true)}</section>`;
+}
+function todayEventsEntry(d){
+  const note=String(d.note||'').trim(), count=d.events.length;
+  const state=count||note?`${count?`${count} event${count>1?'s':''}`:''}${count&&note?' · ':''}${note?'有备注':''}`:'添加今天的 context';
+  return `<button class="events-today-entry" data-action="editToday"><div><b>Events & Notes</b><span>${escapeHtml(state)}</span></div><span>›</span></button>`;
+}
 function endGoalPage(){
   return `${topbar('End Goal','',`<button class="btn ghost" data-action="backToday">Done</button>`)}
     <div class="end-goal-date">December 31, 2026</div>
@@ -666,40 +659,22 @@ function endGoalPage(){
 }
 
 function todayPage(){
-  const d=day(today()), lw=latestWeight(today());
-  const startW=activeGoalStartWeight(), current=lw?.weight??startW, progress=goalProgress(current);
-  const food=foodStatus(d), move=moveStatus(d), events=d.events.length;
-  const remaining=Math.max(0,(+current)-(+db.goal.target));
-  const daysLeft=Math.max(0,Math.ceil((parseDate(db.goal.end)-parseDate(today()))/86400000));
-  const foodDone=food.calendarPass, moveDone=move.calendarPass, lifeDone=events>0;
+  const d=day(today());
   return `${topbar(`Today · ${fmtDate(today(),'en')}`)}
   ${flashHtml()}
-  ${dailyThoughtBlock()}
-  ${endGoalTodayEntry()}
-  <section class="today-goal-card">
-    <div class="row between"><div><div class="eyebrow">Current goal</div><div class="today-goal-name">${escapeHtml(db.goal.name)}</div></div><span class="status active">Active</span></div>
-    <div class="today-goal-line"><i style="width:${progress}%"></i></div>
-    <div class="today-goal-metrics"><div><span>Current</span><b>${fmt(current)}</b><em>kg</em></div><div><span>Target</span><b>${fmt(db.goal.target)}</b><em>kg</em></div><div><span>Goal date</span><b class="date-value">${fmtDate(db.goal.end)}</b></div></div>
-  </section>
+  ${trendHeroCard()}
   <button class="quick-weight-card ${d.weight==null?'empty-weight':''}" data-action="quickWeight">
     <div><div class="quick-weight-label">Morning weight</div><div class="quick-weight-value">${d.weight==null?'Log morning weight':`${fmt(d.weight)} <span>kg</span>`}</div></div>
     <div class="quick-weight-action">${d.weight==null?'Log now':'Edit'} ›</div>
   </button>
   ${morningResponseBlock()}
-  ${recentWinsBlock()}
-  ${weeklyPulseBlock()}
+  ${dailyThoughtBlock()}
+  ${todayCoreSignals(d)}
+  ${todayEventsEntry(d)}
+  ${weeklyReviewBlock()}
   ${todayGoalLearning()}
-  <section class="today-summary-grid">
-    <button class="summary-tile green" data-action="editToday"><div class="summary-label">Diet</div><div class="summary-value">${foodDone?'Goal met':food.recorded?'In progress':'Not logged'}</div><span class="summary-dot ${foodDone?'done':''}"></span></button>
-    <button class="summary-tile pink" data-action="editToday"><div class="summary-label">Move</div><div class="summary-value">${moveDone?'Move day':move.recorded?move.shortLabel:'Not logged'}</div><span class="summary-dot ${moveDone?'done':''}"></span></button>
-    <button class="summary-tile green-soft" data-action="editToday"><div class="summary-label">Life</div><div class="summary-value">${events?`${events} event${events>1?'s':''}`:'No special events'}</div><span class="summary-dot ${lifeDone?'done':''}"></span></button>
-  </section>
-  <section class="today-progress-card">
-    <div class="progress-stat"><div class="big-stat">${(startW-current)>=0?'-':''}${Math.abs(startW-current).toFixed(1)}</div><div class="stat-caption">kg from start</div></div>
-    <div class="goal-ring" style="--p:${progress}"><div><b>${Math.round(progress)}%</b><span>complete</span></div></div>
-    <div class="progress-stat right"><div class="big-stat">${daysLeft}</div><div class="stat-caption">days left</div><div class="tiny-remaining">${remaining.toFixed(1)} kg to go</div></div>
-  </section>
-  <button class="today-edit-button" data-action="editToday">View / edit today</button>`;
+  ${endGoalTodayEntry()}
+  <button class="today-edit-button" data-action="editToday">View / edit full day</button>`;
 }
 function skipButton(id,d){ return `<button class="skip-chip ${d.skips?.[id]?'on':''}" data-toggle-skip="${id}">${d.skips?.[id]?'N/A ✓':'N/A'}</button>`; }
 function trackerHead(id,d){ return `<div class="tracker-head"><div class="actual-label">${TRACKER_DEFS[id].label} ${trackerRoleBadge(calendarRulesForDate(d.date).goal,id)}</div>${skipButton(id,d)}</div>`; }
@@ -735,16 +710,25 @@ function refreshMealTotal(){
   el.innerHTML=mealSummaryHtml(mealSummary(d));
 }
 
+function coreEatingControls(d,compact=false){
+  const hunger=[1,2,3,4,5];
+  const cls=compact?'core-eating compact-core':'core-eating';
+  return `<div class="${cls}">
+    <div class="core-signal"><div class="core-signal-head"><b>吃到停不下来</b><span>已经想停，但还是继续吃</span></div><div class="binary-choices">${[[false,'没有'],[true,'有']].map(([val,label])=>`<button type="button" class="signal-choice danger ${d.food.uncontrolledEating===val?'on':''}" data-uncontrolled="${String(val)}">${label}</button>`).join('')}</div></div>
+    <div class="core-signal"><div class="core-signal-head"><b>吃得比计划多</b><span>整体量超过原本打算</span></div><div class="binary-choices">${[[false,'没有'],[true,'有']].map(([val,label])=>`<button type="button" class="signal-choice ${d.food.moreThanIntended===val?'on':''}" data-more-than="${String(val)}">${label}</button>`).join('')}</div></div>
+    <div class="core-signal hunger-core"><div class="core-signal-head"><b>睡前饥饿</b><span>1 低 · 5 很饿</span></div><div class="hunger-quick">${hunger.map(v=>`<button type="button" class="signal-choice number ${d.food.bedtimeHunger!==null&&+d.food.bedtimeHunger===v?'on':''}" data-core-hunger="${v}">${v}</button>`).join('')}</div></div>
+  </div>`;
+}
 function actualFoodControls(d){
-  const veg=[0,1,2,3,4], fruit=[0,1,2,3], hunger=[1,2,3,4,5];
-  return `${mealCaloriesControls(d)}
+  const veg=[0,1,2,3,4], fruit=[0,1,2,3];
+  return `${coreEatingControls(d)}
+  <details class="secondary-tracking"><summary>More context</summary><div class="secondary-tracking-body">
+  <div class="actual-row tracker-row ${d.skips?.noSnack?'is-skip':''}">${trackerHead('noSnack',d)}<div class="snack-choices" role="group" aria-label="Snacks on this date">${[[true,'No snacks'],[false,'Had snacks'],[null,'Not logged']].map(([val,label])=>`<button type="button" class="snack-choice ${d.food.noSnack===val?'on':''}" data-no-snack="${val===null?'null':String(val)}">${label}</button>`).join('')}</div></div>
   <div class="actual-row tracker-row ${d.skips?.veg?'is-skip':''}">${trackerHead('veg',d)}<div class="chip-row">${veg.map(v=>`<button class="pill ${d.food.veg!==null && +d.food.veg===v?'on':''}" data-set-food="veg" data-value="${v}">${v===4?'4+':v}</button>`).join('')}</div></div>
-  <div class="actual-row tracker-row ${d.skips?.protein?'is-skip':''}">${trackerHead('protein',d)}<div class="switch-row compact-switch"><span>${d.food.protein===true?'Target met':'Mark when met'}</span><button class="toggle ${d.food.protein===true?'on':''}" data-toggle-food="protein" aria-label="Protein"></button></div></div>
+  <div class="actual-row tracker-row ${d.skips?.protein?'is-skip':''}">${trackerHead('protein',d)}<div class="switch-row compact-switch"><span>${d.food.protein===true?'Target met':'Mark when met'}</span><button class="toggle ${d.food.protein===true?'on':''}" data-toggle-food="protein"></button></div></div>
   <div class="actual-row tracker-row ${d.skips?.fruit?'is-skip':''}">${trackerHead('fruit',d)}<div class="chip-row">${fruit.map(v=>`<button class="pill ${d.food.fruit!==null && +d.food.fruit===v?'on':''}" data-set-food="fruit" data-value="${v}">${v===3?'3+':v}</button>`).join('')}</div></div>
-  <div class="actual-row tracker-row ${d.skips?.noSnack?'is-skip':''}">${trackerHead('noSnack',d)}<div class="snack-choices" role="group" aria-label="Snacks on this date">${[[true,'No snacks'],[false,'Had snacks'],[null,'Not logged']].map(([val,label])=>`<button type="button" class="snack-choice ${d.food.noSnack===val?'on':''}" data-no-snack="${val===null?'null':String(val)}" aria-pressed="${d.food.noSnack===val}">${label}</button>`).join('')}</div></div>
-  <div class="actual-row tracker-row context-row"><div class="tracker-head"><div class="actual-label">Amount eaten <span class="role-mini track">Context</span></div></div><div class="snack-choices amount-choices" role="group" aria-label="Amount eaten on this date">${[[false,'About right'],[true,'More than intended'],[null,'Not logged']].map(([val,label])=>`<button type="button" class="snack-choice ${d.food.moreThanIntended===val?'on':''}" data-more-than="${val===null?'null':String(val)}" aria-pressed="${d.food.moreThanIntended===val}">${label}</button>`).join('')}</div></div>
   <div class="actual-row tracker-row ${d.skips?.water?'is-skip':''}">${trackerHead('water',d)}<div class="chip-row">${[1,1.5,2,2.5,3].map(v=>`<button class="pill ${d.food.water!==null && +d.food.water===v?'on':''}" data-set-food="water" data-value="${v}">${v}L</button>`).join('')}</div></div>
-  <div class="actual-row tracker-row ${d.skips?.bedtimeHunger?'is-skip':''}">${trackerHead('bedtimeHunger',d)}<div class="hunger-scale"><span class="small">Low</span><div class="chip-row">${hunger.map(v=>`<button class="pill ${d.food.bedtimeHunger!==null && +d.food.bedtimeHunger===v?'on':''}" data-set-food="bedtimeHunger" data-value="${v}">${v}</button>`).join('')}</div><span class="small">High</span></div></div>`;
+  </div></details>`;
 }
 function movementControls(d){
   return `<div class="exercise-log">
@@ -810,7 +794,7 @@ function dayPage(){
   if(future){
     main=`${eventsNotes}<section class="card"><div class="actual-label">Day plan</div>${futurePlanSummary(d)}<hr class="sep"><div class="actual-label">Exercise plan (optional)</div>${plannedMoveControls(d)}</section>`;
   }else{
-    main=`<section class="card blue-soft"><div class="actual-label">Morning log</div><div class="two"><label>Weight · kg<input data-day-field="weight" type="number" step="0.1" inputmode="decimal" value="${d.weight??''}"></label><label>Last night's sleep · hours<input data-day-field="sleep" type="number" step="0.1" inputmode="decimal" value="${d.sleep??''}"></label></div></section>${eventsNotes}<section class="card"><div class="actual-label">Diet</div>${actualFoodControls(d)}${plannedMoveStatus(d).planned?`<div class="planned-reference">Planned: ${escapeHtml(plannedMoveStatus(d).label)}</div>`:''}<hr class="sep"><div class="actual-label">Exercise</div>${movementControls(d)}</section>`;
+    main=`<section class="card blue-soft"><div class="actual-label">Morning log</div><div class="two"><label>Weight · kg<input data-day-field="weight" type="number" step="0.1" inputmode="decimal" value="${d.weight??''}"></label><label>Last night's sleep · hours<input data-day-field="sleep" type="number" step="0.1" inputmode="decimal" value="${d.sleep??''}"></label></div></section>${eventsNotes}<section class="card"><div class="actual-label">Eating & context</div>${actualFoodControls(d)}${plannedMoveStatus(d).planned?`<div class="planned-reference">Planned: ${escapeHtml(plannedMoveStatus(d).label)}</div>`:''}<hr class="sep"><div class="actual-label">Exercise</div>${movementControls(d)}</section>`;
   }
   return `${topbar(title,sub,`<button class="btn sky save-top" data-action="saveDay">Save</button>`)}
     ${flashHtml()}
@@ -941,6 +925,12 @@ function goalDeadlineCard(f){
   if(end===now) return {label:hasActual?'Today · Actual':'Today · No weigh-in',value:hasActual?`${fmt(recorded.weight)} kg`:'No weigh-in yet'};
   return {label:`By ${fmtDate(end,'en')}`, value:f.ready?`${fmt(f.projectedEnd)} kg`:'—'};
 }
+function forecastRangeLabel(f){
+  if(!f?.ready||!f.targetDate)return null;
+  if(f.reachStatus==='reached')return fmtDate(f.targetDate,'en');
+  const spread=f.earlyEstimate?7:4;
+  return `${fmtDate(addDays(f.targetDate,-spread),'en')}–${fmtDate(addDays(f.targetDate,spread),'en')}`;
+}
 function changePage(){
   const series=chartData();
   const lw=latestWeight(today()); const f=goalForecast(), deadline=goalDeadlineCard(f);
@@ -949,18 +939,16 @@ function changePage(){
     <section class="card change-goal-card">
       <div><b>${escapeHtml(db.goal.name)}</b><div class="small">${fmtDate(db.goal.start)} → ${fmtDate(db.goal.end)}</div></div>
       <div class="progress-weight-summary"><span>${desc}</span><span class="summary-sep">·</span><span>${tr('goalLine')} ${fmt(db.goal.target)} kg</span></div>
-      <div class="chart-heading-row"><div class="legend"><span><span class="legend-line actual-line"></span>${tr('actualWeight')}</span><span><span class="legend-line goal-line"></span>${tr('goalLine')}</span><span><span class="legend-line forecast-line"></span>Forecast</span></div><button class="quiet-link chart-customize" data-action="chartSettings">⚙ Customize</button></div>
+      <div class="chart-heading-row"><div class="legend"><span><span class="legend-line actual-line"></span>Scale</span><span><span class="legend-line trend-line-key"></span>Trend</span><span><span class="legend-line goal-line"></span>${tr('goalLine')}</span><span><span class="legend-line forecast-line"></span>Estimate</span></div><button class="quiet-link chart-customize" data-action="chartSettings">⚙ Customize</button></div>
       <div class="chart-wrap">${renderChart(series,f)}</div>
     </section>
     <section class="forecast-grid compact-forecast">
       <div class="forecast-card pink"><div class="small">${deadline.label}</div><div class="forecast-value">${deadline.value}</div></div>
-      <div class="forecast-card green"><div class="small">Reach ${fmt(db.goal.target)}</div><div class="forecast-text">${f.ready&&f.targetDate?fmtDate(f.targetDate,'en'):f.ready?(f.reachStatus==='beyond'?'> 120 days':'No date yet'):'—'}</div></div>
+      <div class="forecast-card green"><div class="small">Goal estimate</div><div class="forecast-text">${forecastRangeLabel(f)|| (f.ready?(f.reachStatus==='beyond'?'> 120 days':'No estimate yet'):'—')}</div></div>
     </section>
     <div class="insight forecast-insight">${forecastMessage(f)}</div>
-    <div class="section-title">Weekly behavior</div>
-    <section class="card progress-behavior-card">${weeklyBehaviorProgress(db.goal)}</section>
     <div class="section-title">Weekly review</div>
-    <section class="card">${weeklyReviewText()}</section>`;
+    ${weeklyReviewBlock()}`;
 }
 function chartData(){
   // Show real, previously logged weight readings before a new goal begins.
@@ -991,36 +979,38 @@ function smoothSvgPath(points){
 }
 function readDay(s){ return mergeDay({...((db.days||{})[s]||{}),date:s}); }
 const CHART_GROUPS=[{id:'food',name:'Diet',dot:'social'},{id:'hunger',name:'Bedtime hunger',dot:'hunger'},{id:'exercise',name:'Exercise',dot:'exercise'},{id:'other',name:'Other context',dot:'other'}];
-const CHART_FOOD=[['eating_out','Eating out'],['alcohol','Alcohol'],['snacks','Snacks · from daily log'],['more_than_intended','More than intended · from daily log']];
+const CHART_FOOD=[['uncontrolled_eating','吃到停不下来'],['more_than_intended','吃得比计划多'],['eating_out','Eating out'],['alcohol','Alcohol'],['snacks','Snacks']];
 const CHART_EXERCISE=[['steps','10k steps'],['cardio','Cardio'],['strength','Strength']];
 const CHART_OTHER=[['period','Period'],['travel','Travel'],['party','Party'],['vacation','Vacation'],['poor_sleep','Poor sleep'],['sick','Sick'],['short_sleep','Short sleep · <6h']];
 function weightPointContext(weightDate){
   const prevDate=addDays(weightDate,-1);
   const prev=readDay(prevDate), same=readDay(weightDate), settings=db.chartSettings;
-  const meal=mealSummary(prev);
   const events=prev.events.map(eventId);
   const eatingOut=events.includes('eating_out');
   const alcohol=prev.alcohol==null?null:+prev.alcohol;
-  const hadSnacks=prev.food.noSnack===false && !prev.skips?.noSnack; // D-1 explicit Had snacks ONLY; true, null and N/A do not match.
+  const hadSnacks=prev.food.noSnack===false && !prev.skips?.noSnack;
   const moreThanIntended=prev.food.moreThanIntended===true;
+  const uncontrolledEating=prev.food.uncontrolledEating===true;
   const hunger=prev.food.bedtimeHunger==null?null:+prev.food.bedtimeHunger;
   const steps=prev.move.steps==null?null:+prev.move.steps;
   const cardio=prev.move.cardio==null?null:+prev.move.cardio;
   const strength=prev.move.strength==null?null:+prev.move.strength;
-  const sleep=same.sleep==null?null:+same.sleep; // morning log for the same weigh-in
+  const sleep=same.sleep==null?null:+same.sleep;
   const exerciseAvailable={steps:steps!=null&&steps>=10000,cardio:cardio!=null&&cardio>0,strength:strength!=null&&strength>0};
   const exerciseNotable=Object.values(exerciseAvailable).some(Boolean);
   const sleepNotable=sleep!=null&&sleep<6;
   const custom=db.customEvents.filter(e=>e.active&&settings.custom.includes(e.id)&&events.includes(e.id));
-  const foodMatch=(eatingOut&&settings.food.includes('eating_out')) || (alcohol>0&&settings.food.includes('alcohol')) || (hadSnacks&&settings.food.includes('snacks')) || (moreThanIntended&&settings.food.includes('more_than_intended')) || custom.some(e=>e.category==='food');
+  const foodMatch=(uncontrolledEating&&settings.food.includes('uncontrolled_eating')) || (moreThanIntended&&settings.food.includes('more_than_intended')) || (eatingOut&&settings.food.includes('eating_out')) || (alcohol>0&&settings.food.includes('alcohol')) || (hadSnacks&&settings.food.includes('snacks')) || custom.some(e=>e.category==='food');
   const otherMatch=events.some(id=>settings.other.includes(id)) || (sleepNotable&&settings.other.includes('short_sleep')) || custom.some(e=>e.category==='other');
   const exerciseMatch=settings.exercise.some(key=>exerciseAvailable[key]);
-  const prevDetails=events.map(eventLabel);
+  const prevDetails=[];
+  if(uncontrolledEating)prevDetails.push('吃到停不下来');
+  if(moreThanIntended)prevDetails.push('吃得比计划多');
+  for(const e of events) prevDetails.push(eventLabel(e));
   if(alcohol>0)prevDetails.push(`Alcohol ${alcohol>=2?'2+':alcohol}`);
   if(hadSnacks)prevDetails.push('Snacks');
   else if(prev.food.noSnack===true&&!prev.skips?.noSnack)prevDetails.push('No snacks');
-  if(moreThanIntended)prevDetails.push('More than intended');
-  if(hunger!=null)prevDetails.push(`Hunger ${hunger}/5`);
+  if(hunger!=null)prevDetails.push(`睡前饥饿 ${hunger}/5`);
   if(exerciseNotable){
     const exercise=[];
     if(exerciseAvailable.steps)exercise.push(`${steps>=1000?(steps/1000).toFixed(1).replace('.0','')+'k':Math.round(steps)} steps`);
@@ -1028,8 +1018,7 @@ function weightPointContext(weightDate){
     if(exerciseAvailable.strength)exercise.push(`Strength ${Math.round(strength)}m`);
     if(exercise.length)prevDetails.push(exercise.join(' · '));
   }
-  // Sleep is logged on the weigh-in morning, not on the previous calendar day.
-  return {prevDate,eatingOut,alcohol,hadSnacks,moreThanIntended,hunger,steps,cardio,strength,sleep,exerciseNotable,sleepNotable,prevDetails,meal,
+  return {prevDate,eatingOut,alcohol,hadSnacks,moreThanIntended,uncontrolledEating,hunger,steps,cardio,strength,sleep,exerciseNotable,sleepNotable,prevDetails,
     markers:{food:foodMatch,hunger:hunger!=null&&hunger>=settings.hungerMin,exercise:exerciseMatch,other:otherMatch}};
 }
 function contextMarkersSvg(d,x,markerTop,rowGap){
@@ -1044,10 +1033,9 @@ function contextLegendHtml(){
 
 function renderChart(data,forecast){
   if(!data.length) return `<div class="empty">No weigh-ins yet. When you log your weight, it will appear here, even before the goal starts.</div>`;
-  const W=340,H=278,L=48,R=16,Tp=24,labelBand=26,axisGap=10,calorieBand=16,markerRows=Math.max(1,db.chartSettings.categories.length),markerRowGap=9,markerBand=markerRows*markerRowGap;
+  const W=340,H=278,L=48,R=16,Tp=24,labelBand=26,axisGap=10,markerRows=Math.max(1,db.chartSettings.categories.length),markerRowGap=9,markerBand=markerRows*markerRowGap;
   const axisY=H-labelBand-axisGap;
-  const calorieBaseY=axisY-3;
-  const markerTop=axisY-markerBand-calorieBand+2;
+  const markerTop=axisY-markerBand+2;
   const plotBottom=markerTop-6;
   const last=data[data.length-1], lastDate=last.date;
   // Extend the x-axis only when the deadline is reached/passed. Future projections
@@ -1085,6 +1073,8 @@ function renderChart(data,forecast){
   const earlierPoints=data.filter(d=>d.preGoal), goalPoints=data.filter(d=>!d.preGoal);
   const earlierPath=trace(earlierPoints), actualPath=trace(goalPoints);
   const bridgePath=earlierPoints.length&&goalPoints.length?trace([earlierPoints.at(-1),goalPoints[0]]):'';
+  const trendRows=data.map(d=>({date:d.date,weight:robustSevenDayMean(d.date,latestWeights(d.date))})).filter(d=>d.weight!=null&&Number.isFinite(+d.weight));
+  const trendPath=trace(trendRows);
   const goalY=y(+db.goal.target);
   const pointCoords=data.map(d=>({x:xDate(d.date),y:y(d.weight)}));
   const points=data.map((d,i)=>`<circle class="point${d.preGoal?' pre-goal-point':''}" cx="${pointCoords[i].x}" cy="${pointCoords[i].y}" r="2"></circle>`).join('');
@@ -1094,11 +1084,6 @@ function renderChart(data,forecast){
     return `<rect class="point-hit" data-chart-index="${i}" x="${left.toFixed(1)}" y="${Tp}" width="${Math.max(0,right-left).toFixed(1)}" height="${(axisY-Tp+8).toFixed(1)}" tabindex="0" role="button" aria-label="Show weight for ${fmtDate(d.date)}"></rect>`;
   }).join('');
   const contextMarks=data.map((d,i)=>contextMarkersSvg(d,pointCoords[i].x,markerTop,markerRowGap)).join('');
-  const caloriePoints=data.map((d,i)=>({x:pointCoords[i].x,summary:previousDayMealSummary(d.date),date:d.date}));
-  const calorieBars=caloriePoints.filter(p=>p.summary.total!=null).map(p=>{const h=clamp((p.summary.total/2500)*10,2,10);return `<rect class="calorie-bar ${p.summary.quality||''}" x="${(p.x-1.3).toFixed(1)}" y="${(calorieBaseY-h).toFixed(1)}" width="2.6" height="${h.toFixed(1)}" rx="1.2"></rect>`;}).join('');
-  let lastCalLabelX=Infinity; const calorieLabels=[];
-  for(let i=caloriePoints.length-1;i>=0;i--){const p=caloriePoints[i];if(p.summary.total==null)continue;if(lastCalLabelX-p.x>=28||lastCalLabelX===Infinity){calorieLabels.push(`<text class="calorie-label" x="${p.x.toFixed(1)}" y="${(axisY-5).toFixed(1)}" text-anchor="middle">${(p.summary.total/1000).toFixed(1)}k</text>`);lastCalLabelX=p.x;}}
-  const calorieBandSvg=calorieBars+calorieLabels.join('')+(calorieBars?`<text class="calorie-unit" x="${L-8}" y="${(axisY-5).toFixed(1)}" text-anchor="end">kcal</text>`:'');
 
   // V9.3: restore the V9.1 visual language: one continuous pink trend from
   // goal start, through observed dates, and then toward the visible horizon.
@@ -1128,17 +1113,16 @@ function renderChart(data,forecast){
   // Mention sleep only when the user has actually enabled short sleep in Other.
   const showSleepNote=db.chartSettings.categories.includes('other')&&db.chartSettings.other.includes('short_sleep');
   const sleepNote=showSleepNote?'<br>Short sleep uses the sleep logged on the same morning.':'';
-  const info=`<div class="chart-context-row">${contextLegendHtml()}<details class="chart-info-wrap"><summary aria-label="About chart markers" title="About chart markers">ⓘ</summary><div class="chart-info-popover"><b>About the dots</b><br>Dots show selected logs from the previous day. Calories also use the previous day's total. They are context, not proven causes.${sleepNote}</div></details></div>`;
+  const info=`<div class="chart-context-row">${contextLegendHtml()}<details class="chart-info-wrap"><summary aria-label="About chart markers" title="About chart markers">ⓘ</summary><div class="chart-info-popover"><b>About the dots</b><br>Dots show selected logs from the previous day. They are context, not proven causes.${sleepNote}</div></details></div>`;
   const singlePointNote=data.length===1?'<div class="pre-goal-caption">One weigh-in is shown. A projection needs at least two spaced readings.</div>':'';
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Weight chart. Muted line indicates pre-goal history. Pink dashed line is a trend estimate. Goal start and end are marked. Tap a weigh-in for its logs"><text x="4" y="13" class="axis-unit">kg</text>${grid}<line class="axis" x1="${L}" y1="${Tp}" x2="${L}" y2="${axisY}"/><line class="axis" x1="${L}" y1="${axisY}" x2="${W-R}" y2="${axisY}"/><line class="goal" x1="${L}" y1="${goalY}" x2="${W-R}" y2="${goalY}"/><line id="chartGuide" class="guide" x1="${guideX}" y1="${Tp}" x2="${guideX}" y2="${axisY}"/>${projectionPath}${goalStartMark}${goalDateMark}<path class="pre-goal-actual" d="${earlierPath}"/><path class="pre-goal-bridge" d="${bridgePath}"/><path class="actual" d="${actualPath}"/>${contextMarks}${calorieBandSvg}${points}${hitBands}${xLabels}</svg>${info}${singlePointNote}<div id="chartTip" class="tooltip" aria-live="polite">${chartTipHtml(last)}</div>`;
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Weight chart. Muted line indicates pre-goal history. Pink dashed line is a trend estimate. Goal start and end are marked. Tap a weigh-in for its logs"><text x="4" y="13" class="axis-unit">kg</text>${grid}<line class="axis" x1="${L}" y1="${Tp}" x2="${L}" y2="${axisY}"/><line class="axis" x1="${L}" y1="${axisY}" x2="${W-R}" y2="${axisY}"/><line class="goal" x1="${L}" y1="${goalY}" x2="${W-R}" y2="${goalY}"/><line id="chartGuide" class="guide" x1="${guideX}" y1="${Tp}" x2="${guideX}" y2="${axisY}"/>${projectionPath}${goalStartMark}${goalDateMark}<path class="pre-goal-actual" d="${earlierPath}"/><path class="pre-goal-bridge" d="${bridgePath}"/><path class="actual" d="${actualPath}"/><path class="trend-line" d="${trendPath}"/>${contextMarks}${points}${hitBands}${xLabels}</svg>${info}${singlePointNote}<div id="chartTip" class="tooltip" aria-live="polite">${chartTipHtml(last)}</div>`;
 }
 function chartTipHtml(d){
   if(!d) return '';
   const c=weightPointContext(d.date);
-  const calorieContext=c.meal?.total!=null?`<span class="tip-context-inline calorie-tip">· ${fmtShortDate(c.prevDate)} · ${c.meal.total.toLocaleString()} kcal${c.meal.quality?` · ${mealQualityLabel(c.meal.quality)}`:''}</span>`:'';
   const context=c.prevDetails.length?`<span class="tip-context-inline">· ${fmtShortDate(c.prevDate)} logs · ${escapeHtml(c.prevDetails.join(' · '))}</span>`:'';
   const sleepContext=c.sleepNotable?`<span class="tip-context-inline">· Last night sleep ${fmt(c.sleep)}h</span>`:'';
-  return `<b>${fmtShortDate(d.date)}${d.date<db.goal.start?' · Before Goal':''}</b><span>${fmt(d.weight)} kg</span>${calorieContext}${context}${sleepContext}`;
+  return `<b>${fmtShortDate(d.date)}${d.date<db.goal.start?' · Before Goal':''}</b><span>${fmt(d.weight)} kg</span>${context}${sleepContext}`;
 }
 function weeklyTargetFor(g,id){
   const p=planForGoal(g);
@@ -1173,28 +1157,8 @@ function goalBehaviorMetrics(g,from,to){
   return {daily,weekly};
 }
 function weeklyReviewText(){
-  const dates=weekDates(), monday=dates[0], through=today()<dates[6]?today():dates[6], metrics=goalBehaviorMetrics(db.goal,monday,through);
-  const behavior=[];
-  for(const [id,m] of Object.entries(metrics.daily)){
-    if(m.eligible) behavior.push(`${TRACKER_DEFS[id].label}: ${m.met} of ${m.eligible} eligible days`);
-  }
-  for(const [id,m] of Object.entries(metrics.weekly)){
-    const unit=id==='cardio'?' min':id==='steps'||id==='strength'||id==='stretch'?'×':'';
-    behavior.push(`${TRACKER_DEFS[id].label}: ${m.value}${unit} toward ${m.target}${unit}`);
-  }
-  const missed=Object.entries(metrics.daily).filter(([,m])=>m.eligible>=2&&m.rate!=null&&m.rate<.8).sort((a,b)=>a[1].rate-b[1].rate);
-  let pattern='No clear multi-day execution pattern yet.';
-  if(missed.length) pattern=`The main Goal behavior to watch is ${TRACKER_DEFS[missed[0][0]].label.toLowerCase()}; this is based on repeated Goal misses, not Bonus activity.`;
-  else {
-    const track=trackOnlyWeekSummaryText(db.goal);
-    if(track) pattern=track;
-  }
-  const avgNow=movingAverage(today()), avgPrev=movingAverage(addDays(today(),-7));
-  const weight=avgNow==null?'Not enough weight data yet.':`7-day average ${fmt(avgNow)} kg${avgPrev==null?'':` · ${avgNow-avgPrev>0?'+':''}${(avgNow-avgPrev).toFixed(1)} kg vs 7 days ago`}.`;
-  let next='Keep the current plan steady and judge the week as a whole.';
-  if(missed.length) next=`Next: make ${TRACKER_DEFS[missed[0][0]].label.toLowerCase()} the simplest behavior to protect this week.`;
-  const bonus=bonusWeekSummaryText(db.goal); if(bonus) behavior.push(`Bonus: ${bonus}`);
-  return `<div class="weekly-review-copy"><div><b>Goal behaviors</b><br>${behavior.length?behavior.map(escapeHtml).join(' · '):'No Goal behavior data yet.'}</div><div><b>Pattern</b><br>${escapeHtml(pattern)}</div><div><b>Weight</b><br>${escapeHtml(weight)}</div><div><b>Next</b><br>${escapeHtml(next.replace(/^Next:\s*/,''))}</div></div>`;
+  const w=weeklyReviewData();
+  return `<div class="weekly-review-copy"><div><b>7-day average</b><br>${w.curAvg==null?'Not enough weight data yet.':`${fmt(w.curAvg)} kg${w.delta==null?'':` · ${w.delta>0?'+':''}${w.delta.toFixed(1)} kg vs previous 7 days`}`}</div><div><b>Eating control</b><br>吃到停不下来 ${w.uncontrolledLogged?`${w.uncontrolled}/${w.uncontrolledLogged}`:'—'} · 吃得比计划多 ${w.moreLogged?`${w.more}/${w.moreLogged}`:'—'}${w.hungerAvg==null?'':` · 睡前饥饿 ${w.hungerAvg.toFixed(1)}/5`}</div><div><b>Interpretation</b><br>${escapeHtml(w.interpretation)}</div><div><b>Next</b><br>${escapeHtml(w.next)}</div></div>`;
 }
 function bonusWeekSummaryText(g){
   const dates=weekDates().filter(s=>s<=today()&&s>=g.start&&s<=(g.ended||g.end)), bits=[];
@@ -1367,8 +1331,8 @@ function goalsPage(){
 }
 function snapshotContextForDate(weightDate,settings){
   const prev=readDay(addDays(weightDate,-1)), same=readDay(weightDate), events=prev.events.map(eventId);
-  const hadSnacks=prev.food.noSnack===false&&!prev.skips?.noSnack, more=prev.food.moreThanIntended===true, alcohol=+prev.alcohol||0;
-  const food=(events.includes('eating_out')&&settings.food.includes('eating_out'))||(alcohol>0&&settings.food.includes('alcohol'))||(hadSnacks&&settings.food.includes('snacks'))||(more&&settings.food.includes('more_than_intended'));
+  const hadSnacks=prev.food.noSnack===false&&!prev.skips?.noSnack, more=prev.food.moreThanIntended===true, uncontrolled=prev.food.uncontrolledEating===true, alcohol=+prev.alcohol||0;
+  const food=(uncontrolled&&settings.food.includes('uncontrolled_eating'))||(more&&settings.food.includes('more_than_intended'))||(events.includes('eating_out')&&settings.food.includes('eating_out'))||(alcohol>0&&settings.food.includes('alcohol'))||(hadSnacks&&settings.food.includes('snacks'));
   const hunger=prev.food.bedtimeHunger!=null&&+prev.food.bedtimeHunger>=settings.hungerMin;
   const exercise=(settings.exercise.includes('steps')&&(+prev.move.steps||0)>=10000)||(settings.exercise.includes('cardio')&&(+prev.move.cardio||0)>0)||(settings.exercise.includes('strength')&&(+prev.move.strength||0)>0);
   const other=(settings.other||[]).some(id=>events.includes(id))||(settings.other||[]).includes('short_sleep')&&same.sleep!=null&&+same.sleep<6;
@@ -1517,13 +1481,11 @@ function goalReviewPack(g){
   const records=[];
   for(let s=g.start;s<=through;s=addDays(s,1)){
     const rec=day(s);
-    const foodValues=Object.values(rec.food||{}).some(v=>v!==null&&v!==false&&v!=='');
-    const meal=mealSummary(rec);
-    const mealValues=meal.total!=null||meal.quality!=null||meal.rows.some(r=>r.quality!=null);
+    const foodValues=Object.values(rec.food||{}).some(v=>v!==null&&v!=='');
     const exerciseValues=Object.values(rec.move||{}).some(v=>v!==null&&v!==false&&v!=='');
-    const hasData=rec.weight!=null || rec.sleep!=null || rec.alcohol!=null || foodValues || mealValues || exerciseValues || Object.values(rec.skips||{}).some(Boolean) || rec.events.length || rec.note;
+    const hasData=rec.weight!=null || rec.sleep!=null || rec.alcohol!=null || foodValues || exerciseValues || Object.values(rec.skips||{}).some(Boolean) || rec.events.length || rec.note;
     if(!hasData) continue;
-    records.push({date:s,weight:rec.weight,sevenDayAverage:goalAverageFor(g,s),lastNightSleepHours:rec.sleep,alcohol:rec.alcohol==null?null:(+rec.alcohol>=2?'2+':+rec.alcohol===1?'1':'none'),food:{veg:rec.food.veg,protein:rec.food.protein,fruit:rec.food.fruit,noSnack:rec.food.noSnack,moreThanIntended:rec.food.moreThanIntended,legacyNoFoodAfterCutoff:rec.food.stop6,waterLiters:rec.food.water,bedtimeHunger:rec.food.bedtimeHunger},meals:Object.fromEntries(meal.rows.map(r=>[r.id,{estimatedCalories:r.kcal,quality:r.quality}])),dailyEstimatedCalories:meal.total,dailyDietQuality:meal.quality,exercise:{...rec.move},skipOrNA:{...rec.skips},lifeEvents:rec.events.map(eventLabel),note:rec.note||''});
+    records.push({date:s,weight:rec.weight,sevenDayAverage:goalAverageFor(g,s),lastNightSleepHours:rec.sleep,alcohol:rec.alcohol==null?null:(+rec.alcohol>=2?'2+':+rec.alcohol===1?'1':'none'),food:{uncontrolledEating:rec.food.uncontrolledEating,moreThanIntended:rec.food.moreThanIntended,noSnack:rec.food.noSnack,bedtimeHunger:rec.food.bedtimeHunger,veg:rec.food.veg,protein:rec.food.protein,fruit:rec.food.fruit,waterLiters:rec.food.water,legacyNoFoodAfterCutoff:rec.food.stop6},exercise:{...rec.move},skipOrNA:{...rec.skips},lifeEvents:rec.events.map(eventLabel),note:rec.note||''});
   }
   const endWeight=active ? latestWeight(through)?.weight??null : g.endWeight??null;
   const startWeight=active ? activeGoalStartWeight() : +g.startWeight;
@@ -1546,7 +1508,6 @@ function goalReviewPack(g){
         'Review Goal-role trackers as adherence only if logged and eligible. Bonus is optional and must never be labeled a failure; Track-only and weight are contextual rather than adherence metrics.',
         'Correct timing: weight on date D is a morning weigh-in. Eating out, alcohol, Snacks (food.noSnack is explicitly false), hunger, exercise, and events from D-1 are chart context for D. Never explain D with an event later on D.',
         'No snacks=true means NO snacks, noSnack=false means Had snacks; null/unlogged/N/A are unknown or excluded, not proof of either outcome. Eating out does not automatically mean eating more.',
-        'Meal calories are user-entered estimates, not laboratory measurements. Use them for broad patterns and comparisons, not false precision. Healthy/Mixed/Unhealthy is a qualitative meal label; dailyDietQuality is Tide’s automatic daily roll-up.',
         'Bedtime hunger 1=low and 5=very hungry. Do not praise high hunger, restrictive behavior or excessive exercise; prioritize sustainable practices.',
         'If this export includes sleep data, lastNightSleepHours on D is the night immediately before morning D. If not logged or irrelevant, do not discuss sleep.',
         'Period and other events are optional context. Note repeated associations as tentative, never claim a single event caused next-day weight change.',
@@ -1554,7 +1515,7 @@ function goalReviewPack(g){
       ],
       inTide:'Open Goals → Goal Review → Add new review. Use Import review JSON if you saved the generated file, or paste the generated JSON, Preview review, then Save Review. Do not import the original goal-data export as a completed review.'
     },
-    tideGoalReviewVersion:7,
+    tideGoalReviewVersion:8,
     goalId:g.id,
     exportedAt:new Date().toISOString(),
     goal:{name:g.name,start:g.start,end:g.end,startWeight,targetWeight:+g.target,currentOrEndWeight:endWeight,status:active?'active':goalStatus(g,endWeight),focus:g.focus||'both'},
@@ -1568,16 +1529,14 @@ function goalReviewPack(g){
       lastNightSleepHours:{meaning:'Sleep during the night immediately before the morning weight recorded on the same date.'},
       alcohol:{values:'none / 1 / 2+',meaning:'Alcohol consumed on that calendar day.'},
       snacks:{source:'food.noSnack === false, not marked N/A',meaning:'Shows a Diet marker on the next morning weigh-in after an explicitly logged Had snacks day. True, N/A, or missing never creates a Snacks marker. No duplicate event.'},
+      uncontrolledEating:{source:'food.uncontrolledEating === true',meaning:'Highest-priority eating-control signal: the user had already intended to stop eating but continued / felt unable to stop. Do not equate it with a large planned meal.'},
       moreThanIntended:{source:'food.moreThanIntended === true',meaning:'Self-reported quantity context: the user felt they ate more than intended. false means About right; null means Not logged. This is not automatically a Goal failure.'},
-      meals:{meaning:'Breakfast, Lunch, Dinner and Other can each contain estimatedCalories and quality (healthy/mixed/unhealthy). No food description is stored.'},
-      dailyEstimatedCalories:{meaning:'Sum of the calorie estimates entered for that calendar day. Missing meals are not assumed to be zero.'},
-      dailyDietQuality:{meaning:'Automatic roll-up of logged meal quality. Two or more Unhealthy meals = Unhealthy; one Unhealthy or any Mixed = Mixed; all logged qualities Healthy = Healthy.'},
       sevenDayAverage:{meaning:'Calendar-based 7-day weight average used for trend context, not adherence.'},
       period:{meaning:'Period is a life-event context tag, not an adherence metric.'}
     },
     timingGuide:{
       morningWeight:'Weight is recorded in the morning.',
-      previousDayContext:'Selected logs for eating out, alcohol, snacks (Had snacks), bedtime hunger, exercise, events and dailyEstimatedCalories on D-1 align with morning weight D. Sleep from the night D-1 to D belongs to morning D. These are context, not causes.',
+      previousDayContext:'Selected logs for uncontrolled eating, more than intended, eating out, alcohol, snacks, bedtime hunger, exercise and events on D-1 align with morning weight D. Sleep from the night D-1 to D belongs to morning D. These are context, not causes.',
       sleepAlignment:'lastNightSleepHours on date D refers to the sleep during D-1 → D, immediately before that morning weight.',
       interpretation:'Context may help explain patterns but is not proof of causation. Prefer repeated or multi-day patterns over one-day explanations.'
     },
@@ -1586,6 +1545,7 @@ function goalReviewPack(g){
       'Review Goal-role behaviors first: these are the only adherence metrics and the only items that may be called execution gaps.',
       'Bonus items may only be mentioned as positive additions; not doing a Bonus is never a gap or failure.',
       'Track only items and Weight are context for patterns, not adherence scores.',
+      'Treat uncontrolledEating as the highest-priority eating-control signal. If it repeats, discuss that pattern before snacks, exercise or minor tracker misses. Never recommend compensatory restriction or excessive exercise after an episode.',
       'Bedtime hunger uses a 1-5 scale: 1 = low hunger and 5 = very hungry. Do not treat high hunger as success; use it as context for sustainability.',
       'More than intended is a self-reported quantity signal, not a moral judgment and not automatically a Goal failure.',
       'Look for multi-day or lagged patterns. Do not attribute a morning weight to an event logged later on that same day.',
@@ -1806,7 +1766,9 @@ function saveInputsFromDOM(recordRuleHistory=true){
 }
 function setFood(key,val){ const d=day(view==='day'?selected:today()); d.food[key]=val; d.skips[key]=false; save(); }
 function setNoSnack(value){const d=day(view==='day'?selected:today());d.food.noSnack=value==='null'?null:value==='true';d.skips.noSnack=false;save();}
-function setMoreThanIntended(value){const d=day(view==='day'?selected:today());d.food.moreThanIntended=value==='null'?null:value==='true';persist();render();}
+function setMoreThanIntended(value){const d=day(view==='day'?selected:today());const next=value==='null'?null:value==='true';d.food.moreThanIntended=next!==null&&d.food.moreThanIntended===next?null:next;persist();render();}
+function setUncontrolledEating(value){const d=day(view==='day'?selected:today());const next=value==='null'?null:value==='true';d.food.uncontrolledEating=next!==null&&d.food.uncontrolledEating===next?null:next;persist();render();}
+function setCoreHunger(value){const d=day(view==='day'?selected:today());const next=+value;d.food.bedtimeHunger=(d.food.bedtimeHunger!==null&&+d.food.bedtimeHunger===next)?null:next;d.skips.bedtimeHunger=false;persist();render();}
 function toggleFood(key){ const d=day(view==='day'?selected:today()); d.food[key]=d.food[key]===true?false:true; d.skips[key]=false; save(); }
 function toggleMove(key){ const d=day(view==='day'?selected:today()); d.move[key]=d.move[key]===true?false:true; d.skips[key]=false; save(); }
 function toggleSkip(id){ const d=day(view==='day'?selected:today()); d.skips[id]=!d.skips[id]; save(); }
@@ -1928,6 +1890,8 @@ function bind(){
   document.querySelectorAll('[data-toggle-food]').forEach(b=>b.addEventListener('click',()=>toggleFood(b.dataset.toggleFood)));
   document.querySelectorAll('[data-no-snack]').forEach(b=>b.addEventListener('click',()=>setNoSnack(b.dataset.noSnack)));
   document.querySelectorAll('[data-more-than]').forEach(b=>b.addEventListener('click',()=>setMoreThanIntended(b.dataset.moreThan)));
+  document.querySelectorAll('[data-uncontrolled]').forEach(b=>b.addEventListener('click',()=>setUncontrolledEating(b.dataset.uncontrolled)));
+  document.querySelectorAll('[data-core-hunger]').forEach(b=>b.addEventListener('click',()=>setCoreHunger(b.dataset.coreHunger)));
   document.querySelectorAll('[data-meal-quality]').forEach(b=>b.addEventListener('click',()=>setMealQuality(b.dataset.mealQuality,b.dataset.quality)));
   document.querySelectorAll('[data-meal-kcal]').forEach(el=>el.addEventListener('input',()=>{const d=day(view==='day'?selected:today());const meal=d.meals[el.dataset.mealKcal];if(meal){const v=el.value===''?null:+el.value;meal.kcal=Number.isFinite(v)?Math.max(0,v):null;persist();refreshMealTotal();}}));
   document.querySelectorAll('[data-toggle-move]').forEach(b=>b.addEventListener('click',()=>toggleMove(b.dataset.toggleMove)));
